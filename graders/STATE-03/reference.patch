@@ -1,0 +1,19 @@
+diff --git a/starter/src/ledger.ts b/starter/src/ledger.ts
+index 10be087..82abe66 100644
+--- a/starter/src/ledger.ts
++++ b/starter/src/ledger.ts
+@@ -47,10 +47,10 @@ export class CheckpointStore {
+ 
+   recover(): number {
+     const entries = this.#journal.read();
+-    // 缺陷：每次都从头重放整本日志，已入账的部分被重复计入。
+-    for (const entry of entries) {
+-      this.#balance += parseAmount(entry);
+-      this.#checkpoint += 1;
++    // 只重放检查点之后的条目：已入账的绝不重复计入。
++    for (let index = this.#checkpoint; index < entries.length; index += 1) {
++      this.#balance += parseAmount(entries[index] as string);
++      this.#checkpoint = index + 1;
+     }
+     return this.#balance;
+   }

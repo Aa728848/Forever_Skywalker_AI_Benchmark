@@ -1284,7 +1284,7 @@
     "domain": "持久化与故障恢复",
     "difficulty": "hard",
     "track": "core",
-    "status": "designed",
+    "status": "fixture-ready",
     "runtime": "typescript",
     "sources": [
       "cwtools-vscode",

@@ -1,0 +1,141 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "STATE-03",
+  "taskVersion": "0.1.0",
+  "title": "检查点恢复和不可重复入账",
+  "runtime": "typescript",
+  "runtimeRange": "node >=24.14.1 <25",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "public-tests/**/*.test.ts"
+    ],
+    "hidden": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "__checks__/**/*.test.ts"
+    ]
+  },
+  "grader": {
+    "checks": "graders/STATE-03/checks",
+    "referencePatch": "graders/STATE-03/reference.patch",
+    "alternative": "graders/STATE-03/alternative",
+    "defectDetectors": [
+      "hidden/crash-recovery-replays-journal-once",
+      "hidden/recover-does-not-double-count",
+      "hidden/replays-entries-appended-by-others",
+      "public/crash-recovery-replays-journal-once",
+      "public/recover-does-not-double-count",
+      "public/replays-entries-appended-by-others"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/applies-entries-and-tracks-checkpoint",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "入账累加余额并推进检查点。"
+    },
+    {
+      "id": "public/recover-does-not-double-count",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "重复 recover 不得重复入账。"
+    },
+    {
+      "id": "public/crash-recovery-replays-journal-once",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "重启后每个条目只入账一次。"
+    },
+    {
+      "id": "public/replays-entries-appended-by-others",
+      "kind": "public",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "外部追加的条目能被重放且只一次。"
+    },
+    {
+      "id": "public/rejects-invalid-journal-entries",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "非法条目抛 LedgerError。"
+    },
+    {
+      "id": "hidden/applies-entries-and-tracks-checkpoint",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的入账。"
+    },
+    {
+      "id": "hidden/recover-does-not-double-count",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的重复恢复。"
+    },
+    {
+      "id": "hidden/crash-recovery-replays-journal-once",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的重启恢复。"
+    },
+    {
+      "id": "hidden/replays-entries-appended-by-others",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的外部追加。"
+    },
+    {
+      "id": "hidden/rejects-invalid-journal-entries",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的非法条目。"
+    }
+  ]
+}
