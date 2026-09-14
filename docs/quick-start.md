@@ -97,6 +97,14 @@ C:\\Users\\A\\Documents\\ChatGPT\\Forever_Skywalker_AI_Benchmark\\data\\experime
 pnpm task:export CACHE-02 "C:\Users\A\Documents\BenchAnswers\cache-r1"
 ```
 
+也可以一次导出多道题；每道题会放在批次目录的独立子目录，并生成 `batch-manifest.json`：
+
+```powershell
+pnpm task:export --tasks CACHE-02,API-04,GRAPH-04 "C:\Users\A\Documents\BenchAnswers\batch-r1"
+# 或导出全部已具备题目包的题目
+pnpm task:export --all "C:\Users\A\Documents\BenchAnswers\batch-all"
+```
+
 让编程 AI 打开这个导出目录，按照 `TASK.md` 修改代码。它完成后，回到本评测项目的 PowerShell 提交：
 
 ```powershell
@@ -104,6 +112,8 @@ pnpm bench submit CACHE-02 "C:\Users\A\Documents\BenchAnswers\cache-r1" --key ot
 ```
 
 这种方式同样不需要 DSH，也不要求网页先启动。当前内置的自动做题连接是 DSH；仅填一个普通聊天模型 API，还缺少负责读写文件和运行命令的编程 Agent。裁判模型负责评审最终代码，不负责替被测模型做题。
+
+如果要交给外部评分 Agent，平台应先导出冻结作答的评审材料，再由 Agent 返回符合协议的 JSON；Agent 不能直接修改分数。当前 `bench review` 会使用已配置的独立裁判，质量材料不足或响应无效时质量分继续显示“待定”。
 
 手工提交的记录保存在运行目录中。想看题库和这些记录时，再运行：
 
