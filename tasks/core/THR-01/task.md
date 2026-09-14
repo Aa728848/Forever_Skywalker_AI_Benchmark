@@ -24,8 +24,8 @@ export function runPool(jobs: readonly Job[], options?: PoolOptions): Promise<Po
 
 1. 每个 job 必须由 `node:worker_threads` 的**真实 worker 线程**处理（worker 入口为 `new URL('./worker.ts', import.meta.url)`），
    并把处理该 job 的 `threadId` 记入 `threadIds`；**主线程 id `0` 不得出现**。
-2. 多 job 时至少要出现两个不同的线程 id；`size` 限制**同时**进行的 worker 数量（缺省 4），
-   处理同一批 job 可以先后使用多个 worker，因此 `threadIds` 允许出现多于 `size` 个不同 id。
+2. 多 job 时至少要出现两个不同的线程 id；并发窗口由 `size` 限制（缺省 4），
+   实际使用的线程数不得超过 `size`，也不得超过 job 数量。
 3. `results` 按 job `id` 汇总（顺序无关）；worker 判定失败的 job（`payload < 0`）进入 `failures`，
    既不出现在 `results` 里，也不得影响其它 job。
 4. 空输入立即返回 `{ results: {}, failures: [], threadIds: [] }`，不创建任何线程。

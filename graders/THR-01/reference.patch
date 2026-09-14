@@ -1,11 +1,18 @@
 diff --git a/starter/src/pool.ts b/starter/src/pool.ts
-index a219918..af26c34 100644
+index 0af866b..af26c34 100644
 --- a/starter/src/pool.ts
 +++ b/starter/src/pool.ts
-@@ -16,16 +16,38 @@ interface WorkerMessage {
-   readonly error: string | null;
- }
+@@ -9,16 +9,45 @@ export interface PoolOutcome {
  
+ export interface PoolOptions { readonly size?: number }
+ 
++interface WorkerMessage {
++  readonly id: string;
++  readonly threadId: number;
++  readonly value: number | null;
++  readonly error: string | null;
++}
++
 +import { Worker } from 'node:worker_threads';
 +
 +function runOne(job: Job): Promise<WorkerMessage> {

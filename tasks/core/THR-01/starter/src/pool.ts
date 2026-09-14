@@ -9,13 +9,6 @@ export interface PoolOutcome {
 
 export interface PoolOptions { readonly size?: number }
 
-interface WorkerMessage {
-  readonly id: string;
-  readonly threadId: number;
-  readonly value: number | null;
-  readonly error: string | null;
-}
-
 export async function runPool(jobs: readonly Job[], options: PoolOptions = {}): Promise<PoolOutcome> {
   const results: Record<string, number> = {};
   const failures: string[] = [];
