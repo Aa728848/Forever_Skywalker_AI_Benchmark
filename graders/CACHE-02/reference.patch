@@ -1,0 +1,29 @@
+diff --git a/starter/src/keyed-loader.ts b/starter/src/keyed-loader.ts
+index d7d0210..8b7c5c4 100644
+--- a/starter/src/keyed-loader.ts
++++ b/starter/src/keyed-loader.ts
+@@ -35,14 +35,22 @@ export class KeyedLoader<V> {
+     if (this.#values.has(key)) return Promise.resolve(this.#values.get(key) as V);
+     const running = this.#inflight.get(key);
+     if (running !== undefined) return running;
+-    const attempt = this.#source(key).then(
++    let started: Promise<V>;
++    try {
++      started = Promise.resolve(this.#source(key));
++    } catch (error) {
++      // source 同步抛出：本次加载未建立，不保留在途记录。
++      return Promise.reject(error);
++    }
++    const attempt = started.then(
+       (value) => {
+         this.#values.set(key, value);
+         this.#inflight.delete(key);
+         return value;
+       },
+       (error: unknown) => {
+-        // 保留在途记录，让后续调用者复用同一次尝试的结果。
++        // 失败必须清理在途记录，否则被拒绝的 Promise 会被永久复用。
++        this.#inflight.delete(key);
+         throw error;
+       },
+     );

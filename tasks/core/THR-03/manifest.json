@@ -1,0 +1,143 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "THR-03",
+  "taskVersion": "0.2.0",
+  "title": "读写锁、锁外回调和异常释放",
+  "runtime": "fsharp",
+  "runtimeRange": "dotnet >= 10.0",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "dotnet",
+      "fsi",
+      "public-tests/checks.fsx"
+    ],
+    "hidden": [
+      "dotnet",
+      "fsi",
+      "__checks__/checks.fsx"
+    ]
+  },
+  "grader": {
+    "checks": "graders/THR-03/checks",
+    "referencePatch": "graders/THR-03/reference.patch",
+    "alternative": "graders/THR-03/alternative",
+    "defectDetectors": [
+      "public/readers-run-concurrently",
+      "public/releases-after-exception",
+      "hidden/concurrent-readers-meet",
+      "hidden/exception-in-read-section-releases"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/read-returns-value",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "读区回调的返回值原样返回。"
+    },
+    {
+      "id": "public/write-is-exclusive",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "写区互斥：4 线程自增结果精确且写区内 Writers 为 1。"
+    },
+    {
+      "id": "public/readers-run-concurrently",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "两个读线程必须能同时进入读区。"
+    },
+    {
+      "id": "public/releases-after-exception",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "写回调抛异常后锁必须释放，后续调用可用。"
+    },
+    {
+      "id": "public/callback-runs-inside-lock",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "读区/写区内快照计数与持锁状态一致。"
+    },
+    {
+      "id": "public/counts-return-to-zero",
+      "kind": "public",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "顺序使用后计数回到 0。"
+    },
+    {
+      "id": "hidden/concurrent-readers-meet",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "四个读线程用 Barrier 会合。"
+    },
+    {
+      "id": "hidden/exception-in-read-section-releases",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "读回调抛异常后读区与写区都仍可用。"
+    },
+    {
+      "id": "hidden/writer-completes-while-readers-arrive",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "写者与随后到达的读者都能在预算内完成。"
+    },
+    {
+      "id": "hidden/write-then-read-ordering",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "写区结果可被后续读区观察到（内存可见性）。"
+    },
+    {
+      "id": "hidden/nested-sequential-use-keeps-counts",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "200 轮顺序读写后计数回到 0 且返回值正确。"
+    }
+  ]
+}

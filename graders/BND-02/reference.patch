@@ -1,0 +1,91 @@
+diff --git a/starter/src/verdict.ts b/starter/src/verdict.ts
+index 046fdad..8c8683a 100644
+--- a/starter/src/verdict.ts
++++ b/starter/src/verdict.ts
+@@ -43,31 +43,54 @@ function toVerdict(value: unknown): Verdict {
+   return { winner, scores: normalized, rationale };
+ }
+ 
+-/** 从原始文本里取出第一个看似 JSON 对象的片段。 */
+-function extractObjectBody(raw: string): string {
+-  const match = /\{[\s\S]*\}/.exec(raw);
+-  if (match === null) throw new VerdictFormatError('missing-block', '没有找到 JSON 对象。');
+-  return match[0];
++/** 扫描成对的围栏块，只认 info 为 json 的块；未闭合的 json 围栏视为语法错误。 */
++function jsonBlocks(raw: string): string[] {
++  const lines = raw.split(/\r?\n/);
++  const bodies: string[] = [];
++  for (let index = 0; index < lines.length; index += 1) {
++    const match = /^\s*```([A-Za-z0-9_-]*)\s*$/.exec(lines[index] ?? '');
++    if (match === null) continue;
++    const info = (match[1] ?? '').toLowerCase();
++    const body: string[] = [];
++    let cursor = index + 1;
++    while (cursor < lines.length && !/^\s*```\s*$/.test(lines[cursor] ?? '')) {
++      body.push(lines[cursor] ?? '');
++      cursor += 1;
++    }
++    if (cursor >= lines.length) {
++      if (info === 'json') throw new VerdictFormatError('invalid-json', 'json 围栏块没有闭合。');
++      break;
++    }
++    if (info === 'json') bodies.push(body.join('\n'));
++    index = cursor;
++  }
++  return bodies;
++}
++
++function singleBody(raw: string): string {
++  const bodies = jsonBlocks(raw);
++  if (bodies.length === 0) throw new VerdictFormatError('missing-block', '缺少 json 围栏块。');
++  if (bodies.length > 1) throw new VerdictFormatError('multiple-blocks', '只能有一个 json 围栏块。');
++  return bodies[0] as string;
+ }
+ 
+ export function parseVerdict(raw: string): Verdict {
+-  const body = extractObjectBody(raw);
+   let parsed: unknown;
+   try {
+-    parsed = JSON.parse(body);
+-  } catch {
++    parsed = JSON.parse(singleBody(raw));
++  } catch (error) {
++    if (error instanceof VerdictFormatError) throw error;
+     throw new VerdictFormatError('invalid-json', 'JSON 解析失败。');
+   }
+   return toVerdict(parsed);
+ }
+ 
+ export function parseToolCalls(raw: string): ToolCall[] {
+-  const match = /\[[\s\S]*\]/.exec(raw);
+-  if (match === null) throw new VerdictFormatError('missing-block', '没有找到工具调用数组。');
+   let parsed: unknown;
+   try {
+-    parsed = JSON.parse(match[0]);
+-  } catch {
++    parsed = JSON.parse(singleBody(raw));
++  } catch (error) {
++    if (error instanceof VerdictFormatError) throw error;
+     throw new VerdictFormatError('invalid-json', '工具调用 JSON 解析失败。');
+   }
+   if (!Array.isArray(parsed)) throw new VerdictFormatError('invalid-arguments', '工具调用必须是数组。');
+@@ -75,9 +98,16 @@ export function parseToolCalls(raw: string): ToolCall[] {
+     if (!isRecord(item)) throw new VerdictFormatError('invalid-arguments', '第 ' + index + ' 个工具调用必须是对象。');
+     const name = item.name;
+     if (typeof name !== 'string' || name.trim() === '') throw new VerdictFormatError('invalid-arguments', '第 ' + index + ' 个工具调用缺少 name。');
+-    const args = item.arguments;
+-    if (!isRecord(args) && typeof args !== 'string') throw new VerdictFormatError('invalid-arguments', '第 ' + index + ' 个工具调用的 arguments 必须是对象或 JSON 字符串。');
+-    return { name, arguments: args as Record<string, unknown> };
++    let args = item.arguments;
++    if (typeof args === 'string') {
++      try {
++        args = JSON.parse(args);
++      } catch {
++        throw new VerdictFormatError('invalid-arguments', '第 ' + index + ' 个工具调用的 arguments 不是合法 JSON。');
++      }
++    }
++    if (!isRecord(args)) throw new VerdictFormatError('invalid-arguments', '第 ' + index + ' 个工具调用的 arguments 必须是对象。');
++    return { name, arguments: args };
+   });
+ }
+ 

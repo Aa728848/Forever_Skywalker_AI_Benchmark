@@ -1,0 +1,51 @@
+diff --git a/starter/src/replay.ts b/starter/src/replay.ts
+index 75a726c..3c4774a 100644
+--- a/starter/src/replay.ts
++++ b/starter/src/replay.ts
+@@ -22,33 +22,29 @@ function payloadBytes(event: SessionEvent): number {
+   return event.payload === undefined ? 0 : Buffer.byteLength(event.payload, 'utf8');
+ }
+ 
+-/** 长会话回放：按会话逐个重新扫描输入统计消息数。 */
++/** 单次遍历统计长会话回放结果；会话消息数用 Map 累计，不做重复扫描。 */
+ export function replaySession(events: readonly SessionEvent[]): SessionSummary {
+-  const sessions: string[] = [];
+-  for (const event of events) {
+-    const session = sessionOf(event);
+-    if (sessions.indexOf(session) < 0) sessions.push(session);
+-  }
++  const perSession = new Map<string, number>();
+   let messages = 0;
+-  for (const event of events) {
+-    if (event.kind === 'message') messages += 1;
+-  }
+   let bytes = 0;
+-  for (const event of events) {
+-    bytes += payloadBytes(event);
+-  }
+   let lastAt: number | null = null;
+   for (const event of events) {
++    const session = sessionOf(event);
++    if (!perSession.has(session)) perSession.set(session, 0);
++    if (event.kind === 'message') {
++      messages += 1;
++      perSession.set(session, (perSession.get(session) as number) + 1);
++    }
++    bytes += payloadBytes(event);
+     if (lastAt === null || event.at > lastAt) lastAt = event.at;
+   }
+   let longestSession: { id: string; messages: number } | null = null;
+-  for (const session of sessions) {
+-    const count = events.filter(item => sessionOf(item) === session && item.kind === 'message').length;
++  for (const [id, count] of perSession) {
+     if (count === 0) continue;
+-    if (longestSession === null || count > longestSession.messages || (count === longestSession.messages && session < longestSession.id)) {
+-      longestSession = { id: session, messages: count };
++    if (longestSession === null || count > longestSession.messages || (count === longestSession.messages && id < longestSession.id)) {
++      longestSession = { id, messages: count };
+     }
+   }
+-  return { sessions: sessions.length, messages, bytes, lastAt, longestSession };
++  return { sessions: perSession.size, messages, bytes, lastAt, longestSession };
+ }
+ 

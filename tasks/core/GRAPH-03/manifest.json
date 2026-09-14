@@ -1,0 +1,156 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "GRAPH-03",
+  "taskVersion": "0.1.0",
+  "title": "深层 AST 遍历与栈安全",
+  "runtime": "typescript",
+  "runtimeRange": "node >=24.14.1 <25",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "public-tests/**/*.test.ts"
+    ],
+    "hidden": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "__checks__/**/*.test.ts"
+    ]
+  },
+  "grader": {
+    "checks": "graders/GRAPH-03/checks",
+    "referencePatch": "graders/GRAPH-03/reference.patch",
+    "alternative": "graders/GRAPH-03/alternative",
+    "defectDetectors": [
+      "public/does-not-overflow-on-deep-input",
+      "public/max-depth-honours-limit",
+      "hidden/deep-chain-postorder-matches-differential",
+      "hidden/deep-chain-preorder-order",
+      "hidden/max-depth-large-tree-limit"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/postorder-visits-children-first",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "后序顺序为先子后父、兄弟按索引升序。"
+    },
+    {
+      "id": "public/preorder-matches-recursive-reference",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "前序结果与递归差分参考一致。"
+    },
+    {
+      "id": "public/does-not-overflow-on-deep-input",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "深度 20 万链式输入不栈溢出，遍历数量与顺序正确。"
+    },
+    {
+      "id": "public/max-depth-honours-limit",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "超过 limit 抛 DepthExceededError 且携带 limit。"
+    },
+    {
+      "id": "public/rejects-malformed-nodes",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "非法 children 与非法子节点抛 InvalidNodeError。"
+    },
+    {
+      "id": "public/repeated-walks-are-deterministic",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "重复遍历结果一致且不修改输入。"
+    },
+    {
+      "id": "hidden/deep-chain-postorder-matches-differential",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "深度 20 万的后序序列与逐节点期望完全一致。"
+    },
+    {
+      "id": "hidden/deep-chain-preorder-order",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "深度 12 万的前序首尾与长度正确。"
+    },
+    {
+      "id": "hidden/max-depth-large-tree-limit",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "大树在 limit 内返回真实深度，超出立即抛错。"
+    },
+    {
+      "id": "hidden/wide-fanout-within-budget",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "10 万扇出的遍历在预算内完成且顺序正确。"
+    },
+    {
+      "id": "hidden/malformed-paths-are-precise",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "InvalidNodeError 的 path 指到具体出错位置。"
+    },
+    {
+      "id": "hidden/empty-children-equals-missing",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "空 children 与缺省 children 行为一致。"
+    }
+  ]
+}

@@ -1,0 +1,60 @@
+diff --git a/starter/src/ReadWriteGate.fsx b/starter/src/ReadWriteGate.fsx
+index ef759ad..bc00532 100644
+--- a/starter/src/ReadWriteGate.fsx
++++ b/starter/src/ReadWriteGate.fsx
+@@ -5,28 +5,41 @@ open System.Threading
+ 
+ type Snapshot = { Readers: int; Writers: int; Waiters: int }
+ 
+-/// 读写锁：用一个监视器保护全部临界区。
++/// 读写锁：读可并发；存在等待中的写者时新读者排队；回调抛异常也会释放。
+ type Gate() =
+     let sync = obj ()
+     let mutable readers = 0
+     let mutable writers = 0
++    let mutable waitingWriters = 0
+ 
+     member _.Snapshot() : Snapshot =
+-        { Readers = readers; Writers = writers; Waiters = 0 }
++        lock sync (fun () -> { Readers = readers; Writers = writers; Waiters = waitingWriters })
+ 
+     member _.WithRead<'T>(action: unit -> 'T) : 'T =
+-        Monitor.Enter sync
+-        readers <- readers + 1
+-        let result = action ()
+-        readers <- readers - 1
+-        Monitor.Exit sync
+-        result
++        lock sync (fun () ->
++            while writers > 0 || waitingWriters > 0 do
++                Monitor.Wait sync |> ignore
++            readers <- readers + 1)
++        try
++            action ()
++        finally
++            lock sync (fun () ->
++                readers <- readers - 1
++                if readers = 0 then Monitor.PulseAll sync)
+ 
+     member _.WithWrite<'T>(action: unit -> 'T) : 'T =
+-        Monitor.Enter sync
+-        writers <- writers + 1
+-        let result = action ()
+-        writers <- writers - 1
+-        Monitor.Exit sync
+-        result
++        lock sync (fun () ->
++            waitingWriters <- waitingWriters + 1
++            try
++                while writers > 0 || readers > 0 do
++                    Monitor.Wait sync |> ignore
++            finally
++                waitingWriters <- waitingWriters - 1
++            writers <- 1)
++        try
++            action ()
++        finally
++            lock sync (fun () ->
++                writers <- 0
++                Monitor.PulseAll sync)
+ 

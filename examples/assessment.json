@@ -1,0 +1,128 @@
+{
+  "schemaVersion": "0.1.0",
+  "mode": "preview",
+  "taskId": "CACHE-01",
+  "candidateHash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "execution": "complete",
+  "functional": {
+    "behavior": {
+      "score": 90,
+      "evidence": [
+        "demo-test"
+      ]
+    },
+    "boundary": {
+      "score": 90,
+      "evidence": [
+        "demo-test"
+      ]
+    },
+    "state": {
+      "score": 90,
+      "evidence": [
+        "demo-test"
+      ]
+    },
+    "regression": {
+      "score": 90,
+      "evidence": [
+        "demo-test"
+      ]
+    },
+    "resources": {
+      "score": 90,
+      "evidence": [
+        "demo-test"
+      ]
+    }
+  },
+  "quality": {
+    "simplicity": {
+      "objective": {
+        "score": 80,
+        "evidence": [
+          "demo-static"
+        ]
+      },
+      "review": {
+        "score": 80,
+        "evidence": [
+          "demo-review"
+        ]
+      }
+    },
+    "maintainability": {
+      "objective": {
+        "score": 80,
+        "evidence": [
+          "demo-static"
+        ]
+      },
+      "review": {
+        "score": 80,
+        "evidence": [
+          "demo-review"
+        ]
+      }
+    },
+    "decoupling": {
+      "objective": {
+        "score": 80,
+        "evidence": [
+          "demo-static"
+        ]
+      },
+      "review": {
+        "score": 80,
+        "evidence": [
+          "demo-review"
+        ]
+      }
+    },
+    "performance": {
+      "objective": {
+        "score": 80,
+        "evidence": [
+          "demo-benchmark"
+        ]
+      },
+      "review": {
+        "score": 80,
+        "evidence": [
+          "demo-review"
+        ]
+      }
+    }
+  },
+  "criticalChecks": [
+    {
+      "id": "demo-critical",
+      "passed": true,
+      "evidence": [
+        "demo-test"
+      ]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "demo-test",
+      "kind": "test",
+      "summary": "示例夹具：假设各可用检查获得 90 分；不是实际候选运行结果。"
+    },
+    {
+      "id": "demo-static",
+      "kind": "static",
+      "summary": "示例夹具：假设静态检查获得 80 分。"
+    },
+    {
+      "id": "demo-benchmark",
+      "kind": "benchmark",
+      "summary": "示例夹具：假设性能测量获得 80 分；未运行性能实验。"
+    },
+    {
+      "id": "demo-review",
+      "kind": "review",
+      "summary": "示例夹具：假设独立评审获得 80 分；未调用模型。"
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+diff --git a/starter/src/feed.ts b/starter/src/feed.ts
+index 4eb0e6d..9bc3c12 100644
+--- a/starter/src/feed.ts
++++ b/starter/src/feed.ts
+@@ -19,6 +19,7 @@ export class FeedController {
+   readonly #view: FeedView;
+   #items: FeedItem[] = [];
+   #cursor: string | null = null;
++  #pending: string | null = null;
+   #busy = false;
+   #error: string | null = null;
+ 
+@@ -39,32 +40,46 @@ export class FeedController {
+     return this.#error;
+   }
+ 
++  /** 加载下一页；busy 期间的调用直接返回，不发起第二次加载。 */
+   async loadMore(): Promise<void> {
+     if (this.#busy) return;
+     await this.#fetch(this.#cursor);
+   }
+ 
++  /** 重试最近一次失败的分页；没有失败时等同 loadMore。 */
+   async retry(): Promise<void> {
+     if (this.#busy) return;
+-    await this.#fetch(this.#cursor);
++    await this.#fetch(this.#pending ?? this.#cursor);
+   }
+ 
+   async #fetch(cursor: string | null): Promise<void> {
+     this.#busy = true;
+     this.#view.setBusy(true);
++    let page: FeedPage;
+     try {
+-      const page = await this.#load(cursor);
+-      for (const item of page.items) this.#items.push(item);
+-      this.#cursor = page.cursor;
+-      this.#error = null;
+-      this.#busy = false;
+-      this.#view.setBusy(false);
+-      this.#view.setError(null);
+-      this.#view.render([...this.#items]);
++      page = await this.#load(cursor);
+     } catch (error) {
++      // 失败：恢复 busy，保留 items 与 cursor，并记住待重试的分页。
++      this.#busy = false;
+       this.#error = error instanceof Error ? error.message : String(error);
++      this.#pending = cursor;
++      this.#view.setBusy(false);
+       this.#view.setError(this.#error);
++      return;
++    }
++    const known = new Set(this.#items.map(item => item.id));
++    for (const item of page.items) {
++      if (known.has(item.id)) continue;
++      known.add(item.id);
++      this.#items.push(item);
+     }
++    this.#cursor = page.cursor;
++    this.#pending = null;
++    this.#error = null;
++    this.#busy = false;
++    this.#view.setBusy(false);
++    this.#view.setError(null);
++    this.#view.render([...this.#items]);
+   }
+ }
+ 

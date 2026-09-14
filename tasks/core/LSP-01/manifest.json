@@ -1,0 +1,153 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "LSP-01",
+  "taskVersion": "0.1.0",
+  "title": "JSON-RPC 消息边界",
+  "runtime": "fsharp",
+  "runtimeRange": "dotnet >= 10.0",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "dotnet",
+      "fsi",
+      "public-tests/checks.fsx"
+    ],
+    "hidden": [
+      "dotnet",
+      "fsi",
+      "__checks__/checks.fsx"
+    ]
+  },
+  "grader": {
+    "checks": "graders/LSP-01/checks",
+    "referencePatch": "graders/LSP-01/reference.patch",
+    "alternative": "graders/LSP-01/alternative",
+    "defectDetectors": [
+      "public/parses-multiple-concatenated-messages",
+      "public/keeps-incomplete-tail",
+      "public/multibyte-body-uses-byte-length",
+      "hidden/byte-by-byte-stitching",
+      "hidden/multibyte-with-emoji",
+      "hidden/does-not-consume-complete-prefix"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/parses-single-ascii-message",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "单条 ASCII 消息被正确解析。"
+    },
+    {
+      "id": "public/parses-multiple-concatenated-messages",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "一次读取中的多条消息全部解析且顺序正确。"
+    },
+    {
+      "id": "public/keeps-incomplete-tail",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "不完整消息的原始字节必须保留。"
+    },
+    {
+      "id": "public/multibyte-body-uses-byte-length",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "Content-Length 按字节计量，多字节正文正确。"
+    },
+    {
+      "id": "public/rejects-missing-content-length",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "缺少 Content-Length 报 missing content-length。"
+    },
+    {
+      "id": "public/rejects-invalid-content-length",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "非法长度报 invalid content-length。"
+    },
+    {
+      "id": "public/header-name-is-case-insensitive",
+      "kind": "public",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "头部名大小写不敏感。"
+    },
+    {
+      "id": "hidden/byte-by-byte-stitching",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "逐字节喂入时拼接、解析与剩余字节都正确。"
+    },
+    {
+      "id": "hidden/multibyte-with-emoji",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "emoji 与中文混合正文按字节边界解析。"
+    },
+    {
+      "id": "hidden/missing-field-is-error",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "多头部且缺长度字段时仍然报错。"
+    },
+    {
+      "id": "hidden/empty-body-is-valid",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "长度为 0 的消息合法。"
+    },
+    {
+      "id": "hidden/does-not-consume-complete-prefix",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "完整消息之后的头部前缀必须原样保留。"
+    }
+  ]
+}

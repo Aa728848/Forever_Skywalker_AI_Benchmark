@@ -1,0 +1,175 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "BND-02",
+  "taskVersion": "0.1.0",
+  "title": "严格裁判输出和嵌套工具参数",
+  "runtime": "typescript",
+  "runtimeRange": "node >=24.14.1 <25",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "public-tests/**/*.test.ts"
+    ],
+    "hidden": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "__checks__/**/*.test.ts"
+    ]
+  },
+  "grader": {
+    "checks": "graders/BND-02/checks",
+    "referencePatch": "graders/BND-02/reference.patch",
+    "alternative": "graders/BND-02/alternative",
+    "defectDetectors": [
+      "public/prose-braces-are-ignored",
+      "public/rejects-missing-block",
+      "public/rejects-multiple-blocks",
+      "public/tool-arguments-string-form",
+      "hidden/rejects-unterminated-json-fence",
+      "hidden/non-json-fences-are-ignored",
+      "hidden/tool-arguments-nested-escapes",
+      "hidden/invalid-arguments-shape"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/parses-single-json-block",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "单个 json 围栏块能被正确解析。"
+    },
+    {
+      "id": "public/prose-braces-are-ignored",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "围栏外的花括号与反引号不影响解析。"
+    },
+    {
+      "id": "public/rejects-missing-block",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "缺少 json 围栏块时抛 missing-block。"
+    },
+    {
+      "id": "public/rejects-multiple-blocks",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "多个 json 围栏块时抛 multiple-blocks。"
+    },
+    {
+      "id": "public/validates-shape-and-scores",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "非法 JSON 与非法结构分别抛 invalid-json / invalid-shape。"
+    },
+    {
+      "id": "public/tool-arguments-string-form",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "再编码一层的 arguments 字符串必须被解析成对象。"
+    },
+    {
+      "id": "public/tool-calls-preserve-order",
+      "kind": "public",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "工具调用顺序与输入一致。"
+    },
+    {
+      "id": "public/bounded-on-large-input",
+      "kind": "public",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "大输入的解析在预算内完成且结果正确。"
+    },
+    {
+      "id": "hidden/rejects-unterminated-json-fence",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "未闭合的 json 围栏块抛 invalid-json。"
+    },
+    {
+      "id": "hidden/non-json-fences-are-ignored",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "其它 info 的围栏块内的花括号被忽略。"
+    },
+    {
+      "id": "hidden/tool-arguments-nested-escapes",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "嵌套转义、中文与 emoji 的参数字符串正确解析。"
+    },
+    {
+      "id": "hidden/invalid-arguments-shape",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "工具调用的各类结构问题统一抛 invalid-arguments。"
+    },
+    {
+      "id": "hidden/scores-boundaries",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "分数边界 0/100 合法，越界与小数值非法。"
+    },
+    {
+      "id": "hidden/does-not-mutate-input",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "重复解析结果一致且不修改输入。"
+    }
+  ]
+}

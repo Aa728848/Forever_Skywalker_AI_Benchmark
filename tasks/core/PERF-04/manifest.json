@@ -1,0 +1,145 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "PERF-04",
+  "taskVersion": "0.1.0",
+  "title": "长会话重放的延迟、吞吐与内存预算",
+  "runtime": "typescript",
+  "runtimeRange": "node >=24.14.1 <25",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "public-tests/**/*.test.ts"
+    ],
+    "hidden": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "__checks__/**/*.test.ts"
+    ]
+  },
+  "grader": {
+    "checks": "graders/PERF-04/checks",
+    "referencePatch": "graders/PERF-04/reference.patch",
+    "alternative": "graders/PERF-04/alternative",
+    "defectDetectors": [
+      "public/input-accesses-are-linear",
+      "hidden/scaling-ratio-is-subquadratic"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/counts-sessions-and-messages",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "会话数与消息数与朴素参考一致。"
+    },
+    {
+      "id": "public/bytes-counts-utf8",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "payload 按 UTF-8 字节计数。"
+    },
+    {
+      "id": "public/last-at-and-empty-input",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "空输入与乱序 at 的边界语义。"
+    },
+    {
+      "id": "public/longest-session-tie-break",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "并列时取字典序最小的会话 id。"
+    },
+    {
+      "id": "public/matches-naive-reference",
+      "kind": "public",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "多组固定种子输入与差分参考完全一致。"
+    },
+    {
+      "id": "public/input-accesses-are-linear",
+      "kind": "public",
+      "group": "resources",
+      "weight": 1,
+      "critical": true,
+      "summary": "对输入的元素访问次数必须是 O(n)。"
+    },
+    {
+      "id": "hidden/scaling-ratio-is-subquadratic",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": true,
+      "summary": "4 倍规模下访问次数比值必须亚二次。"
+    },
+    {
+      "id": "hidden/unique-sessions-per-event",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "每个事件独立会话时的统计正确。"
+    },
+    {
+      "id": "hidden/default-session-is-empty-string",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "缺省 session 按空串聚合。"
+    },
+    {
+      "id": "hidden/does-not-mutate-input",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "重复重放结果一致且不修改输入。"
+    },
+    {
+      "id": "hidden/timing-samples-are-bounded",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "记录原始耗时样本并守住宽松上限。"
+    }
+  ]
+}

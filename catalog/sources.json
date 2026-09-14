@@ -1,0 +1,113 @@
+[
+  {
+    "id": "cwtools-vscode",
+    "head": "753a0d7c2df1f4285911febf2d10a949887f4499",
+    "license": "MIT",
+    "runtime": "TypeScript + F# / .NET 10",
+    "evidence": [
+      "src/LSP/DocumentStore.Tests.fsx",
+      "src/Main/RefreshLockIntegration.Tests.fsx",
+      ".agents/notes/README.md"
+    ],
+    "focus": "LSP 增量文本、文档生命周期、读写锁与安全发布；Agent Notes 记录体系",
+    "localPath": "C:/Users/A/Documents/cwtools-vscode",
+    "inspectedAt": "2026-09-14",
+    "trackedChanges": 0,
+    "originalTestSuiteExecuted": false
+  },
+  {
+    "id": "deepseek-harness",
+    "head": "2377c272a8e839e0a84c9f0e623b867a1dce2014",
+    "license": "MIT",
+    "runtime": "TypeScript / Node + 浏览器 + 原生组件",
+    "evidence": [
+      "benchmarks/support/calibration.ts",
+      "benchmarks/active-stream-reconnect/README.zh.md",
+      "benchmarks/agent-continuation/agent-continuation.bench.ts"
+    ],
+    "focus": "长会话、续跑、流重连、独立 worker 性能和保留堆",
+    "localPath": "C:/Users/A/Documents/deepseek-harness",
+    "inspectedAt": "2026-09-14",
+    "trackedChanges": 0,
+    "originalTestSuiteExecuted": false
+  },
+  {
+    "id": "dsh-chatgpt-subscription",
+    "head": "464c98c2a506cdcc9768ef0b49731ba8aa429a90",
+    "license": "MIT",
+    "runtime": "TypeScript + React",
+    "evidence": [
+      "test/oauth-service.test.ts",
+      "test/idle-watchdog.test.ts",
+      "test/responses-client.test.ts"
+    ],
+    "focus": "认证刷新合并、注销竞争、流式参数解析和取消",
+    "localPath": "C:/Users/A/Documents/dsh-chatgpt-subscription",
+    "inspectedAt": "2026-09-14",
+    "trackedChanges": 0,
+    "originalTestSuiteExecuted": false
+  },
+  {
+    "id": "dsh-llm-verifier",
+    "head": "1a6b4151b8036203749e1b202b01395319a1578a",
+    "license": "MIT",
+    "runtime": "TypeScript + DSH 插件",
+    "evidence": [
+      "src/cache.test.ts",
+      "src/auto.test.ts",
+      "src/parity.test.ts"
+    ],
+    "focus": "并发冷启动缓存、当前证据验收、重复与失效判决",
+    "localPath": "C:/Users/A/Documents/dsh-llm-verifier",
+    "inspectedAt": "2026-09-14",
+    "trackedChanges": 0,
+    "originalTestSuiteExecuted": false
+  },
+  {
+    "id": "dsh-trading",
+    "head": "b6cf5535093cdc43fc61a7037d997bace7fb0e6d",
+    "license": "PolyForm Noncommercial License 1.0.0（仓库 LICENSE 标注）",
+    "runtime": "TypeScript + React + 连接器",
+    "evidence": [
+      "packages/client-ui-trading/test/ttl-cache.test.ts",
+      "packages/knowledge/test/graph.test.ts",
+      "packages/dsh-home/test/fs-atomic.test.ts"
+    ],
+    "focus": "TTL/LRU、图统计规模增长、原子持久化、模拟账本",
+    "localPath": "C:/Users/A/Documents/dsh-trading",
+    "inspectedAt": "2026-09-14",
+    "trackedChanges": 0,
+    "originalTestSuiteExecuted": false
+  },
+  {
+    "id": "dsh-web",
+    "head": "f499828c71b79a8968fba7226c93c76304239879",
+    "license": "Apache-2.0",
+    "runtime": "TypeScript + Web/宿主插件",
+    "evidence": [
+      "packages/dsh-ssh/src/engine.ts",
+      "packages/dsh-plugin-manager/tests/gateway-jobs.spec.ts"
+    ],
+    "focus": "连接池和隧道生命周期、插件重复挂载和失败恢复",
+    "localPath": "C:/Users/A/Documents/dsh-web",
+    "inspectedAt": "2026-09-14",
+    "trackedChanges": 0,
+    "originalTestSuiteExecuted": false
+  },
+  {
+    "id": "llm-as-a-verifier",
+    "head": "8db8a114355a9d7fdf9a8d1d5c87f6aeebd18770",
+    "license": "MIT",
+    "runtime": "Python",
+    "evidence": [
+      "llm_verifier/pivot_tournament.py",
+      "llm_verifier/fine_grained_reward.py",
+      "pyproject.toml"
+    ],
+    "focus": "线程池、裁判输出解析、概率聚合、种子与跨语言差异",
+    "localPath": "C:/Users/A/Documents/llm-as-a-verifier",
+    "inspectedAt": "2026-09-14",
+    "trackedChanges": 0,
+    "originalTestSuiteExecuted": false
+  }
+]

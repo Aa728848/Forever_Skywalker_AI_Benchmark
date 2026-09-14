@@ -1,0 +1,199 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "CACHE-02",
+  "taskVersion": "0.1.0",
+  "title": "同键加载合并与失败恢复",
+  "runtime": "typescript",
+  "runtimeRange": "node >=24.14.1 <25",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "package.json",
+        "to": "package.json"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "public-tests/**/*.test.ts"
+    ],
+    "hidden": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "__checks__/**/*.test.ts"
+    ]
+  },
+  "grader": {
+    "checks": "graders/CACHE-02/checks",
+    "referencePatch": "graders/CACHE-02/reference.patch",
+    "alternative": "graders/CACHE-02/alternative",
+    "defectDetectors": [
+      "public/retry-after-failure",
+      "public/sync-throw-becomes-rejection",
+      "hidden/no-cache-of-rejected-attempt",
+      "hidden/retry-then-coalesce-again"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/same-key-concurrent-single-load",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "同键并发只调用一次 source，全部调用者都拿到结果。"
+    },
+    {
+      "id": "public/joins-return-same-value",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "加入同一次加载的调用者得到同一个值引用。"
+    },
+    {
+      "id": "public/cached-value-without-source",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "成功结果被缓存，后续 load 不再调用 source。"
+    },
+    {
+      "id": "public/distinct-keys-load-concurrently",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "不同 key 的加载互不阻塞，不串行化。"
+    },
+    {
+      "id": "public/failure-rejects-every-caller",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "失败向同一次加载的全部调用者传播，且只调用一次 source。"
+    },
+    {
+      "id": "public/retry-after-failure",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "失败不缓存，下一次 load 重新调用 source 并可成功。"
+    },
+    {
+      "id": "public/sync-throw-becomes-rejection",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "source 同步抛出时 load 返回被拒绝的 Promise 而不是同步抛出。"
+    },
+    {
+      "id": "public/cache-introspection-api",
+      "kind": "public",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "has/delete/size/clear 的既有语义保持不变。"
+    },
+    {
+      "id": "hidden/three-way-single-load",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "三方并发只调用一次 source 且结果一致。"
+    },
+    {
+      "id": "hidden/joined-callers-same-error-identity",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "非 Error 拒绝值也按同一对象传播。"
+    },
+    {
+      "id": "hidden/no-cache-of-rejected-attempt",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "被拒绝的尝试不进入缓存，也不留下在途记录。"
+    },
+    {
+      "id": "hidden/retry-then-coalesce-again",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "失败后的重试自身仍然合并，只再调用一次 source。"
+    },
+    {
+      "id": "hidden/delete-during-inflight-keeps-result",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "delete 不作用于在途加载，结算后仍写入缓存。"
+    },
+    {
+      "id": "hidden/clear-does-not-affect-inflight",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "clear 只清理已缓存值，在途加载结算后仍写入缓存。"
+    },
+    {
+      "id": "hidden/keys-are-not-serialized",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "三个不同 key 在同一同步轮次内全部启动加载。"
+    },
+    {
+      "id": "hidden/key-identity-is-exact-string",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "大小写不同的字符串是不同键。"
+    },
+    {
+      "id": "hidden/no-retention-growth-across-failures",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "连续失败不产生可观察的保留增长，能终止且有界。"
+    }
+  ]
+}

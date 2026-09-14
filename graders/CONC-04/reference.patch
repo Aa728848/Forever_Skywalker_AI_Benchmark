@@ -1,0 +1,78 @@
+diff --git a/starter/src/job-runner.ts b/starter/src/job-runner.ts
+index 39d061c..6d25bf9 100644
+--- a/starter/src/job-runner.ts
++++ b/starter/src/job-runner.ts
+@@ -41,6 +41,16 @@ function emptyCheckpoint(): Checkpoint {
+   return { committed: [], pending: [], lastSeq: 0, processed: [], effects: [] };
+ }
+ 
++function cloneCheckpoint(source: Checkpoint): Checkpoint {
++  return {
++    committed: [...source.committed],
++    pending: [...source.pending],
++    lastSeq: source.lastSeq,
++    processed: [...source.processed],
++    effects: [...source.effects],
++  };
++}
++
+ function readCheckpoint(store: JobStore): Checkpoint {
+   const raw = store.read(checkpointKey);
+   if (raw === null) return emptyCheckpoint();
+@@ -83,7 +93,7 @@ function orderEvents(events: readonly JobEvent[]): JobEvent[] {
+ export class JobRunner {
+   readonly #store: JobStore;
+   readonly #effects: EffectLedger;
+-  readonly #checkpoint: Checkpoint;
++  #checkpoint: Checkpoint;
+ 
+   constructor(store: JobStore, effects: EffectLedger) {
+     this.#store = store;
+@@ -104,17 +114,42 @@ export class JobRunner {
+   }
+ 
+   #run(events: readonly JobEvent[]): ApplyOutcome {
++    this.#settlePendingEffects();
+     const applied: string[] = [];
+     const skipped: string[] = [];
+     for (const event of orderEvents(events)) {
+-      this.#effects.apply(event.id);
+-      applyToState(this.#checkpoint, event);
+-      this.#checkpoint.processed.push(event.id);
+-      this.#checkpoint.lastSeq = event.seq;
+-      this.#store.write(checkpointKey, JSON.stringify(this.#checkpoint));
++      if (this.#checkpoint.processed.includes(event.id) || event.seq <= this.#checkpoint.lastSeq) {
++        skipped.push(event.id);
++        continue;
++      }
++      const next = cloneCheckpoint(this.#checkpoint);
++      next.processed.push(event.id);
++      next.lastSeq = event.seq;
++      applyToState(next, event);
++      next.effects = [...next.effects, event.id];
++      this.#persist(next);
++      if (!this.#effects.has(event.id)) this.#effects.apply(event.id);
++      const settled = cloneCheckpoint(this.#checkpoint);
++      settled.effects = settled.effects.filter(id => id !== event.id);
++      this.#persist(settled);
+       applied.push(event.id);
+     }
+     return { applied, skipped };
+   }
++
++  /** 恢复时先补齐已记录但尚未确认的副作用；账本才是是否已执行的权威。 */
++  #settlePendingEffects(): void {
++    for (const effectId of [...this.#checkpoint.effects]) {
++      if (!this.#effects.has(effectId)) this.#effects.apply(effectId);
++      const next = cloneCheckpoint(this.#checkpoint);
++      next.effects = next.effects.filter(id => id !== effectId);
++      this.#persist(next);
++    }
++  }
++
++  #persist(next: Checkpoint): void {
++    this.#store.write(checkpointKey, JSON.stringify(next));
++    this.#checkpoint = next;
++  }
+ }
+ 

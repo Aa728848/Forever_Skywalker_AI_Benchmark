@@ -1,0 +1,97 @@
+diff --git a/starter/src/ast.ts b/starter/src/ast.ts
+index ddb8ac8..0602a68 100644
+--- a/starter/src/ast.ts
++++ b/starter/src/ast.ts
+@@ -40,50 +40,62 @@ function assertRoot(root: AstNode): void {
+   if (!isNode(root)) throw new InvalidNodeError('root');
+ }
+ 
+-/** 后序遍历（递归实现）。 */
+-function visitPostOrder(node: AstNode, path: string, visit: (node: AstNode) => void): number {
+-  const children = childrenOf(node, path);
+-  let visited = 0;
+-  for (let index = 0; index < children.length; index += 1) {
+-    visited += visitPostOrder(children[index] as AstNode, path + '.children[' + index + ']', visit);
+-  }
+-  visit(node);
+-  return visited + 1;
+-}
+-
++/**
++ * 后序遍历：显式栈代替递归，深度 20 万也不依赖调用栈。
++ */
+ export function walkPostOrder(root: AstNode, visit: (node: AstNode) => void): number {
+   assertRoot(root);
+-  return visitPostOrder(root, 'root', visit);
++  interface Frame { node: AstNode; path: string; children: readonly AstNode[]; index: number }
++  const stack: Frame[] = [{ node: root, path: 'root', children: childrenOf(root, 'root'), index: 0 }];
++  let visited = 0;
++  while (stack.length > 0) {
++    const frame = stack[stack.length - 1] as Frame;
++    if (frame.index < frame.children.length) {
++      const index = frame.index;
++      const child = frame.children[index] as AstNode;
++      frame.index = index + 1;
++      const path = frame.path + '.children[' + index + ']';
++      stack.push({ node: child, path, children: childrenOf(child, path), index: 0 });
++      continue;
++    }
++    visit(frame.node);
++    visited += 1;
++    stack.pop();
++  }
++  return visited;
+ }
+ 
+-/** 前序 type 列表（递归实现）。 */
++/** 前序 type 列表：同一次遍历同时校验结构。 */
+ export function flattenPreOrder(root: AstNode): string[] {
+   assertRoot(root);
+   const types: string[] = [];
+-  const walk = (node: AstNode, path: string): void => {
+-    types.push(node.type);
+-    const children = childrenOf(node, path);
+-    for (let index = 0; index < children.length; index += 1) {
+-      walk(children[index] as AstNode, path + '.children[' + index + ']');
++  const stack: Array<{ node: AstNode; path: string }> = [{ node: root, path: 'root' }];
++  while (stack.length > 0) {
++    const frame = stack.pop() as { node: AstNode; path: string };
++    types.push(frame.node.type);
++    const children = childrenOf(frame.node, frame.path);
++    for (let index = children.length - 1; index >= 0; index -= 1) {
++      stack.push({ node: children[index] as AstNode, path: frame.path + '.children[' + index + ']' });
+     }
+-  };
+-  walk(root, 'root');
++  }
+   return types;
+ }
+ 
+-/** 最大深度（递归实现）。 */
++/** 最大深度（根为 1）；超过 limit 立即以 DepthExceededError 结束，不做完整遍历。 */
+ export function maxDepth(root: AstNode, limit: number): number {
+   assertRoot(root);
+   if (!Number.isInteger(limit) || limit < 1) throw new RangeError('limit 必须是大于等于 1 的整数');
+-  const walk = (node: AstNode, path: string, depth: number): number => {
+-    let deepest = depth;
+-    const children = childrenOf(node, path);
+-    for (let index = 0; index < children.length; index += 1) {
+-      const child = walk(children[index] as AstNode, path + '.children[' + index + ']', depth + 1);
+-      if (child > deepest) deepest = child;
++  let deepest = 0;
++  const stack: Array<{ node: AstNode; path: string; depth: number }> = [{ node: root, path: 'root', depth: 1 }];
++  while (stack.length > 0) {
++    const frame = stack.pop() as { node: AstNode; path: string; depth: number };
++    if (frame.depth > limit) throw new DepthExceededError(limit);
++    if (frame.depth > deepest) deepest = frame.depth;
++    const children = childrenOf(frame.node, frame.path);
++    for (let index = children.length - 1; index >= 0; index -= 1) {
++      stack.push({ node: children[index] as AstNode, path: frame.path + '.children[' + index + ']', depth: frame.depth + 1 });
+     }
+-    return deepest;
+-  };
+-  return walk(root, 'root', 1);
++  }
++  return deepest;
+ }
+ 

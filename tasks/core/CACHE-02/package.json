@@ -1,0 +1,12 @@
+{
+  "name": "cache-02-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.14.1 <25"
+  },
+  "scripts": {
+    "test": "node --test --test-isolation=none --test-reporter=tap \"public-tests/**/*.test.ts\""
+  }
+}

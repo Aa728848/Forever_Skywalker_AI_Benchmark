@@ -1,0 +1,601 @@
+import { spawn, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { availableParallelism, arch, platform, totalmem } from 'node:os';
+import { basename, join, relative, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { resolve } from 'node:path';
+import {
+  executionResultValidator, explainExecutionResult, runStatusValidator,
+  type ExecutionArtifact, type ExecutionCheck, type ExecutionClassification,
+  type ExecutionManifest, type ExecutionResult, type RunStatus, type TaskManifest,
+} from '@fsa/contracts';
+import { appendRunEvent, type RunStore, type SubmissionOutcome } from '@fsa/runs';
+import { installHiddenChecks, parseTap, type CheckOutcome } from '@fsa/tasks';
+import {
+  InfrastructureUnavailableError, buildContainerArgv, buildContainerInvocation,
+  defaultPidsLimit, hiddenChecksMount, isContainerRuntimeFailure, probeContainerRuntime, requirePinnedImage,
+  type ContainerRuntime,
+} from './container.ts';
+
+export { InfrastructureUnavailableError } from './container.ts';
+
+/**
+ * 最小独立执行器：只从冻结快照物化被测对象，只运行平台白名单里的固定命令，
+ * 自己解析检查结果与资源原始数据，并把基础设施故障与被测失败分开。
+ * 本机 profile=local 时没有容器隔离，也不阻断网络，结果必须按此口径解读。
+ */
+const samplerUrl = new URL('./resource-sampler.mjs', import.meta.url).href;
+const samplerHostPath = fileURLToPath(new URL('./resource-sampler.mjs', import.meta.url));
+/** 仓库根目录：受信侧的 graders/ 隐藏资产从仓库读取，绝不从候选工作区读取。 */
+const repositoryRoot = resolve(fileURLToPath(new URL('../../../', import.meta.url)));
+
+export interface PhaseResource {
+  peakRssBytes: number | null;
+  userCpuMs: number | null;
+  systemCpuMs: number | null;
+  sampler: string;
+}
+
+/** 自定义传输：容器档案用 docker 调用替换本地的直接命令。 */
+export interface PhaseTransport {
+  argv: string[];
+  cwd: string;
+  env: NodeJS.ProcessEnv;
+  reportHostPath: string;
+}
+
+export interface PhaseExecution {
+  kind: 'public' | 'hidden';
+  isolation: 'none' | 'container';
+  declaredCommand: string[];
+  argv: string[];
+  cwd: string;
+  timeoutMs: number;
+  exitCode: number | null;
+  signal: string | null;
+  timedOut: boolean;
+  cancelled: boolean;
+  spawnError: string | null;
+  durationMs: number;
+  stdout: string;
+  stderr: string;
+  stdoutPath: string;
+  stderrPath: string;
+  reportPath: string;
+  resource: PhaseResource;
+  outcomes: CheckOutcome[];
+}
+
+export interface RunPhaseOptions {
+  kind: 'public' | 'hidden';
+  declaredCommand: readonly string[];
+  workspace: string;
+  artifactDir: string;
+  timeoutMs: number;
+  memoryMb: number;
+  signal?: AbortSignal;
+  transport?: PhaseTransport;
+}
+
+/** 只透传运行必需的变量：代理与凭据不进入被测进程。 */
+function childEnvironment(reportPath: string): NodeJS.ProcessEnv {
+  const environment: NodeJS.ProcessEnv = {
+    PATH: process.env.PATH ?? '',
+    FSA_RESOURCE_REPORT: reportPath,
+  };
+  for (const key of ['SystemRoot', 'windir', 'PATHEXT', 'TEMP', 'TMP', 'HOME', 'USERPROFILE', 'NUMBER_OF_PROCESSORS']) {
+    const value = process.env[key];
+    if (value !== undefined) environment[key] = value;
+  }
+  return environment;
+}
+
+/** 命令必须来自平台白名单；node 命令追加堆上限与受信采样器，其余命令按声明原样执行。 */
+function buildArgv(declared: readonly string[], memoryMb: number): string[] {
+  const [executable = '', ...rest] = declared;
+  if (executable !== 'node') return [...declared];
+  return [process.execPath, `--import=${samplerUrl}`, `--max-old-space-size=${memoryMb}`, ...rest];
+}
+
+function terminateTree(pid: number): void {
+  if (platform() === 'win32') {
+    spawnSync('taskkill', ['/pid', String(pid), '/t', '/f'], { stdio: 'ignore', windowsHide: true });
+    return;
+  }
+  try {
+    process.kill(-pid, 'SIGKILL');
+  } catch {
+    try {
+      process.kill(pid, 'SIGKILL');
+    } catch {
+      // 进程已退出。
+    }
+  }
+}
+
+function readResourceReport(path: string): PhaseResource {
+  if (!existsSync(path)) return { peakRssBytes: null, userCpuMs: null, systemCpuMs: null, sampler: 'unavailable' };
+  try {
+    const input = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
+    const number = (value: unknown): number | null => (typeof value === 'number' && Number.isFinite(value) ? value : null);
+    return {
+      peakRssBytes: number(input.peakRssBytes),
+      userCpuMs: number(input.userCpuMs),
+      systemCpuMs: number(input.systemCpuMs),
+      sampler: 'node-resource-usage',
+    };
+  } catch {
+    return { peakRssBytes: null, userCpuMs: null, systemCpuMs: null, sampler: 'unreadable' };
+  }
+}
+
+/** 运行一个检查阶段：超时与取消都会回收整棵进程树。 */
+export async function runPhase(options: RunPhaseOptions): Promise<PhaseExecution> {
+  mkdirSync(options.artifactDir, { recursive: true });
+  const stdoutPath = join(options.artifactDir, `${options.kind}.stdout.tap`);
+  const stderrPath = join(options.artifactDir, `${options.kind}.stderr.txt`);
+  const reportPath = options.transport?.reportHostPath ?? join(options.artifactDir, `${options.kind}.resources.json`);
+  rmSync(reportPath, { force: true });
+
+  const argv = options.transport?.argv ?? buildArgv(options.declaredCommand, options.memoryMb);
+  const cwd = options.transport?.cwd ?? options.workspace;
+  const environment = options.transport?.env ?? childEnvironment(reportPath);
+  const stdoutFd = openSync(stdoutPath, 'w');
+  const stderrFd = openSync(stderrPath, 'w');
+  const startedAt = process.hrtime.bigint();
+  let timedOut = false;
+  let cancelled = false;
+  let spawnError: string | null = null;
+
+  let child;
+  try {
+    child = spawn(argv[0] ?? '', argv.slice(1), {
+      cwd,
+      env: environment,
+      stdio: ['ignore', stdoutFd, stderrFd],
+      windowsHide: true,
+      detached: platform() !== 'win32',
+    });
+  } catch (error) {
+    closeSync(stdoutFd);
+    closeSync(stderrFd);
+    throw new InfrastructureUnavailableError(error instanceof Error ? error.message : String(error));
+  }
+
+  const stop = (reason: 'timeout' | 'cancel'): void => {
+    if (reason === 'timeout') timedOut = true;
+    else cancelled = true;
+    if (child.pid !== undefined) terminateTree(child.pid);
+  };
+  const timer = setTimeout(() => stop('timeout'), options.timeoutMs);
+  const onAbort = (): void => stop('cancel');
+  options.signal?.addEventListener('abort', onAbort, { once: true });
+
+  const closed = await new Promise<{ code: number | null; signal: string | null }>(resolvePromise => {
+    child.on('error', error => {
+      spawnError = error.message;
+      resolvePromise({ code: null, signal: null });
+    });
+    child.on('close', (code, signal) => resolvePromise({ code, signal }));
+  });
+
+  clearTimeout(timer);
+  options.signal?.removeEventListener('abort', onAbort);
+  closeSync(stdoutFd);
+  closeSync(stderrFd);
+  const durationMs = Math.round(Number(process.hrtime.bigint() - startedAt) / 1e6);
+  const stdout = readFileSync(stdoutPath, 'utf8');
+  const stderr = readFileSync(stderrPath, 'utf8');
+
+  return {
+    kind: options.kind,
+    isolation: options.transport === undefined ? 'none' : 'container',
+    declaredCommand: [...options.declaredCommand],
+    argv,
+    cwd,
+    timeoutMs: options.timeoutMs,
+    exitCode: closed.code,
+    signal: closed.signal,
+    timedOut,
+    cancelled,
+    spawnError,
+    durationMs,
+    stdout,
+    stderr,
+    stdoutPath,
+    stderrPath,
+    reportPath,
+    resource: readResourceReport(reportPath),
+    outcomes: parseTap(stdout),
+  };
+}
+
+const memorySignatures = /heap out of memory|Allocation failed|Reached heap limit|out of memory/i;
+
+/** 结论优先级：取消 > 基础设施故障 > 超时 > 内存耗尽 > 检查失败/通过。 */
+export function classifyExecution(phases: readonly PhaseExecution[], checks: readonly ExecutionCheck[]): ExecutionClassification {
+  if (phases.some(phase => phase.cancelled)) return 'cancelled';
+  if (phases.some(phase => phase.spawnError !== null)) return 'infrastructure-error';
+  // 容器档案下 125/126/127 是 docker 自身的失败码（参数、守护进程或固定命令无法启动），属于基础设施故障。
+  if (phases.some(phase => phase.isolation === 'container' && !phase.timedOut && isContainerRuntimeFailure(phase.exitCode))) return 'infrastructure-error';
+  if (phases.some(phase => phase.timedOut)) return 'timeout';
+  if (phases.some(phase => memorySignatures.test(phase.stderr))) return 'memory-exceeded';
+  if (checks.some(check => check.status !== 'passed')) return 'check-failed';
+  return 'passed';
+}
+
+function artifactOf(id: string, path: string, root: string): ExecutionArtifact {
+  const content = readFileSync(path);
+  return {
+    id,
+    path: relative(root, path).split(sep).join('/'),
+    sha256: createHash('sha256').update(content).digest('hex'),
+    bytes: content.byteLength,
+  };
+}
+
+export interface ExecuteOptions {
+  store: RunStore;
+  runId: string;
+  attemptId: string;
+  artifactDirectory?: string;
+  signal?: AbortSignal;
+}
+
+function checkRows(manifest: TaskManifest, phases: readonly PhaseExecution[]): ExecutionCheck[] {
+  return manifest.checks.map(check => {
+    const phase = phases.find(item => item.kind === check.kind);
+    const outcome = phase?.outcomes.find(item => item.id === check.id);
+    return {
+      id: check.id,
+      kind: check.kind,
+      group: check.group,
+      critical: check.critical,
+      status: outcome === undefined ? 'not-run' as const : outcome.ok ? 'passed' as const : 'failed' as const,
+      durationMs: outcome?.durationMs ?? null,
+    };
+  });
+}
+
+/** 组装容器阶段：docker 调用替换本地直接命令，采样报告写到容器内 /work 再由宿主读取。 */
+function containerTransport(input: {
+  kind: 'public' | 'hidden';
+  task: TaskManifest;
+  manifest: ExecutionManifest;
+  runtime: ContainerRuntime;
+  hiddenChecksDirectory: string;
+  workspace: string;
+}): PhaseTransport {
+  const invocation = buildContainerInvocation({
+    runtime: input.runtime,
+    image: input.manifest.environment.image as string,
+    imageDigest: input.manifest.environment.imageDigest as string,
+    workspace: input.workspace,
+    hiddenChecksDirectory: input.hiddenChecksDirectory,
+    samplerHostPath,
+    argv: buildContainerArgv(input.task.commands[input.kind], input.task.limits.memoryMb),
+    limits: { cpus: input.task.limits.cpus, memoryMb: input.task.limits.memoryMb, pidsLimit: defaultPidsLimit },
+    resourceReportContainerPath: '/work/' + input.kind + '.resources.json',
+  });
+  return {
+    argv: invocation.argv,
+    cwd: invocation.cwd,
+    env: invocation.environment,
+    reportHostPath: join(input.workspace, input.kind + '.resources.json'),
+  };
+}
+
+export async function executeAttempt(options: ExecuteOptions): Promise<ExecutionResult> {
+  const outcome = options.store.readAttempt(options.runId, options.attemptId);
+  if (outcome === null) throw new Error(`未找到已冻结的 attempt：${options.runId}/${options.attemptId}`);
+  const manifest = outcome.manifest;
+  const task = manifest.task;
+  const containerProfile = manifest.environment.profile === 'linux-container';
+
+  const artifactDirectory = options.artifactDirectory ?? join(outcome.directory, 'execution');
+  if (options.artifactDirectory === undefined && existsSync(artifactDirectory)) {
+    // 同一 attempt 的既有产物必须保留：重新执行是显式动作，不能覆盖上一次的证据。
+    throw new Error(`该 attempt 已有执行产物：${artifactDirectory}；如需重新执行，请显式指定新的产物目录。`);
+  }
+  const workspace = join(artifactDirectory, 'workspace');
+  const notes: string[] = [];
+  // 执行事件写在 attempt 目录里：同一 attempt 的重复执行会带上产物目录名，不会覆盖上一次记录。
+  const executionTag = basename(artifactDirectory);
+  const eventId = (type: string, extra?: string): string =>
+    [type, options.runId, options.attemptId, executionTag, extra].filter((part): part is string => part !== undefined).join(':');
+  const startedAt = new Date().toISOString();
+  const startedHr = process.hrtime.bigint();
+
+  // 物化会重算冻结快照摘要：存储被改写时这里就会失败，而不是把被篡改的内容当成被测对象。
+  const materialized = options.store.materialize(options.runId, options.attemptId, workspace);
+
+  // 容器档案：必须有可用运行时与按 digest 固定的本地镜像，否则直接拒绝执行。
+  let runtime: ContainerRuntime | null = null;
+  let imageReference: string | null = null;
+  let hiddenChecksDirectory: string | null = null;
+  if (containerProfile) {
+    const image = manifest.environment.image;
+    const digest = manifest.environment.imageDigest;
+    if (image === null || digest === null) {
+      throw new InfrastructureUnavailableError('容器档案缺少镜像引用或 digest，拒绝执行。');
+    }
+    runtime = probeContainerRuntime({ captureDir: artifactDirectory });
+    imageReference = requirePinnedImage(runtime, image, digest, { captureDir: artifactDirectory });
+    hiddenChecksDirectory = join(repositoryRoot, task.grader.checks);
+    notes.push(`容器档案：镜像 ${imageReference}，运行时 ${runtime.command} ${runtime.serverVersion}。`);
+    notes.push('隐藏检查以只读方式挂载在 ' + hiddenChecksMount + '，不复制进候选树；候选仍可读取检查内容，物理保密需要容器外的独立验证进程。');
+    notes.push('容器以 --network none 运行，并按 manifest 的 CPU/内存/PID 预算限额；pids-limit=' + defaultPidsLimit + '。');
+  } else {
+    installHiddenChecks(task, workspace);
+    notes.push('被测对象来自冻结快照的受控物化；隐藏检查在物化之后由受信侧注入 __checks__/。');
+    notes.push('profile=local：没有容器隔离，也没有网络阻断，检查与被测对象在同一主机同一用户下运行。');
+  }
+  notes.push(`node 命令以 --max-old-space-size=${task.limits.memoryMb} 运行；该项限制堆上限，峰值 RSS 可能更高。`);
+  appendRunEvent(outcome.directory, {
+    type: 'execution.started',
+    actor: 'executor',
+    candidateHash: materialized.treeHash,
+    payload: { profile: manifest.environment.profile, isolation: containerProfile ? 'container' : 'none', artifactDirectory: executionTag },
+    id: eventId('execution.started'),
+    at: startedAt,
+  });
+
+  const phases: PhaseExecution[] = [];
+  let halted: string | null = null;
+  for (const kind of ['public', 'hidden'] as const) {
+    if (halted !== null) {
+      notes.push(`${kind} 阶段未运行：${halted}`);
+      continue;
+    }
+    const phase = await runPhase({
+      kind,
+      declaredCommand: task.commands[kind],
+      workspace,
+      artifactDir: artifactDirectory,
+      timeoutMs: task.limits.timeoutMs,
+      memoryMb: task.limits.memoryMb,
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+      ...(runtime === null || imageReference === null || hiddenChecksDirectory === null
+        ? {}
+        : {
+            transport: containerTransport({
+              kind, task, manifest, runtime, hiddenChecksDirectory, workspace,
+            }),
+          }),
+    });
+    phases.push(phase);
+    if (phase.cancelled) halted = '已被取消';
+    else if (phase.spawnError !== null) halted = `命令启动失败：${phase.spawnError}`;
+    else if (phase.timedOut) halted = `超出 ${phase.timeoutMs}ms 预算`;
+    else if (memorySignatures.test(phase.stderr)) halted = '进程因内存耗尽终止';
+  }
+
+  const checks = checkRows(task, phases);
+  const artifacts: ExecutionArtifact[] = [];
+  for (const phase of phases) {
+    appendRunEvent(outcome.directory, {
+      type: 'check.finished',
+      actor: 'executor',
+      candidateHash: materialized.treeHash,
+      payload: {
+        phase: phase.kind,
+        isolation: phase.isolation,
+        exitCode: phase.exitCode,
+        signal: phase.signal,
+        timedOut: phase.timedOut,
+        cancelled: phase.cancelled,
+        durationMs: phase.durationMs,
+        peakRssBytes: phase.resource.peakRssBytes,
+        passed: phase.outcomes.filter(item => item.ok).map(item => item.id),
+      },
+      evidenceRefs: [phase.kind + '.stdout', phase.kind + '.stderr'],
+      id: eventId('check.finished', phase.kind),
+      at: new Date().toISOString(),
+    });
+  }
+  for (const phase of phases) {
+    artifacts.push(artifactOf(`${phase.kind}.stdout`, phase.stdoutPath, artifactDirectory));
+    artifacts.push(artifactOf(`${phase.kind}.stderr`, phase.stderrPath, artifactDirectory));
+    if (existsSync(phase.reportPath)) artifacts.push(artifactOf(`${phase.kind}.resources`, phase.reportPath, artifactDirectory));
+  }
+
+  const attemptRows = phases.map(phase => {
+    const declaredChecks = task.checks.filter(check => check.kind === phase.kind).map(check => check.id);
+    return {
+      kind: phase.kind,
+      declaredCommand: [...task.commands[phase.kind]],
+      argv: phase.argv,
+      cwd: phase.cwd,
+      timeoutMs: phase.timeoutMs,
+      exitCode: phase.exitCode,
+      signal: phase.signal,
+      timedOut: phase.timedOut,
+      cancelled: phase.cancelled,
+      durationMs: phase.durationMs,
+      resource: phase.resource,
+      missing: declaredChecks.filter(id => !phase.outcomes.some(item => item.id === id)),
+      artifacts: artifacts.filter(item => item.id.startsWith(`${phase.kind}.`)).map(item => item.id),
+    };
+  });
+  for (const kind of ['public', 'hidden'] as const) {
+    if (attemptRows.some(row => row.kind === kind)) continue;
+    attemptRows.push({
+      kind,
+      declaredCommand: [...task.commands[kind]],
+      argv: [...task.commands[kind]],
+      cwd: workspace,
+      timeoutMs: task.limits.timeoutMs,
+      exitCode: null,
+      signal: null,
+      timedOut: false,
+      cancelled: false,
+      durationMs: 0,
+      resource: { peakRssBytes: null, userCpuMs: null, systemCpuMs: null, sampler: 'unavailable' },
+      missing: task.checks.filter(check => check.kind === kind).map(check => check.id),
+      artifacts: [],
+    });
+  }
+
+  const result: ExecutionResult = {
+    schemaVersion: '0.1.0',
+    runId: options.runId,
+    attemptId: options.attemptId,
+    taskId: manifest.envelope.taskId,
+    taskVersion: manifest.envelope.taskVersion,
+    candidateTreeHash: materialized.treeHash,
+    classification: classifyExecution(phases, checks),
+    isolation: containerProfile ? 'container' : 'none',
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    durationMs: Math.round(Number(process.hrtime.bigint() - startedHr) / 1e6),
+    environment: {
+      profile: 'local',
+      imageDigest: manifest.environment.imageDigest,
+      platform: `${platform()} ${arch()}`,
+      platformVersion: process.version,
+      candidateRuntimes: [...new Set([task.commands.public, task.commands.hidden].map(command => command[0] ?? '').filter(name => name.length > 0))],
+      containerRuntime: runtime === null ? null : runtime.command + ' ' + runtime.serverVersion,
+      image: imageReference,
+      cpus: availableParallelism(),
+      totalMemoryMb: Math.round(totalmem() / (1024 * 1024)),
+      network: false,
+    },
+    phases: attemptRows,
+    checks,
+    artifacts,
+    evidenceRefs: artifacts.map(item => item.id),
+    notes,
+  };
+  if (!executionResultValidator.Check(result)) {
+    throw new Error(`执行结果不符合 0.1.0 协议：${explainExecutionResult(result).join('；')}`);
+  }
+
+  mkdirSync(artifactDirectory, { recursive: true });
+  writeFileSync(join(artifactDirectory, 'execution.json'), `${JSON.stringify(result, null, 2)}\n`);
+  appendRunEvent(outcome.directory, {
+    type: 'execution.finished',
+    actor: 'executor',
+    candidateHash: result.candidateTreeHash,
+    payload: {
+      classification: result.classification,
+      isolation: result.isolation,
+      durationMs: result.durationMs,
+      failed: checks.filter(check => check.status === 'failed').map(check => check.id),
+      notRun: checks.filter(check => check.status === 'not-run').map(check => check.id),
+    },
+    evidenceRefs: result.evidenceRefs,
+    id: eventId('execution.finished'),
+    at: result.finishedAt,
+  });
+  return result;
+}
+
+function nextArtifactDirectory(attemptDirectory: string): string {
+  const base = join(attemptDirectory, 'execution');
+  if (!existsSync(base)) return base;
+  for (let index = 2; index < 100; index += 1) {
+    const candidate = `${base}-${index}`;
+    if (!existsSync(candidate)) return candidate;
+  }
+  throw new Error('执行产物目录过多，拒绝继续。');
+}
+
+/** 读取已记录的执行结果；没有则返回 null。用于重复完成事件与进程重启后的复用。 */
+export function readExecutionResult(attemptDirectory: string): ExecutionResult | null {
+  const path = join(attemptDirectory, 'execution', 'execution.json');
+  if (!existsSync(path)) return null;
+  const input: unknown = JSON.parse(readFileSync(path, 'utf8'));
+  if (!executionResultValidator.Check(input)) throw new Error('已记录的执行结果不符合 0.1.0 协议。');
+  return input;
+}
+
+export interface VerifySubmissionRequest {
+  store: RunStore;
+  taskId: string;
+  envelope: unknown;
+  candidateDirectory: string;
+  submittedBy: string;
+  profile?: 'local' | 'linux-container';
+  image?: string | null;
+  imageDigest?: string | null;
+  signal?: AbortSignal;
+}
+
+export interface VerificationOutcome {
+  submission: SubmissionOutcome;
+  execution: ExecutionResult;
+  reusedExecution: boolean;
+}
+
+/**
+ * 显式提交入口：冻结候选并自动触发验证。
+ * 已确认的执行副作用（execution.json）一律复用，因此重复完成事件与进程重启都不会重跑检查。
+ */
+export async function verifySubmission(request: VerifySubmissionRequest): Promise<VerificationOutcome> {
+  const submission = request.store.submit({
+    taskId: request.taskId,
+    envelope: request.envelope,
+    candidateDirectory: request.candidateDirectory,
+    submittedBy: request.submittedBy,
+    ...(request.profile === undefined ? {} : { profile: request.profile }),
+    ...(request.image === undefined ? {} : { image: request.image }),
+    ...(request.imageDigest === undefined ? {} : { imageDigest: request.imageDigest }),
+  });
+  const recorded = readExecutionResult(submission.directory);
+  if (recorded !== null) {
+    appendRunEvent(submission.directory, {
+      type: 'execution.reused',
+      actor: request.submittedBy,
+      candidateHash: recorded.candidateTreeHash,
+      payload: { classification: recorded.classification, finishedAt: recorded.finishedAt },
+      evidenceRefs: recorded.evidenceRefs,
+      id: 'execution.reused:' + submission.attempt.runId,
+    });
+    return { submission, execution: recorded, reusedExecution: true };
+  }
+  const execution = await executeAttempt({
+    store: request.store,
+    runId: submission.attempt.runId,
+    attemptId: submission.attempt.attemptId,
+    artifactDirectory: nextArtifactDirectory(submission.directory),
+    ...(request.signal === undefined ? {} : { signal: request.signal }),
+  });
+  return { submission, execution, reusedExecution: false };
+}
+
+/** 查询输出：当前阶段、已知失败、可重试原因、证据引用；评审未接入时总分待定。 */
+export function readRunStatus(store: RunStore, runId: string, attemptId: string): RunStatus {
+  const outcome = store.readAttempt(runId, attemptId);
+  if (outcome === null) throw new Error(`未找到已冻结的 attempt：${runId}/${attemptId}`);
+  const execution = readExecutionResult(outcome.directory);
+  const checks = execution?.checks ?? [];
+  const classification = execution?.classification ?? null;
+  const retryable = classification === 'infrastructure-error' || classification === 'cancelled';
+  const status: RunStatus = {
+    schemaVersion: '0.1.0',
+    runId,
+    attemptId,
+    taskId: outcome.attempt.taskId,
+    taskVersion: outcome.attempt.taskVersion,
+    phase: execution === null ? 'frozen' : 'verified',
+    classification,
+    candidateTreeHash: outcome.attempt.treeHash,
+    frozenAt: outcome.attempt.frozenAt,
+    verifiedAt: execution?.finishedAt ?? null,
+    knownFailures: checks.filter(check => check.status === 'failed').map(check => ({ id: check.id, kind: check.kind, critical: check.critical })),
+    missingChecks: checks.filter(check => check.status === 'not-run').map(check => check.id),
+    retryable: { allowed: retryable, reason: retryable ? classification : null, sameSnapshotOnly: retryable },
+    scoring: { mode: 'pending', reason: '代码质量评审未接入，总分保持待定。' },
+    evidenceRefs: execution?.evidenceRefs ?? [],
+    artifacts: execution?.artifacts ?? [],
+    updatedAt: execution?.finishedAt ?? outcome.attempt.frozenAt,
+  };
+  if (!runStatusValidator.Check(status)) throw new Error('运行状态不符合 0.1.0 协议。');
+  return status;
+}
+
+/** 列出运行索引里每个 attempt 的当前状态。 */
+export function listRunStatuses(store: RunStore): RunStatus[] {
+  return store.list().map(entry => readRunStatus(store, entry.runId, entry.attemptId));
+}

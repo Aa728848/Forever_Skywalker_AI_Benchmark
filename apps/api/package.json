@@ -1,0 +1,17 @@
+{
+  "name": "@fsa/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/server.ts"
+  },
+  "dependencies": {
+    "@fsa/catalog": "workspace:*",
+    "@fsa/contracts": "workspace:*",
+    "@fsa/core": "workspace:*",
+    "fastify": "5.12.4",
+    "@fsa/runs": "workspace:*",
+    "@fsa/executor": "workspace:*"
+  }
+}

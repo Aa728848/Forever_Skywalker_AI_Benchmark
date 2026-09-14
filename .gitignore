@@ -1,0 +1,12 @@
+node_modules/
+.pnpm-store/
+.cache/playwright/
+dist/
+data/
+test-results/
+playwright-report/
+coverage/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example

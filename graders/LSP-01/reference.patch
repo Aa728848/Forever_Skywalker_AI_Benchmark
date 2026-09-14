@@ -1,0 +1,62 @@
+diff --git a/starter/src/FrameParser.fsx b/starter/src/FrameParser.fsx
+index f18c913..7fda283 100644
+--- a/starter/src/FrameParser.fsx
++++ b/starter/src/FrameParser.fsx
+@@ -3,6 +3,16 @@ module FrameParser
+ open System
+ open System.Text
+ 
++/// 在 start 之后查找头部结束标记（\r\n\r\n），返回头部起始到该标记的偏移。
++let private findHeaderEnd (buffer: byte[]) (start: int) : int option =
++    let mutable found = None
++    let mutable index = start
++    while found.IsNone && index <= buffer.Length - 4 do
++        if buffer.[index] = 13uy && buffer.[index + 1] = 10uy && buffer.[index + 2] = 13uy && buffer.[index + 3] = 10uy then
++            found <- Some index
++        index <- index + 1
++    found
++
+ let private parseContentLength (header: string) : Result<int, string> =
+     let lines = header.Split([| "\r\n" |], StringSplitOptions.None)
+     let mutable missing = true
+@@ -27,22 +37,27 @@ let private parseContentLength (header: string) : Result<int, string> =
+     elif missing then Error "missing content-length"
+     else Ok length
+ 
+-/// 先把缓冲解码成字符串，再按头部空行切分。
++/// 按字节消费完整消息；未消费的尾部原样返回，供下次拼接。
+ let parseFrames (buffer: byte[]) : Result<string list * byte[], string> =
+-    let text = Encoding.UTF8.GetString(buffer)
+-    let parts = text.Split([| "\r\n\r\n" |], StringSplitOptions.None)
+     let bodies = ResizeArray<string>()
++    let mutable offset = 0
+     let mutable problem = None
+-    let mutable index = 0
+-    while problem.IsNone && index + 1 < parts.Length do
+-        match parseContentLength parts.[index] with
+-        | Error message -> problem <- Some message
+-        | Ok length ->
+-            let body = parts.[index + 1]
+-            if length <= body.Length then
+-                bodies.Add(body.Substring(0, length))
+-            index <- index + 2
++    let mutable stop = false
++    while not stop && problem.IsNone do
++        match findHeaderEnd buffer offset with
++        | None -> stop <- true
++        | Some headerEnd ->
++            let header = Encoding.ASCII.GetString(buffer, offset, headerEnd - offset)
++            match parseContentLength header with
++            | Error message -> problem <- Some message
++            | Ok length ->
++                let bodyStart = headerEnd + 4
++                if bodyStart + length > buffer.Length then
++                    stop <- true
++                else
++                    bodies.Add(Encoding.UTF8.GetString(buffer, bodyStart, length))
++                    offset <- bodyStart + length
+     match problem with
+     | Some message -> Error message
+-    | None -> Ok (List.ofSeq bodies, [||])
++    | None -> Ok (List.ofSeq bodies, buffer.[offset ..])
+ 

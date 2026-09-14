@@ -1,0 +1,13 @@
+{
+  "name": "@fsa/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@fsa/catalog": "workspace:*",
+    "@fsa/contracts": "workspace:*",
+    "@fsa/core": "workspace:*",
+    "@fsa/runs": "workspace:*",
+    "@fsa/executor": "workspace:*"
+  }
+}

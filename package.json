@@ -1,0 +1,33 @@
+{
+  "name": "forever-skywalker-ai-benchmark",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.24.0",
+  "engines": {
+    "node": ">=24.14.1 <25"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @fsa/api --filter @fsa/web dev",
+    "bench": "tsx apps/cli/src/main.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "pnpm --filter @fsa/web build",
+    "catalog:docs": "tsx scripts/catalog.ts --write",
+    "catalog:check": "tsx scripts/catalog.ts --check",
+    "test:e2e": "playwright test",
+    "browsers:install": "node scripts/install-browser.mjs",
+    "check": "pnpm typecheck && pnpm catalog:check && pnpm test && pnpm build",
+    "task:export": "node scripts/task.ts export",
+    "task:verify": "node scripts/task.ts verify",
+    "run:rehearse": "node scripts/run.ts",
+    "trial": "node scripts/trial.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "24.13.4",
+    "tsx": "4.22.4",
+    "typescript": "6.0.3",
+    "vitest": "4.1.8"
+  }
+}

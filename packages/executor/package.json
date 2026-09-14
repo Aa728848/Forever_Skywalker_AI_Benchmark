@@ -1,0 +1,12 @@
+{
+  "name": "@fsa/executor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "dependencies": {
+    "@fsa/contracts": "workspace:*",
+    "@fsa/runs": "workspace:*",
+    "@fsa/tasks": "workspace:*"
+  }
+}
