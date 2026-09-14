@@ -1,0 +1,40 @@
+diff --git a/starter/src/sse.ts b/starter/src/sse.ts
+index b6034ee..3c51893 100644
+--- a/starter/src/sse.ts
++++ b/starter/src/sse.ts
+@@ -34,6 +34,14 @@ export class SseDecoder {
+   #buffer = '';
+   #lastId = 0;
+ 
++  #accept(event: SseEvent): boolean {
++    // 幂等重放：不晚于已投递 id 的事件一律忽略。
++    if (event.id <= this.#lastId) return false;
++    if (event.id > this.#lastId + 1) throw new SequenceGapError(this.#lastId + 1, event.id);
++    this.#lastId = event.id;
++    return true;
++  }
++
+   push(chunk: string): readonly SseEvent[] {
+     this.#buffer += chunk;
+     const events: SseEvent[] = [];
+@@ -42,9 +50,7 @@ export class SseDecoder {
+       const frame = this.#buffer.slice(0, separator);
+       this.#buffer = this.#buffer.slice(separator + 2);
+       const event = parseFrame(frame);
+-      // 缺陷：只更新 lastId，不校验连续性也不忽略重放。
+-      this.#lastId = event.id;
+-      events.push(event);
++      if (this.#accept(event)) events.push(event);
+       separator = this.#buffer.indexOf('\n\n');
+     }
+     return events;
+@@ -58,8 +64,7 @@ export class SseDecoder {
+     const frame = this.#buffer;
+     this.#buffer = '';
+     const event = parseFrame(frame);
+-    this.#lastId = event.id;
+-    return [event];
++    return this.#accept(event) ? [event] : [];
+   }
+ 
+   get lastId(): number {

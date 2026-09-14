@@ -276,7 +276,7 @@
     "domain": "后端与服务协议",
     "difficulty": "hard",
     "track": "core",
-    "status": "designed",
+    "status": "fixture-ready",
     "runtime": "typescript",
     "sources": [
       "deepseek-harness",

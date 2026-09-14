@@ -1,0 +1,139 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "API-03",
+  "taskVersion": "0.1.0",
+  "title": "SSE 序列恢复与背压",
+  "runtime": "typescript",
+  "runtimeRange": "node >=24.14.1 <25",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "public-tests/**/*.test.ts"
+    ],
+    "hidden": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "__checks__/**/*.test.ts"
+    ]
+  },
+  "grader": {
+    "checks": "graders/API-03/checks",
+    "referencePatch": "graders/API-03/reference.patch",
+    "alternative": "graders/API-03/alternative",
+    "defectDetectors": [
+      "hidden/ignores-replayed-events",
+      "hidden/rejects-sequence-gap",
+      "public/ignores-replayed-events",
+      "public/rejects-sequence-gap"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/parses-single-chunk-frames",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "单块多帧正常解析。"
+    },
+    {
+      "id": "public/buffers-partial-frames-across-chunks",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "跨块缓存不完整帧。"
+    },
+    {
+      "id": "public/rejects-sequence-gap",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "序列跳跃抛错且不推进 lastId。"
+    },
+    {
+      "id": "public/ignores-replayed-events",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "重放事件被忽略，后续连续性仍成立。"
+    },
+    {
+      "id": "public/end-flushes-last-frame-and-rejects-malformed",
+      "kind": "public",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "结束刷新与非法帧。"
+    },
+    {
+      "id": "hidden/parses-single-chunk-frames",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的单块解析。"
+    },
+    {
+      "id": "hidden/buffers-partial-frames-across-chunks",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的跨块缓存。"
+    },
+    {
+      "id": "hidden/rejects-sequence-gap",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的序列跳跃。"
+    },
+    {
+      "id": "hidden/ignores-replayed-events",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的重放幂等。"
+    },
+    {
+      "id": "hidden/end-flushes-last-frame-and-rejects-malformed",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的结束语义。"
+    }
+  ]
+}
