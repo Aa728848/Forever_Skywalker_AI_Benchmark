@@ -1,0 +1,20 @@
+diff --git a/starter/src/poller.ts b/starter/src/poller.ts
+index 6338358..43526f8 100644
+--- a/starter/src/poller.ts
++++ b/starter/src/poller.ts
+@@ -28,11 +28,14 @@ export class Poller {
+   }
+ 
+   start(): void {
++    if (this.#running) return;
+     this.#timer = this.#scheduler.every(this.#intervalMs, this.#tick);
+     this.#running = true;
+   }
+ 
+   stop(): void {
++    if (this.#timer !== null) this.#timer.cancel();
++    this.#timer = null;
+     this.#running = false;
+   }
+ }
+\ No newline at end of file

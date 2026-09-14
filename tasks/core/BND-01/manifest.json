@@ -1,0 +1,195 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "BND-01",
+  "taskVersion": "0.1.0",
+  "title": "CLI 参数与零值语义",
+  "runtime": "typescript",
+  "runtimeRange": "node >=24.14.1 <25",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "public-tests/**/*.test.ts"
+    ],
+    "hidden": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "__checks__/**/*.test.ts"
+    ]
+  },
+  "grader": {
+    "checks": "graders/BND-01/checks",
+    "referencePatch": "graders/BND-01/reference.patch",
+    "alternative": "graders/BND-01/alternative",
+    "defectDetectors": [
+      "public/accepts-both-value-forms",
+      "public/boolean-switches",
+      "public/last-value-wins",
+      "public/rejects-missing-value-and-bad-port",
+      "public/rejects-unknown-option",
+      "public/zero-and-empty-are-values",
+      "hidden/accepts-both-value-forms",
+      "hidden/boolean-switches",
+      "hidden/last-value-wins",
+      "hidden/rejects-missing-value-and-bad-port",
+      "hidden/rejects-unknown-option",
+      "hidden/zero-and-empty-are-values"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/uses-defaults",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "空参数时保留全部默认值。"
+    },
+    {
+      "id": "public/accepts-both-value-forms",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "--k=v 与 --k v 都支持。"
+    },
+    {
+      "id": "public/zero-and-empty-are-values",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "0 与空串是合法取值，不得退回默认。"
+    },
+    {
+      "id": "public/rejects-unknown-option",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "未知选项抛 CliUsageError 并带选项名。"
+    },
+    {
+      "id": "public/rejects-missing-value-and-bad-port",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "缺值与非十进制/越界端口被拒。"
+    },
+    {
+      "id": "public/last-value-wins",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "重复选项最后一次生效。"
+    },
+    {
+      "id": "public/collects-positionals-around-separator",
+      "kind": "public",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "位置参数与 -- 之后的原样收集。"
+    },
+    {
+      "id": "public/boolean-switches",
+      "kind": "public",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "布尔开关与 --no- 前缀，且不接受取值。"
+    },
+    {
+      "id": "hidden/uses-defaults",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的默认值。"
+    },
+    {
+      "id": "hidden/accepts-both-value-forms",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的两种写法。"
+    },
+    {
+      "id": "hidden/zero-and-empty-are-values",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的零值语义。"
+    },
+    {
+      "id": "hidden/rejects-unknown-option",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的未知选项。"
+    },
+    {
+      "id": "hidden/rejects-missing-value-and-bad-port",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的取值错误。"
+    },
+    {
+      "id": "hidden/last-value-wins",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的重复选项。"
+    },
+    {
+      "id": "hidden/collects-positionals-around-separator",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的位置参数。"
+    },
+    {
+      "id": "hidden/boolean-switches",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的布尔开关。"
+    }
+  ]
+}

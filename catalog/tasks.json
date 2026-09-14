@@ -222,7 +222,7 @@
     "domain": "后端与服务协议",
     "difficulty": "easy",
     "track": "core",
-    "status": "designed",
+    "status": "fixture-ready",
     "runtime": "typescript",
     "sources": [
       "deepseek-harness",
@@ -438,7 +438,7 @@
     "domain": "参数与边界解析",
     "difficulty": "easy",
     "track": "core",
-    "status": "designed",
+    "status": "fixture-ready",
     "runtime": "typescript",
     "sources": [
       "dsh-chatgpt-subscription",
@@ -998,7 +998,7 @@
     "domain": "生命周期",
     "difficulty": "easy",
     "track": "core",
-    "status": "designed",
+    "status": "fixture-ready",
     "runtime": "typescript",
     "sources": [
       "dsh-web",

@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { tasks } from '@fsa/catalog';
 import {
   declaredCheckIds, exportWorkspace, listFiles, parseTap, readManifest,
@@ -136,8 +136,11 @@ describe('三向验证', () => {
 
 describe('题目状态与题目包资产一致', () => {
   it('非 designed 的题目必须有可校验的题目包，designed 的题目不得有 manifest', () => {
+    // 状态必须与磁盘上的题目包一一对应，避免“加了夹具没更新状态”或反之。
     const ready = tasks.filter(task => task.status !== 'designed');
-    expect(ready.length).toBe(9);
+    const packaged = readdirSync(join(repositoryRoot, 'tasks', 'core'))
+      .filter(name => existsSync(join(repositoryRoot, 'tasks', 'core', name, 'manifest.json')));
+    expect(ready.map(task => task.id).sort()).toEqual(packaged.sort());
     for (const task of ready) {
       const manifest = readManifest(task.id);
       expect(manifest.taskId).toBe(task.id);

@@ -1,0 +1,72 @@
+diff --git a/starter/src/cli.ts b/starter/src/cli.ts
+index 4a6bcdc..e5a1288 100644
+--- a/starter/src/cli.ts
++++ b/starter/src/cli.ts
+@@ -21,7 +21,7 @@ export class CliUsageError extends Error {
+ const valueOptions = ['host', 'port', 'tag'];
+ 
+ export function parseCli(argv: readonly string[], defaults: CliDefaults): ParsedCli {
+-  const values: Record<string, string> = {};
++  const values = new Map<string, string>();
+   const rest: string[] = [];
+   let verbose: boolean | null = null;
+   let index = 0;
+@@ -31,28 +31,40 @@ export function parseCli(argv: readonly string[], defaults: CliDefaults): Parsed
+       rest.push(...argv.slice(index + 1));
+       break;
+     }
+-    if (token.startsWith('--')) {
+-      const name = token.slice(2);
+-      if (name === 'verbose') { verbose = true; index += 1; continue; }
+-      if (name === 'no-verbose') { verbose = false; index += 1; continue; }
+-      if (!valueOptions.includes(name)) { index += 1; continue; }
+-      const inline = argv[index] as string;
+-      if (inline.includes('=')) {
+-        values[name] = inline.slice(inline.indexOf('=') + 1);
+-        index += 1;
+-        continue;
+-      }
+-      values[name] = (argv[index + 1] ?? '') as string;
+-      index += 2;
++    if (!token.startsWith('--')) { rest.push(token); index += 1; continue; }
++    const body = token.slice(2);
++    const separator = body.indexOf('=');
++    const name = separator < 0 ? body : body.slice(0, separator);
++    const inline = separator < 0 ? null : body.slice(separator + 1);
++    if (name === 'verbose' || name === 'no-verbose') {
++      if (inline !== null) throw new CliUsageError(name, '布尔选项不接受取值：--' + name);
++      verbose = name === 'verbose';
++      index += 1;
+       continue;
+     }
+-    rest.push(token);
+-    index += 1;
++    if (!valueOptions.includes(name)) throw new CliUsageError(name, '未知选项：--' + name);
++    let value = inline;
++    if (value === null) {
++      const next = argv[index + 1];
++      if (next === undefined || next.startsWith('--')) throw new CliUsageError(name, '选项缺少取值：--' + name);
++      value = next;
++      index += 2;
++    } else {
++      index += 1;
++    }
++    values.set(name, value);
++  }
++  const portText = values.get('port');
++  let port = defaults.port;
++  if (portText !== undefined) {
++    if (!/^\d+$/.test(portText)) throw new CliUsageError('port', '端口必须是非负十进制整数：' + portText);
++    port = Number(portText);
++    if (port > 65535) throw new CliUsageError('port', '端口超出范围：' + portText);
+   }
+   return {
+-    host: values.host || defaults.host,
+-    port: Number(values.port) || defaults.port,
+-    tag: values.tag || defaults.tag,
++    host: values.get('host') ?? defaults.host,
++    port,
++    tag: values.get('tag') ?? defaults.tag,
+     verbose: verbose ?? defaults.verbose,
+     rest,
+   };

@@ -1,0 +1,43 @@
+diff --git a/starter/src/request.ts b/starter/src/request.ts
+index 3096bbd..39f3653 100644
+--- a/starter/src/request.ts
++++ b/starter/src/request.ts
+@@ -30,24 +30,27 @@ export function validateOrderRequest(payload: unknown): OrderRequest {
+   if (!isRecord(payload)) throw new RequestError([{ field: '', code: 'type' }]);
+   const issues: ValidationIssue[] = [];
+ 
++  for (const field of Object.keys(payload)) {
++    if (!knownFields.includes(field)) issues.push({ field, code: 'unknown-field' });
++  }
++
+   const orderId = payload.orderId;
+   if (orderId === undefined) issues.push({ field: 'orderId', code: 'missing' });
+   else if (typeof orderId !== 'string' || orderId.trim() === '') issues.push({ field: 'orderId', code: 'type' });
+ 
+   const quantity = payload.quantity;
+   if (quantity === undefined) issues.push({ field: 'quantity', code: 'missing' });
+-  else {
+-    const parsed = typeof quantity === 'string' ? Number(quantity) : quantity;
+-    if (typeof parsed !== 'number' || !Number.isFinite(parsed)) issues.push({ field: 'quantity', code: 'type' });
+-    else if (parsed < 0 || parsed > 1000) issues.push({ field: 'quantity', code: 'range' });
++  else if (typeof quantity !== 'number' || !Number.isFinite(quantity) || !Number.isInteger(quantity)) issues.push({ field: 'quantity', code: 'type' });
++  else if (quantity < 1 || quantity > 1000) issues.push({ field: 'quantity', code: 'range' });
++
++  const note = payload.note;
++  if (note !== undefined) {
++    if (typeof note !== 'string' || note.trim() === '' || note.length > 200) issues.push({ field: 'note', code: 'type' });
+   }
+ 
+   if (issues.length > 0) throw new RequestError(issues);
+-  // 缺陷：未知字段被静默丢弃，而不是按契约报 unknown-field。
+-  const accepted: Record<string, unknown> = {};
+-  for (const field of Object.keys(payload)) if (knownFields.includes(field)) accepted[field] = payload[field];
+-  const note = accepted.note;
+-  return note === undefined
++  const result: OrderRequest = note === undefined
+     ? { orderId: orderId as string, quantity: quantity as number }
+     : { orderId: orderId as string, quantity: quantity as number, note: note as string };
+-}
++  return Object.freeze(result);
++}
+\ No newline at end of file

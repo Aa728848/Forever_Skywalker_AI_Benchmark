@@ -1,0 +1,157 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "LIFE-01",
+  "taskVersion": "0.1.0",
+  "title": "订阅与定时器释放",
+  "runtime": "typescript",
+  "runtimeRange": "node >=24.14.1 <25",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "public-tests/**/*.test.ts"
+    ],
+    "hidden": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "__checks__/**/*.test.ts"
+    ]
+  },
+  "grader": {
+    "checks": "graders/LIFE-01/checks",
+    "referencePatch": "graders/LIFE-01/reference.patch",
+    "alternative": "graders/LIFE-01/alternative",
+    "defectDetectors": [
+      "hidden/repeated-start-keeps-one-timer",
+      "hidden/restart-after-stop",
+      "hidden/stop-cancels-timer",
+      "public/repeated-start-keeps-one-timer",
+      "public/restart-after-stop",
+      "public/stop-cancels-timer"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/start-schedules-one-timer",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "start 只创建一个定时器并把它交给调度器。"
+    },
+    {
+      "id": "public/stop-cancels-timer",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "stop 取消定时器，之后不再触发。"
+    },
+    {
+      "id": "public/repeated-start-keeps-one-timer",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "重复 start 不得创建多个定时器。"
+    },
+    {
+      "id": "public/restart-after-stop",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "stop 之后可以重新 start。"
+    },
+    {
+      "id": "public/stop-without-start-is-safe",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "未启动就 stop 是安全的空操作。"
+    },
+    {
+      "id": "public/default-interval-is-used",
+      "kind": "public",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "缺省间隔为 1000ms。"
+    },
+    {
+      "id": "hidden/start-schedules-one-timer",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下 start 的行为。"
+    },
+    {
+      "id": "hidden/stop-cancels-timer",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下不得留下存活定时器。"
+    },
+    {
+      "id": "hidden/repeated-start-keeps-one-timer",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的重复 start。"
+    },
+    {
+      "id": "hidden/restart-after-stop",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的重启。"
+    },
+    {
+      "id": "hidden/stop-without-start-is-safe",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的空操作。"
+    },
+    {
+      "id": "hidden/default-interval-is-used",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的缺省间隔。"
+    }
+  ]
+}

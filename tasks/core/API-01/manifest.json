@@ -1,0 +1,193 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "API-01",
+  "taskVersion": "0.1.0",
+  "title": "请求校验与错误契约",
+  "runtime": "typescript",
+  "runtimeRange": "node >=24.14.1 <25",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "public-tests/**/*.test.ts"
+    ],
+    "hidden": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "__checks__/**/*.test.ts"
+    ]
+  },
+  "grader": {
+    "checks": "graders/API-01/checks",
+    "referencePatch": "graders/API-01/reference.patch",
+    "alternative": "graders/API-01/alternative",
+    "defectDetectors": [
+      "public/collects-every-issue",
+      "public/quantity-range-boundaries",
+      "public/rejects-numeric-strings",
+      "public/rejects-unknown-fields",
+      "public/returns-frozen-copy",
+      "hidden/collects-every-issue",
+      "hidden/quantity-range-boundaries",
+      "hidden/rejects-numeric-strings",
+      "hidden/rejects-unknown-fields",
+      "hidden/returns-frozen-copy"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/accepts-valid-request",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "合法请求原样通过并保留 note。"
+    },
+    {
+      "id": "public/reports-missing-fields",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "缺失必填字段逐项报 missing。"
+    },
+    {
+      "id": "public/rejects-numeric-strings",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "数字字符串不得被隐式转换。"
+    },
+    {
+      "id": "public/quantity-range-boundaries",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "数量边界 1 与 1000 合法，越界与小数报错。"
+    },
+    {
+      "id": "public/rejects-unknown-fields",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "未知字段严格拒绝。"
+    },
+    {
+      "id": "public/collects-every-issue",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "一次返回全部问题且顺序稳定。"
+    },
+    {
+      "id": "public/rejects-non-object-payload",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "非对象载荷直接报 type。"
+    },
+    {
+      "id": "public/returns-frozen-copy",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "返回冻结副本，不受调用方后续修改影响。"
+    },
+    {
+      "id": "hidden/accepts-valid-request",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的合法请求同样通过。"
+    },
+    {
+      "id": "hidden/reports-missing-fields",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的缺失字段报告。"
+    },
+    {
+      "id": "hidden/rejects-numeric-strings",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下不隐式转换。"
+    },
+    {
+      "id": "hidden/quantity-range-boundaries",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的边界行为。"
+    },
+    {
+      "id": "hidden/rejects-unknown-fields",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的未知字段。"
+    },
+    {
+      "id": "hidden/collects-every-issue",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "大 note 与多问题一次返回。"
+    },
+    {
+      "id": "hidden/rejects-non-object-payload",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的非对象载荷。"
+    },
+    {
+      "id": "hidden/returns-frozen-copy",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的副本语义。"
+    }
+  ]
+}
