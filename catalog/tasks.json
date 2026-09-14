@@ -554,7 +554,7 @@
     "domain": "多线程",
     "difficulty": "easy",
     "track": "core",
-    "status": "designed",
+    "status": "fixture-ready",
     "runtime": "mixed",
     "sources": [
       "cwtools-vscode",

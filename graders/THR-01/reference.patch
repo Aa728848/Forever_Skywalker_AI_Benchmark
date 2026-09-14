@@ -1,0 +1,53 @@
+diff --git a/starter/src/pool.ts b/starter/src/pool.ts
+index a219918..af26c34 100644
+--- a/starter/src/pool.ts
++++ b/starter/src/pool.ts
+@@ -16,16 +16,38 @@ interface WorkerMessage {
+   readonly error: string | null;
+ }
+ 
++import { Worker } from 'node:worker_threads';
++
++function runOne(job: Job): Promise<WorkerMessage> {
++  return new Promise<WorkerMessage>((resolve, reject) => {
++    const worker = new Worker(new URL('./worker.ts', import.meta.url), { workerData: { id: job.id, payload: job.payload } });
++    worker.once('message', (message: WorkerMessage) => {
++      resolve(message);
++      void worker.terminate();
++    });
++    worker.once('error', error => reject(error instanceof Error ? error : new Error(String(error))));
++  });
++}
++
+ export async function runPool(jobs: readonly Job[], options: PoolOptions = {}): Promise<PoolOutcome> {
+   const results: Record<string, number> = {};
+   const failures: string[] = [];
+-  const threadIds: number[] = [];
+-  void options;
+-  // 缺陷：用主线程的 Promise 并发冒充线程池，threadIds 永远为空。
+-  await Promise.all(jobs.map(async job => {
+-    // 缺陷：失败的 job 被静默丢弃，既不计入 results 也不计入 failures。
+-    if (job.payload < 0) return;
+-    results[job.id] = job.payload * 2;
+-  }));
+-  return { results, failures, threadIds };
++  const threadIds = new Set<number>();
++  if (jobs.length === 0) return { results, failures, threadIds: [] };
++  const requested = options.size ?? 4;
++  if (!Number.isInteger(requested) || requested < 1) throw new RangeError('size 必须是大于等于 1 的整数');
++  const size = Math.min(requested, jobs.length);
++  let cursor = 0;
++  const runners = Array.from({ length: size }, async () => {
++    while (cursor < jobs.length) {
++      const job = jobs[cursor] as Job;
++      cursor += 1;
++      const message = await runOne(job);
++      threadIds.add(message.threadId);
++      if (message.error !== null) failures.push(message.id);
++      else results[message.id] = message.value as number;
++    }
++  });
++  await Promise.all(runners);
++  return { results, failures, threadIds: [...threadIds].sort((left, right) => left - right) };
+ }
+\ No newline at end of file

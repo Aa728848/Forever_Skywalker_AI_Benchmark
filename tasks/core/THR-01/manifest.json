@@ -1,0 +1,141 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "THR-01",
+  "taskVersion": "0.1.0",
+  "title": "真实工作线程的分发与汇总",
+  "runtime": "mixed",
+  "runtimeRange": "node >=24.14.1 <25",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "public-tests/**/*.test.ts"
+    ],
+    "hidden": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "__checks__/**/*.test.ts"
+    ]
+  },
+  "grader": {
+    "checks": "graders/THR-01/checks",
+    "referencePatch": "graders/THR-01/reference.patch",
+    "alternative": "graders/THR-01/alternative",
+    "defectDetectors": [
+      "hidden/rejects-invalid-size",
+      "hidden/reports-failed-jobs",
+      "hidden/uses-real-worker-threads",
+      "public/rejects-invalid-size",
+      "public/reports-failed-jobs",
+      "public/uses-real-worker-threads"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/computes-each-job",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "每个 job 的结果按 id 汇总。"
+    },
+    {
+      "id": "public/uses-real-worker-threads",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "必须由真实 worker 线程处理，主线程 id 不得出现。"
+    },
+    {
+      "id": "public/reports-failed-jobs",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "失败 job 进入 failures，不影响其它 job。"
+    },
+    {
+      "id": "public/empty-input-creates-no-threads",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "空输入不创建线程。"
+    },
+    {
+      "id": "public/rejects-invalid-size",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "非法 size 抛 RangeError。"
+    },
+    {
+      "id": "hidden/computes-each-job",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的汇总。"
+    },
+    {
+      "id": "hidden/uses-real-worker-threads",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的真实线程与窗口。"
+    },
+    {
+      "id": "hidden/reports-failed-jobs",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的失败记录。"
+    },
+    {
+      "id": "hidden/empty-input-creates-no-threads",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的空输入。"
+    },
+    {
+      "id": "hidden/rejects-invalid-size",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的非法窗口。"
+    }
+  ]
+}
