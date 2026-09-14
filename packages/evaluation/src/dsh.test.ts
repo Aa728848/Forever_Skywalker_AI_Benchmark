@@ -185,6 +185,16 @@ describe('DSH automation adapter', () => {
     expect(report.presetFingerprint).toMatch(/^[a-f0-9]{64}$/);
   });
 
+  it('review-only 会话只装载评分 persona 并生成无工具限制', async () => {
+    const report = await runDsh({ ...options, reviewOnly: true, agentPreset: 'minimal', scratchDirectory: join(options.scratchDirectory!, 'review') }, { createHarness: launch => {
+      const patch = JSON.parse(readFileSync(launch.patches[0]!, 'utf8')) as Array<Record<string, unknown>>;
+      expect(patch.flatMap(item => Array.isArray(item.insert) ? item.insert : [])).toContainEqual(expect.objectContaining({ id: 'agent-presets', config: expect.objectContaining({ includeShippedRoot: false }) }));
+      expect(readFileSync(join(options.scratchDirectory!, 'review', 'preset-bridge.mjs'), 'utf8')).toContain('tools.restrict({ allow: [] })');
+      return { close: async () => {}, run: async () => ({ ...result('completed'), events: [{ type: 'agent-preset/selected', data: { agentPreset: 'minimal' } }, { type: 'turn/end', data: { reason: { kind: 'completed' } } }] }) };
+    } });
+    expect(report.finishReason).toBe('completed');
+  });
+
   it.each([[], ['ptc'], ['standard', 'ptc']].map(presets => ({ presets })))('refuses completion with absent or inconsistent actual preset evidence $presets', async ({ presets }) => {
     const report = await runDsh(options, { createHarness: () => ({ close: async () => {}, run: async () => ({
       finalResponse: 'done', events: [...presets.map(agentPreset => ({ type: 'agent-preset/selected', data: { agentPreset } })),

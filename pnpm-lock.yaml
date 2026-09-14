@@ -77,6 +77,9 @@ importers:
       '@fsa/static':
         specifier: workspace:*
         version: link:../../packages/static
+      '@fsa/tasks':
+        specifier: workspace:*
+        version: link:../../packages/tasks
 
   apps/web:
     dependencies:

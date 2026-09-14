@@ -52,7 +52,7 @@ pnpm dsh:compare --provider gateway-b --model "same-model" --preset standard --r
 
 两个命令分别使用对应 Provider ID，模型 ID 相同不会跨供应商匹配。上述ID须换成自己的实际配置。
 
-`BENCH_JUDGE_*` 控制固定裁判，与上述作答参数独立。裁判思考等级使用 `BENCH_JUDGE_REASONING_EFFORT`；例如 DeepSeek 裁判为 `high` 且 `BENCH_JUDGE_THINKING=enabled`，完整示例和预算见 [裁判供应商配置](judge-providers.md)。修改 `.env` 后重新运行命令；已启动的 API 服务需重启才读取新参数。
+评分由独立 DSH 评分 Agent 完成，与作答模型独立。`BENCH_DSH_ROOT/HOME/PROFILE/WORKSPACE_PERMISSION` 沿用作答 DSH 链；评分模型单独设置 `BENCH_JUDGE_DSH_PROVIDER`、`BENCH_JUDGE_DSH_MODEL`、`BENCH_JUDGE_DSH_REASONING_EFFORT`、`BENCH_JUDGE_DSH_MAX_TOKENS` 与 `BENCH_JUDGE_DSH_TIMEOUT_MS`。每轮是新的 DSH session，默认无工具并使用 `read-only` 建议权限。HTTP `BENCH_JUDGE_*` 旧入口不再是自动评分默认路径。完整示例见 [裁判供应商配置](judge-providers.md)。
 
 若使用自定义提供方，请保证 SDK profile 注册了该路由及其配置；Web 中存在的路由不会自动复制到 SDK profile。思考等级由对应适配器校验。保持 `BENCH_DSH_PROFILE=sdk`，通过预设选择极简模式，不要混淆 `minimal` 预设与另一套 `sdk-minimal` 启动配置。
 

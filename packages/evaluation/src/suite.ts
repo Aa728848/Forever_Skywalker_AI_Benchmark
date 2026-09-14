@@ -40,8 +40,9 @@ export function inspectRunSelection(store: RunStore, selection: unknown): {
       if (isAbsolute(scope) || scope.startsWith('..')) throw new Error('裁判证据越过运行目录。');
       const bytes = readFileSync(path);
       if (createHash('sha256').update(bytes).digest('hex') !== reviewArtifact.sha256) throw new Error('裁判证据摘要不一致。');
-      const record = JSON.parse(bytes.toString('utf8')) as { configuration?: { parametersFingerprint?: string }; responseModel?: string };
-      judgeProfiles.add(JSON.stringify([record.configuration?.parametersFingerprint ?? 'unrecorded', record.responseModel ?? 'unreported']));
+      const record = JSON.parse(bytes.toString('utf8')) as { configuration?: { parametersFingerprint?: string }; responseModel?: string; dshSession?: { version: string; presetFingerprint: string } };
+      judgeProfiles.add(JSON.stringify([record.configuration?.parametersFingerprint ?? 'unrecorded', record.responseModel ?? 'unreported',
+        ...(record.dshSession ? [record.dshSession.version, record.dshSession.presetFingerprint] : [])]));
     } else if (score?.total !== null && score?.total !== undefined) judgeProfiles.add('unrecorded');
     return { runId, attemptId, taskId: task.id, taskVersion: task.version, track: task.track, scoreRevision: revision ? basename(revision) : null,
       scoredAt: score?.scoredAt ?? null, total: score?.total ?? null, thresholdMet: score?.thresholdMet ?? null };

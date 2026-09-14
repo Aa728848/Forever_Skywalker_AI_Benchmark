@@ -1,5 +1,11 @@
 # 开发交接与执行手册
 
+## 最新交付：DSH 评分 Agent 已接入质量链
+
+`createQualityProvider()` 现在默认使用 `createDshJudgeFromEnvironment`，不再自动路由到 HTTP 裁判。评分 Agent 每轮创建独立 DSH session，采用 review-only 无工具预设，严格校验 JSON、题目/运行身份、版本和证据引用；两轮需保持 DSH 版本、预设指纹和模型路由一致。评分模型通过 `BENCH_JUDGE_DSH_PROVIDER`、`BENCH_JUDGE_DSH_MODEL`、`BENCH_JUDGE_DSH_REASONING_EFFORT`、`BENCH_JUDGE_DSH_MAX_TOKENS`、`BENCH_JUDGE_DSH_TIMEOUT_MS` 配置。`BENCH_DSH_ROOT/HOME/PROFILE/WORKSPACE_PERMISSION` 沿用作答 DSH 配置，未知用量记为 null。评分超时、无效响应或回收失败继续保持质量分待定，不生成假分数。
+
+本轮离线验证：`dsh-judge.test.ts` 与 `evaluation.test.ts` 共 6 项通过；未调用真实模型。真实 DSH 供应商认证和正式评分校准仍需用户另行运行，不能把离线结果当作模型成绩。
+
 更新：2026-09-14。本文件描述当前状态；历史 M0/M1 Note 保留当时事实，不用于推断当前完成度。
 
 ## 最新交付：DSH 工作区权限与报告路径
@@ -77,7 +83,7 @@ DSH目录读取调用已安装DeepSeek/Pi-ai适配器的本地接口，返回pro
 | 核心题库 | 48 道完整题包；五组证据、Windows与固定Linux三种实现验收通过 | 难度与规则校准 |
 | 来源集成 | 7/7 固定提交模块集成；来源许可/哈希、Windows与Linux三种实现验收通过 | 发布校准 |
 | 完成/执行 | CLI/API 完成、冻结、执行、评分、回收与修订；Linux真实边界5项通过 | 真实模型作答与独立裁判验收 |
-| 质量评分 | TS/Python/F# 静态事实；真实性能配对；两轮 HTTP 裁判、预算、证据、人工复核 | 用户配置 BENCH_JUDGE_*；真实裁判和静态/性能阈值校准 |
+| 质量评分 | TS/Python/F# 静态事实；真实性能配对；两轮独立 DSH 评分 Agent、预算、证据、人工复核 | 用户配置 BENCH_JUDGE_DSH_*；真实评分 Agent 和静态/性能阈值校准 |
 | 中文面板 | 目录、run/attempt 检查与时间线、证据下载、四级汇总、集成题单列 | 随改动运行端到端测试 |
 | Linux | Engine29.7.2/Linux、固定镜像四运行时、5项边界、55题三种实现及性能链均通过 | 固定环境上的发布校准 |
 

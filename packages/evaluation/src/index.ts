@@ -5,10 +5,13 @@ import { requireTask } from '@fsa/catalog';
 import { reviewVerdictValidator, type ExecutionArtifact, type ReviewVerdict } from '@fsa/contracts';
 import { scoreExecution, type QualityEvidence } from '@fsa/core';
 import type { QualityProvider } from '@fsa/executor';
-import { compareReviews, createEnvironmentJudge, JudgeUnavailableError, type JudgeAdapter, type ReviewMaterial } from '@fsa/judge';
+import { compareReviews, JudgeUnavailableError, type JudgeAdapter, type ReviewMaterial } from '@fsa/judge';
 import { analyzeWorkspace, defaultPolicy } from '@fsa/static';
 import { listFiles, taskPackageDir } from '@fsa/tasks';
 import { measureVerificationCost } from './benchmark.ts';
+import { createDshJudgeFromEnvironment } from './dsh-judge.ts';
+import { DshCleanupError } from './dsh.ts';
+export { createDshJudgeFromEnvironment, dshJudgeOptionsFromEnvironment } from './dsh-judge.ts';
 export { inspectRunSelection, summarizeRuns } from './suite.ts';
 
 export interface EvaluationOptions {
@@ -16,6 +19,7 @@ export interface EvaluationOptions {
   env?: NodeJS.ProcessEnv;
   measurePerformance?: boolean;
   humanReview?: { reviewer: string; reason: string; verdict: ReviewVerdict };
+  onJudgeCleanupError?: (error: DshCleanupError) => void;
 }
 
 /** 真实质量评估的 I/O 组合层；未取得的证据保持缺失，评分器继续只做纯计算。 */
@@ -103,7 +107,7 @@ export function createQualityProvider(options: EvaluationOptions = {}): QualityP
     } else {
       try {
         if (materialError) throw new JudgeUnavailableError(materialError);
-        const judge = options.judge ?? createEnvironmentJudge(env, context.signal ? { signal: context.signal } : {});
+        const judge = options.judge ?? createDshJudgeFromEnvironment(env, context.signal ? { signal: context.signal } : {});
         const frozenConfiguration = judge.configuration;
         const request = { runId: context.execution.runId, attemptId: context.execution.attemptId, taskId: task.taskId, promptVersion: judge.promptVersion, materials: [...materials] };
         writeEvidence('review-materials', 'review-materials.json', { ...request, candidateHash: context.execution.candidateTreeHash,
@@ -122,6 +126,10 @@ export function createQualityProvider(options: EvaluationOptions = {}): QualityP
           comparison.needsHumanReview = true;
           comparison.reasons.push('两轮服务端返回的模型版本不同，等待复核。');
         }
+        if (first.dshSession?.version !== second.dshSession?.version || first.dshSession?.presetFingerprint !== second.dshSession?.presetFingerprint) {
+          comparison.needsHumanReview = true;
+          comparison.reasons.push('两轮 DSH 评分运行时或评分配置发生变化，等待复核。');
+        }
         const firstScore = scoreExecution(context.execution, task, { objective, review: first.verdict.dimensions });
         const secondScore = scoreExecution(context.execution, task, { objective, review: second.verdict.dimensions });
         if (firstScore.thresholdMet !== null && secondScore.thresholdMet !== null && firstScore.thresholdMet !== secondScore.thresholdMet) {
@@ -137,6 +145,7 @@ export function createQualityProvider(options: EvaluationOptions = {}): QualityP
           if (!independentReview) notes.push('本轮为脚本评审演练，不属于真实模型验收。');
         }
       } catch (error) {
+        if (error instanceof DshCleanupError) options.onJudgeCleanupError?.(error);
         const message = error instanceof Error ? error.message : String(error);
         notes.push(error instanceof JudgeUnavailableError ? message : '独立评审未完成：' + message);
         writeEvidence('review-error', 'review-error.json', { message, at: new Date().toISOString(), totalRemainsPending: true });

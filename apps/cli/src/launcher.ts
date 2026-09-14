@@ -3,7 +3,8 @@ import { join, resolve } from 'node:path';
 import { tasks } from '@fsa/catalog';
 import { difficulties, difficultyLabels } from '@fsa/contracts';
 import { repositoryRoot } from '../../../packages/tasks/src/index.ts';
-import { judgeConfigFromEnvironment, JudgeUnavailableError } from '@fsa/judge';
+import { JudgeUnavailableError } from '@fsa/judge';
+import { dshJudgeOptionsFromEnvironment } from '../../../packages/evaluation/src/dsh-judge.ts';
 import { dshPresetLabels, dshWorkspacePermissionLabels, resolveDshPreset, resolveDshWorkspacePermission } from '../../../packages/evaluation/src/dsh.ts';
 import { discoverDshModels } from '../../../packages/evaluation/src/dsh-catalog.ts';
 
@@ -90,8 +91,8 @@ async function selectTasks(io: LauncherIO, single = false): Promise<string[]> {
 
 function describeJudge(io: LauncherIO, env: NodeJS.ProcessEnv): void {
   try {
-    const { config } = judgeConfigFromEnvironment(env);
-    io.say(`裁判：${config.provider} / ${config.model}；思考：${config.reasoningEffort ?? config.reasoningMode ?? config.thinking ?? '供应商默认'}；每次作答最多 ${config.maxCalls} 次评审调用。`);
+    const config = dshJudgeOptionsFromEnvironment(env);
+    io.say(`DSH 评分 Agent：${config.provider} / ${config.model}；思考：${config.reasoningEffort}；每题两轮独立会话。`);
   } catch (error) {
     if (!(error instanceof JudgeUnavailableError)) throw error;
     io.say(`裁判：${error.message} 完整质量分和总分将保持待定。`);

@@ -11,6 +11,7 @@
     "@fsa/executor": "workspace:*",
     "@fsa/static": "workspace:*",
     "@fsa/judge": "workspace:*",
+    "@fsa/tasks": "workspace:*",
     "@fsa/evaluation": "workspace:*"
   }
 }

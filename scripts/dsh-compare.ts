@@ -7,7 +7,8 @@ import { pathToFileURL } from 'node:url';
 import { repositoryRoot } from '../packages/tasks/src/index.ts';
 import { tasks } from '../packages/catalog/src/index.ts';
 import { probeContainerRuntime, requirePinnedImage } from '../packages/executor/src/index.ts';
-import { judgeConfigFromEnvironment, JudgeUnavailableError } from '../packages/judge/src/index.ts';
+import { JudgeUnavailableError } from '../packages/judge/src/index.ts';
+import { dshJudgeOptionsFromEnvironment } from '../packages/evaluation/src/dsh-judge.ts';
 import { runDshComparison, validateComparison, type DshComparisonOptions } from '../packages/evaluation/src/dsh-comparison.ts';
 import { checkDshInstallation, resolveDshPreset, resolveDshWorkspacePermission } from '../packages/evaluation/src/dsh.ts';
 import { cleanupComparisonScratch, createComparisonScratch } from '../packages/evaluation/src/comparison-artifacts.ts';
@@ -77,8 +78,8 @@ try {
     } finally { cleanupComparisonScratch(preflight); }
     let judgeMessage = '裁判未配置：可用验证正常评分，完整质量分和总分待定。';
     try {
-      const { config } = judgeConfigFromEnvironment();
-      judgeMessage = `裁判：${config.provider} / ${config.model}；最多每次作答 ${config.maxCalls} 次评审调用。`;
+      const config = dshJudgeOptionsFromEnvironment();
+      judgeMessage = `DSH 评分 Agent：${config.provider} / ${config.model}；思考 ${config.reasoningEffort}；每题两轮独立会话。`;
     } catch (error) { if (!(error instanceof JudgeUnavailableError)) throw error; }
     console.log(`DSH ${installation.version}；作答：${options.provider} / ${options.model}；预设 ${options.presets.join('、')}；思考 ${options.modes.join('、')}；共 ${options.taskIds.length * options.presets.length * options.modes.length * options.repeats} 次。`);
     console.log(judgeMessage);

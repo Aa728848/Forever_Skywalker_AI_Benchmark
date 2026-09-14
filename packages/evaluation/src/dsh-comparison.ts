@@ -153,7 +153,12 @@ export async function runDshComparison(options: DshComparisonOptions, services: 
   const scratch = createComparisonScratch();
   const store = createRunStore(join(scratch.directory, 'evidence', 'runs'));
   const env = { ...(services.env ?? process.env) };
-  const qualityProvider = createQualityProvider({ env, measurePerformance: options.measurePerformance });
+  // 包含 CLI/向导已解析的覆盖值，保证作答与评分采用同一条非模型配置链。
+  Object.assign(env, { BENCH_DSH_ROOT: options.dshRoot, BENCH_DSH_HOME: options.dshHome,
+    BENCH_DSH_PROFILE: options.profile, BENCH_DSH_WORKSPACE_PERMISSION: options.workspacePermission });
+  let judgeCleanupError: DshCleanupError | undefined;
+  const qualityProvider = createQualityProvider({ env, measurePerformance: options.measurePerformance,
+    onJudgeCleanupError(error) { judgeCleanupError = error; } });
   const report: DshComparisonReport = { schemaVersion: '0.2.0', id: randomUUID(), startedAt: new Date().toISOString(), finishedAt: null,
     state: 'running', settings: { ...options }, prompt: comparisonPrompt, rows: [], issues: [], evidence: null,
     cleanup: { state: 'pending', directory: scratch.directory, reason: null } };
@@ -209,6 +214,7 @@ export async function runDshComparison(options: DshComparisonOptions, services: 
         row.phase = 'grading'; persist();
         services.onProgress?.(`${row.taskId} · ${row.preset} / ${row.mode}：Linux 验证与评分中`);
         row.evaluation = await evaluate(row.taskId, workspace, row, store);
+        if (judgeCleanupError) throw judgeCleanupError;
         row.phase = 'done';
         if (services.signal?.aborted) { report.state = 'cancelled'; break; }
         if (row.evaluation.status.classification === 'infrastructure-error') throw new Error('评分基础设施失败，已停止后续模型调用。');

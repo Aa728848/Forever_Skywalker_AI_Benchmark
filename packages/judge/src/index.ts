@@ -31,12 +31,13 @@ export interface ReviewMaterial {
 export interface ReviewOutcome {
   readonly verdict: ReviewVerdict;
   readonly calls: number;
-  readonly inputTokens: number;
-  readonly outputTokens: number;
+  readonly inputTokens: number | null;
+  readonly outputTokens: number | null;
   readonly source: 'model' | 'scripted';
   readonly configuration?: JudgeConfiguration;
   readonly usageDetails?: Readonly<Record<string, number>>;
   readonly responseModel?: string;
+  readonly dshSession?: { id: string; version: string; presetFingerprint: string; durationMs: number; observedRoutes: { provider: string; model: string }[] };
 }
 
 export interface JudgeAdapter {

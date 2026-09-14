@@ -4,7 +4,7 @@ import { JudgeUnavailableError } from './index.ts';
 
 export interface JudgeConfiguration {
   readonly provider: string;
-  readonly api: NonNullable<JudgeConfig['api']>;
+  readonly api: NonNullable<JudgeConfig['api']> | 'dsh-session';
   readonly model: string;
   readonly promptVersion: string;
   /** 实际发送的非敏感生成参数；未发送的参数采用供应商默认值。 */

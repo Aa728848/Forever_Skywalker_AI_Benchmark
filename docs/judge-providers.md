@@ -4,9 +4,26 @@
 
 ## 配置入口
 
-只在本项目 `.env` 填入自己的 `BENCH_JUDGE_ENDPOINT`、`BENCH_JUDGE_MODEL`、`BENCH_JUDGE_TOKEN`。端点使用 API 基址或与所选协议一致的完整路径，不包含 `?key=` 等查询参数。令牌经请求头发送；不写入判决、配置快照或日志。
+正式评分链使用独立 DSH 评分 Agent。HTTP `BENCH_JUDGE_ENDPOINT/TOKEN` 兼容代码仍保留用于历史材料和离线迁移，但不会被 `createQualityProvider()` 自动调用。
 
-所有供应商共用同一裁判提示、材料和判决 Schema，但各家的“high”不代表相同算力。模型名称、思考模式、输出限制和采样参数共同决定裁判配置。两个独立评审轮次使用同一份冻结生成配置；正式一致性校准需要记录该配置，不能只记录模型名称。
+评分 Agent 与作答 Agent 共用 DSH 的 `BENCH_DSH_ROOT`、`BENCH_DSH_HOME`、`BENCH_DSH_PROFILE`、`BENCH_DSH_WORKSPACE_PERMISSION`；只有模型路由和思考参数单独配置：
+
+```dotenv
+BENCH_JUDGE_DSH_PROVIDER=deepseek-official
+BENCH_JUDGE_DSH_MODEL=独立的评分模型ID
+BENCH_JUDGE_DSH_REASONING_EFFORT=high
+BENCH_JUDGE_DSH_MAX_TOKENS=16384
+BENCH_JUDGE_DSH_TIMEOUT_MS=300000
+BENCH_JUDGE_PROMPT_VERSION=dsh-review-v1
+```
+
+评分默认使用 `minimal` 的无工具评分配置，并要求两轮使用新的 DSH session。工作区权限仍从 DSH 链传入；建议设为 `read-only`。评分 Agent 不读取隐藏检查、参考补丁或其它作答，无法解析 JSON、身份/证据不匹配、超时或回收失败都会保持质量分待定。
+
+DSH 评分 Agent 只需在本项目 `.env` 填入 `BENCH_JUDGE_DSH_PROVIDER`、`BENCH_JUDGE_DSH_MODEL` 与思考/预算字段；供应商密钥继续由共用的 DSH home 管理。旧 HTTP 入口的端点与令牌不参与自动评分。
+
+以下参数矩阵属于历史 HTTP 兼容适配器，供导入旧评审材料使用；正式自动评分不读取这些字段。所有供应商共用同一裁判提示、材料和判决 Schema，但各家的“high”不代表相同算力。模型名称、思考模式、输出限制和采样参数共同决定裁判配置。
+
+### 历史 HTTP 兼容配置（非自动评分默认路径）
 
 | 环境变量（均以 `BENCH_JUDGE_` 开头） | 含义 |
 | --- | --- |
@@ -27,7 +44,7 @@
 
 留空的采样/思考字段不会被硬塞成统一默认值，报告中的 `parameters` 展示实际发送的参数。供应商默认行为仍可能随模型别名变化；发布校准优先使用可用的固定模型快照。参数拼错、未登记的组合或任意 JSON 透传均拒绝工作。
 
-### 在 .env 设置裁判思考等级
+### 历史 HTTP 适配器的思考参数（不用于 DSH 评分）
 
 修改项目根目录 `.env` 中已有的对应字段。例如使用本适配器已登记的 DeepSeek 裁判：
 
@@ -66,7 +83,7 @@ BENCH_JUDGE_TIMEOUT_MS=300000
 
 OpenAI 能力登记按模型分开：GPT-5.1 没有 xhigh；GPT-5 Pro 仅 Responses/high；GPT-5.4 Pro 仅 Responses/medium/high/xhigh；GPT-5.5 为 none/low/medium/high/xhigh；GPT-5.6 Sol 为 none/low/medium/high/xhigh/max；GPT-6 Astra 为 low/medium/high/xhigh/max。未知模型的额外推理参数应先核对再扩展登记，不能用笼统的 `gpt-5.*` 推断。[5.1](https://developers.openai.com/api/docs/models/gpt-5.1)、[5 Pro](https://developers.openai.com/api/docs/models/gpt-5-pro)、[5.4 Pro](https://developers.openai.com/api/docs/models/gpt-5.4-pro)、[5.5](https://developers.openai.com/api/docs/models/gpt-5.5)、[5.6 Sol](https://developers.openai.com/api/docs/models/gpt-5.6-sol)、[6 Astra](https://developers.openai.com/api/docs/models/gpt-6-astra)
 
-## 配置样例
+## 历史 HTTP 配置样例（非 DSH 自动评分）
 
 下列模型名仅用于展示映射，不是最佳裁判推荐，也不保证你的地区或账户可调用。先填写共同预算，再从下表选择一行；切换厂商时清空不适用的可选字段。
 

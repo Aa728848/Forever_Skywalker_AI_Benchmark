@@ -6,8 +6,8 @@ import { difficultyLabels, humanReviewValidator, type RunStatus } from '@fsa/con
 import { parseAssessment, scoreAssessment } from '@fsa/core';
 import { createEnvelope, createRunStore, defaultRunRoot } from '@fsa/runs';
 import { listRunStatuses, readExecutionScore, readRunStatus, renderRunReport, reviewCompletedAttempt, verifySubmission } from '@fsa/executor';
-import { createEnvironmentJudge, judgeConfigFromEnvironment, JudgeUnavailableError } from '@fsa/judge';
-import { createQualityProvider, summarizeRuns } from '@fsa/evaluation';
+import { JudgeUnavailableError } from '@fsa/judge';
+import { createQualityProvider, dshJudgeOptionsFromEnvironment, summarizeRuns } from '@fsa/evaluation';
 import { repositoryRoot } from '@fsa/tasks';
 
 const usage = [
@@ -15,7 +15,7 @@ const usage = [
   '  bench list | show <题目 ID> | score <证据 JSON> [--format json|markdown]   # 预览语义，不执行候选代码',
   '  bench submit <题目 ID> <候选目录> --key <幂等键> [--by <提交者>] [--reason agent-completed|operator-submit|patch-import]',
   '              [--root <运行存储目录>] [--format json] [--profile local|linux-container] [--image <镜像引用>] [--image-digest sha256:...] [--static]',
-  '  静态客观分自动采集；--measure 追加真实参考/候选性能采样；--no-measure 明确跳过。独立评审从 BENCH_JUDGE_* 配置读取。',
+  '  静态客观分自动采集；--measure 追加真实参考/候选性能采样；--no-measure 明确跳过。独立 DSH 评分 Agent 从 BENCH_JUDGE_DSH_* 配置读取。',
   '  bench status <runId> <attemptId> [--root <运行存储目录>] [--format json]',
   '  bench runs [--root <运行存储目录>] [--format json]',
   '  bench review <runId> <attemptId> [--human <复核JSON>] [--measure] [--root <运行存储目录>]',
@@ -94,10 +94,10 @@ try {
     if (values.key !== undefined) envelopeOptions.idempotencyKey = values.key;
     const envelope = createEnvelope(first, second, envelopeOptions);
     if (!['local', 'linux-container'].includes(values.profile)) throw new Error('--profile 必须为 local 或 linux-container。');
-    let judgeSummary = '评审：未配置（需要 BENCH_JUDGE_ENDPOINT / BENCH_JUDGE_MODEL / BENCH_JUDGE_TOKEN），代码质量保持待定。';
+    let judgeSummary = '评审：未配置（需要 BENCH_JUDGE_DSH_PROVIDER / BENCH_JUDGE_DSH_MODEL，并复用 BENCH_DSH_ROOT/HOME），代码质量保持待定。';
     try {
-      const { config } = judgeConfigFromEnvironment();
-      judgeSummary = '自动评审已配置：' + config.provider + ' ' + config.model + '（提示版本 ' + config.promptVersion + '，本次预算 ' + config.maxCalls + ' 次）。';
+      const config = dshJudgeOptionsFromEnvironment();
+      judgeSummary = 'DSH 评分 Agent 已配置：' + config.provider + ' / ' + config.model + '（思考 ' + config.reasoningEffort + '，两轮独立会话）。';
     } catch (error) {
       if (!(error instanceof JudgeUnavailableError)) throw error;
     }
@@ -174,7 +174,8 @@ try {
   } else if (command === 'summary' && first !== undefined) {
     console.log(JSON.stringify(summarizeRuns(createRunStore(values.root), JSON.parse(readFileSync(first, 'utf8'))), null, 2));
   } else if (command === 'judge-config') {
-    const judge = createEnvironmentJudge();
+    const { createDshJudgeFromEnvironment } = await import('@fsa/evaluation');
+    const judge = createDshJudgeFromEnvironment();
     console.log(JSON.stringify({ configuration: judge.configuration, networkCall: false }, null, 2));
   } else if (command === 'runs') {
     const statuses = listRunStatuses(createRunStore(values.root));

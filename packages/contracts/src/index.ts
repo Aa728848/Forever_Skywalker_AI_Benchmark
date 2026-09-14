@@ -370,8 +370,8 @@ export const ReviewVerdictSchema = Type.Object({
   notes: Type.Array(text, { maxItems: 32 }),
   cost: Type.Object({
     calls: Type.Integer({ minimum: 0 }),
-    inputTokens: Type.Integer({ minimum: 0 }),
-    outputTokens: Type.Integer({ minimum: 0 }),
+    inputTokens: Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]),
+    outputTokens: Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]),
   }, { additionalProperties: false }),
   reviewedAt: text,
 }, { additionalProperties: false });

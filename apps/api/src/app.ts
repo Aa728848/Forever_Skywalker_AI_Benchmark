@@ -4,10 +4,9 @@ import { tasks, requireTask } from '@fsa/catalog';
 import { AssessmentSchema, HumanReviewSchema, RunSelectionSchema, RunSubmissionSchema, type Assessment, type HumanReview, type PreviewReport, type RunSelection, type RunSubmission } from '@fsa/contracts';
 import { AttemptExistsError, IdempotencyConflictError } from '@fsa/runs';
 import { createRunStore, defaultRunRoot } from '@fsa/runs';
-import { summarizeRuns } from '@fsa/evaluation';
+import { dshJudgeOptionsFromEnvironment, summarizeRuns } from '@fsa/evaluation';
 import { probeContainerRuntime, requirePinnedImage } from '@fsa/executor';
 import { join } from 'node:path';
-import { judgeConfigFromEnvironment } from '@fsa/judge';
 import { scoreAssessment } from '@fsa/core';
 import { openStore } from './store.ts';
 import { openRunEntry } from './runs.ts';
@@ -43,7 +42,7 @@ export function buildApp(databasePath = ':memory:', options: AppOptions = {}) {
     return actual.length === expected.length && timingSafeEqual(actual, expected);
   };
   let judgeConfigured = false;
-  try { judgeConfigFromEnvironment(); judgeConfigured = true; } catch { /* 配置缺失由每次实际评审记录，不在 health 中暴露凭据。 */ }
+  try { dshJudgeOptionsFromEnvironment(); judgeConfigured = true; } catch { /* 配置缺失由每次实际评审记录，不在 health 中暴露凭据。 */ }
   let isolationProbe = { available: false, reason: '未请求 Linux 容器档案。', checkedAt: 0 };
   const probeIsolation = () => {
     if (profile !== 'linux-container' || Date.now() - isolationProbe.checkedAt < 30000) return isolationProbe;
