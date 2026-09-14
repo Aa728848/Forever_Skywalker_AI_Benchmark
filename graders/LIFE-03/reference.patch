@@ -1,8 +1,8 @@
 diff --git a/starter/src/supervisor.ts b/starter/src/supervisor.ts
-index c73b7f8..4b0edb3 100644
+index 9e69bac..2b109b7 100644
 --- a/starter/src/supervisor.ts
 +++ b/starter/src/supervisor.ts
-@@ -12,9 +12,10 @@ interface Activation {
+@@ -7,9 +7,10 @@ export type Phase = 'idle' | 'starting' | 'running' | 'stopping';
  export class Supervisor {
    readonly #runner: Runner;
    #phase: Phase = 'idle';
@@ -14,7 +14,7 @@ index c73b7f8..4b0edb3 100644
  
    constructor(runner: Runner) {
      this.#runner = runner;
-@@ -29,21 +30,34 @@ export class Supervisor {
+@@ -24,21 +25,34 @@ export class Supervisor {
    }
  
    async start(): Promise<void> {

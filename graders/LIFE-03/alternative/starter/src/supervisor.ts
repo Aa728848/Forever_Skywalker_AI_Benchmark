@@ -4,11 +4,6 @@ export interface Runner {
 
 export type Phase = 'idle' | 'starting' | 'running' | 'stopping';
 
-interface Activation {
-  readonly controller: AbortController;
-  readonly done: Promise<void>;
-}
-
 /** 替代实现：用状态机 + 串行队列（每次操作都排在上一次之后）。 */
 export class Supervisor {
   readonly #runner: Runner;

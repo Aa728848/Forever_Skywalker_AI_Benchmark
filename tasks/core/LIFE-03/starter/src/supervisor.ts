@@ -4,11 +4,6 @@ export interface Runner {
 
 export type Phase = 'idle' | 'starting' | 'running' | 'stopping';
 
-interface Activation {
-  readonly controller: AbortController;
-  readonly done: Promise<void>;
-}
-
 export class Supervisor {
   readonly #runner: Runner;
   #phase: Phase = 'idle';
