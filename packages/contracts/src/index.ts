@@ -348,6 +348,46 @@ export const RunStatusSchema = Type.Object({
 export type RunStatus = Type.Static<typeof RunStatusSchema>;
 export const runStatusValidator = Schema.Compile(RunStatusSchema);
 
+/** 独立评审判决：四维分数必须各自引用证据，并记录模型、提示版本与调用成本。 */
+export const ReviewVerdictSchema = Type.Object({
+  schemaVersion: Type.Literal('0.1.0'),
+  runId: id,
+  attemptId: id,
+  taskId: id,
+  rubricVersion: text,
+  model: text,
+  promptVersion: text,
+  dimensions: Type.Object({
+    simplicity: Type.Object({ score: Type.Number({ minimum: 0, maximum: 100 }), evidence: Type.Array(id, { minItems: 1, maxItems: 20 }) }, { additionalProperties: false }),
+    maintainability: Type.Object({ score: Type.Number({ minimum: 0, maximum: 100 }), evidence: Type.Array(id, { minItems: 1, maxItems: 20 }) }, { additionalProperties: false }),
+    decoupling: Type.Object({ score: Type.Number({ minimum: 0, maximum: 100 }), evidence: Type.Array(id, { minItems: 1, maxItems: 20 }) }, { additionalProperties: false }),
+    performance: Type.Object({ score: Type.Number({ minimum: 0, maximum: 100 }), evidence: Type.Array(id, { minItems: 1, maxItems: 20 }) }, { additionalProperties: false }),
+  }, { additionalProperties: false }),
+  notes: Type.Array(text, { maxItems: 32 }),
+  cost: Type.Object({
+    calls: Type.Integer({ minimum: 0 }),
+    inputTokens: Type.Integer({ minimum: 0 }),
+    outputTokens: Type.Integer({ minimum: 0 }),
+  }, { additionalProperties: false }),
+  reviewedAt: text,
+}, { additionalProperties: false });
+export type ReviewVerdict = Type.Static<typeof ReviewVerdictSchema>;
+export const reviewVerdictValidator = Schema.Compile(ReviewVerdictSchema);
+
+/** 评审适配器配置：令牌只从环境读取，绝不写入配置或运行档案。 */
+export const JudgeConfigSchema = Type.Object({
+  provider: text,
+  model: text,
+  endpoint: text,
+  promptVersion: text,
+  maxCalls: Type.Integer({ minimum: 1, maximum: 1000 }),
+  maxInputTokens: Type.Integer({ minimum: 1 }),
+  maxOutputTokens: Type.Integer({ minimum: 1 }),
+}, { additionalProperties: false });
+export type JudgeConfig = Type.Static<typeof JudgeConfigSchema>;
+export const judgeConfigValidator = Schema.Compile(JudgeConfigSchema);
+
+
 /** 可用验证分组：权重与 docs/scoring.md 一致（20/10/10/5/5，合计 50）。 */
 export const ExecutionScoreGroupSchema = Type.Union([
   Type.Literal('behavior'), Type.Literal('boundary'), Type.Literal('state'), Type.Literal('regression'), Type.Literal('resources'),

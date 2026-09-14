@@ -118,6 +118,12 @@ importers:
         specifier: workspace:*
         version: link:../tasks
 
+  packages/judge:
+    dependencies:
+      '@fsa/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+
   packages/runs:
     dependencies:
       '@fsa/contracts':
