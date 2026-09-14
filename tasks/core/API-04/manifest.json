@@ -1,0 +1,141 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "API-04",
+  "taskVersion": "0.1.0",
+  "title": "重启后任务提交与事务一致性",
+  "runtime": "typescript",
+  "runtimeRange": "node >=24.14.1 <25",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "public-tests/**/*.test.ts"
+    ],
+    "hidden": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "__checks__/**/*.test.ts"
+    ]
+  },
+  "grader": {
+    "checks": "graders/API-04/checks",
+    "referencePatch": "graders/API-04/reference.patch",
+    "alternative": "graders/API-04/alternative",
+    "defectDetectors": [
+      "hidden/failed-write-leaves-no-partial-record",
+      "hidden/repeated-key-returns-same-task-id",
+      "hidden/restart-reuses-existing-record",
+      "public/failed-write-leaves-no-partial-record",
+      "public/repeated-key-returns-same-task-id",
+      "public/restart-reuses-existing-record"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/submits-and-records-task-id",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "首次提交落盘并返回 taskId。"
+    },
+    {
+      "id": "hidden/submits-and-records-task-id",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本：首次提交落盘并返回 taskId。"
+    },
+    {
+      "id": "public/repeated-key-returns-same-task-id",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "同一提交键幂等返回同一 taskId。"
+    },
+    {
+      "id": "hidden/repeated-key-returns-same-task-id",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本：同一提交键幂等返回同一 taskId。"
+    },
+    {
+      "id": "public/restart-reuses-existing-record",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "重启后复用已有记录，不产生第二条。"
+    },
+    {
+      "id": "hidden/restart-reuses-existing-record",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本：重启后复用已有记录，不产生第二条。"
+    },
+    {
+      "id": "public/failed-write-leaves-no-partial-record",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "写失败不留半条记录且可重试。"
+    },
+    {
+      "id": "hidden/failed-write-leaves-no-partial-record",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本：写失败不留半条记录且可重试。"
+    },
+    {
+      "id": "public/distinct-keys-get-distinct-ids-and-empty-key-is-rejected",
+      "kind": "public",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "不同键不同 id，空键被拒。"
+    },
+    {
+      "id": "hidden/distinct-keys-get-distinct-ids-and-empty-key-is-rejected",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本：不同键不同 id，空键被拒。"
+    }
+  ]
+}

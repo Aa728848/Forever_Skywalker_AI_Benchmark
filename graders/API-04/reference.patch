@@ -1,0 +1,36 @@
+diff --git a/starter/src/submit.ts b/starter/src/submit.ts
+index 189e490..06a3952 100644
+--- a/starter/src/submit.ts
++++ b/starter/src/submit.ts
+@@ -29,12 +29,27 @@ export class TaskSubmitter {
+     return [...this.#committed];
+   }
+ 
++  #nextId(): string {
++    this.#sequence += 1;
++    return 'task-' + this.#sequence;
++  }
++
+   submit(key: string, payload: string): Promise<string> {
+     if (key === '') return Promise.reject(new SubmitError(key, '提交键不得为空'));
+-    // 缺陷：不读幂等记录、不查已有 taskId，每次都新建并覆盖写。
+-    this.#sequence += 1;
+-    const taskId = 'task-' + this.#sequence;
+-    this.#store.write(entryKey(key), taskId + '|' + payload);
++    // 幂等：先读记录；已有则直接返回原 taskId，绝不再写第二条。
++    const existing = this.#store.read(entryKey(key));
++    if (existing !== null) {
++      const taskId = existing.split('|')[0] as string;
++      if (!this.#committed.includes(taskId)) this.#committed.push(taskId);
++      return Promise.resolve(taskId);
++    }
++    const taskId = this.#nextId();
++    try {
++      this.#store.write(entryKey(key), taskId + '|' + payload);
++    } catch (error) {
++      // 写失败不得留下半条记录：committed 不推进，调用方可以重试。
++      return Promise.reject(new SubmitError(key, '写入失败：' + String(error)));
++    }
+     this.#committed.push(taskId);
+     return Promise.resolve(taskId);
+   }
