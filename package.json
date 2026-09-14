@@ -8,6 +8,7 @@
     "node": ">=24.14.1 <25"
   },
   "scripts": {
+    "start": "node --env-file-if-exists=.env --import tsx scripts/start.ts",
     "dev": "pnpm --parallel --filter @fsa/api --filter @fsa/web dev",
     "bench": "node --env-file-if-exists=.env --import tsx apps/cli/src/main.ts",
     "dsh:compare": "node --env-file-if-exists=.env --import tsx scripts/dsh-compare.ts",

@@ -13,7 +13,7 @@ const usage = [
   '  bench list | show <题目 ID> | score <证据 JSON> [--format json|markdown]   # 预览语义，不执行候选代码',
   '  bench submit <题目 ID> <候选目录> --key <幂等键> [--by <提交者>] [--reason agent-completed|operator-submit|patch-import]',
   '              [--root <运行存储目录>] [--format json] [--profile local|linux-container] [--image <镜像引用>] [--image-digest sha256:...] [--static]',
-  '  静态客观分自动采集；--measure 追加真实参考/候选性能采样。独立评审从 BENCH_JUDGE_* 配置读取。',
+  '  静态客观分自动采集；--measure 追加真实参考/候选性能采样；--no-measure 明确跳过。独立评审从 BENCH_JUDGE_* 配置读取。',
   '  bench status <runId> <attemptId> [--root <运行存储目录>] [--format json]',
   '  bench runs [--root <运行存储目录>] [--format json]',
   '  bench review <runId> <attemptId> [--human <复核JSON>] [--measure] [--root <运行存储目录>]',
@@ -60,6 +60,7 @@ try {
       human: { type: 'string' },
     },
     allowPositionals: true,
+    allowNegative: true,
   });
   const [command, first, second] = positionals;
   const asJson = values.format === 'json';

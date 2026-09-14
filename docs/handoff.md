@@ -6,6 +6,14 @@
 
 用户已自行重启Windows，固定Linux容器已配置并验收。实际模型评测仍暂停；不会因环境就绪自动调用真实裁判。
 
+## 最新交付：终端分步启动
+
+新增 `pnpm start` 和 Windows 根目录 `start.cmd`。向导依次选择供应商/模型、DSH预设、思考等级、题目、预算和报告目录；最后展示组合次数、裁判状态与可复制命令，默认仅预检。还可导出外部作答、提交完成作答、启动网页/API或检查Linux环境。外部作答默认导出到仓库外的 `Documents/BenchAnswers`；不改写.env、原DSH配置或评分规则。
+
+DSH目录读取调用已安装DeepSeek/Pi-ai适配器的本地接口，返回provider/model和声明的思考等级，不调用远程目录或模型。额外插件/profile覆盖有明确手工输入入口。未声明等级默认default；同名模型按供应商隔离。完整操作见 [快速启动](quick-start.md)，实现与限制见 [向导Note](notes/implemented/feature/2026-09-14-interactive-launcher.md) 和 [本地目录Note](notes/implemented/feature/2026-09-14-dsh-local-model-catalog.md)。
+
+本轮 `pnpm check` 215项测试、严格类型、55题目录和构建通过。真实Windows终端选择标准/PTC × off/high，CACHE-02共4次计划，最终仅预检通过；模型调用0。外部导出实跑、项目外调用start.cmd并q退出通过，临时验证目录已清理。未变更题包或网页/API行为，不重复全量题目和浏览器验证；下方202项为上一轮交付。
+
 ## 最新交付：55题全量工程质量复核
 
 逐题审查55题后改善32题、澄清4题、保留19题。新版任务强化异步生命周期、持久事务/崩溃恢复、多资源并发、插件发布回滚、增量图和有界流式投影；基础题保留作退化门槛。原有及新增83个近似错误修复均有对应版本和补丁哈希的有效检出记录。逐题版本、理由和证据见 [全量审查矩阵](reviews/2026-09-14-full-task-quality-audit.md) 与 [机器矩阵](../catalog/task-quality-audit.json)。
