@@ -89,6 +89,16 @@ describe('正式运行入口', () => {
 
       const queried = await app.inject(`/api/runs/${status.runId}/${status.attemptId}`);
       expect(queried.statusCode).toBe(200);
+
+      // 报告导出：Markdown 出口带检查结论、评分与证据
+      const report = await app.inject(`/api/runs/${status.runId}/${status.attemptId}/report`);
+      expect(report.statusCode).toBe(200);
+      expect(report.headers['content-type']).toContain('text/markdown');
+      expect(report.body).toContain('# 运行报告 CACHE-02');
+      expect(report.body).toContain('public/retry-after-failure');
+      expect(report.body).toContain('代码质量：待定');
+      expect(report.body).toContain('`public.stdout`');
+      expect((await app.inject('/api/runs/run-missing/attempt-missing/report')).statusCode).toBe(404);
       expect(queried.json()).toEqual(status);
       expect((await app.inject('/api/runs')).json()).toHaveLength(1);
       expect((await app.inject('/api/runs/run-missing/attempt-missing')).statusCode).toBe(404);

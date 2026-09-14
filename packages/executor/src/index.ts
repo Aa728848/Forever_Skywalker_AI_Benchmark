@@ -705,3 +705,56 @@ export function readRunStatus(store: RunStore, runId: string, attemptId: string)
 export function listRunStatuses(store: RunStore): RunStatus[] {
   return store.list().map(entry => readRunStatus(store, entry.runId, entry.attemptId));
 }
+
+/**
+ * 报告导出：把一次 attempt 的运行状态渲染成 Markdown，供面板下载或人工复核使用。
+ * 只包含受控链路实际产出的结论与证据引用；代码质量缺失时明确写“待定”。
+ */
+export function renderRunReport(store: RunStore, runId: string, attemptId: string): string {
+  const status = readRunStatus(store, runId, attemptId);
+  const score = readExecutionScore(store.readAttempt(runId, attemptId)?.directory ?? '');
+  const lines: string[] = [];
+  lines.push('# 运行报告 ' + status.taskId + ' ' + status.taskVersion);
+  lines.push('');
+  lines.push('- 运行 / 尝试：`' + status.runId + '` / `' + status.attemptId + '`');
+  lines.push('- 阶段：' + status.phase + '；执行结论：' + (status.classification ?? '尚未执行'));
+  lines.push('- 候选摘要：`' + status.candidateTreeHash + '`');
+  lines.push('- 冻结时间：' + status.frozenAt + (status.verifiedAt === null ? '' : '；验证时间：' + status.verifiedAt));
+  lines.push('');
+  lines.push('## 检查结果');
+  lines.push('');
+  lines.push('| 检查 | 分组 | 关键项 | 状态 |');
+  lines.push('| --- | --- | --- | --- |');
+  for (const check of score?.groups.flatMap(group => group.passed.map(id => ({ id, group: group.group, status: 'passed' })).concat(group.failed.map(id => ({ id, group: group.group, status: 'failed' }))).concat(group.notRun.map(id => ({ id, group: group.group, status: 'not-run' })))) ?? []) {
+    const critical = status.knownFailures.some(failure => failure.id === check.id && failure.critical);
+    lines.push('| `' + check.id + '` | ' + check.group + ' | ' + (critical ? '是' : '') + ' | ' + check.status + ' |');
+  }
+  if (status.knownFailures.length === 0) lines.push('');
+  lines.push('');
+  lines.push('## 评分');
+  lines.push('');
+  lines.push('- 可用验证：' + (status.scoring.functional === null ? '未取得' : status.scoring.functional + ' / 50'));
+  lines.push('- 代码质量：' + (status.scoring.quality === null ? '待定（客观分或评审分缺失）' : status.scoring.quality + ' / 50'));
+  lines.push('- 总分：' + (status.scoring.total === null ? '待定' : status.scoring.total + ' / 100'));
+  if (score !== null) {
+    lines.push('- 质量维度：' + JSON.stringify(score.dimensions));
+    lines.push('- 门槛：' + (score.thresholdMet === null ? '待定' : String(score.thresholdMet)));
+  }
+  if (status.scoring.reason !== '') lines.push('- 说明：' + status.scoring.reason);
+  lines.push('');
+  lines.push('## 证据');
+  lines.push('');
+  lines.push(status.evidenceRefs.length === 0 ? '无' : status.evidenceRefs.map(ref => '`' + ref + '`').join('、'));
+  if (status.artifacts.length > 0) {
+    lines.push('');
+    lines.push('| 证据 | 路径 | 字节 | 摘要 |');
+    lines.push('| --- | --- | ---: | --- |');
+    for (const artifact of status.artifacts) {
+      lines.push('| `' + artifact.id + '` | `' + artifact.path + '` | ' + artifact.bytes + ' | `' + artifact.sha256.slice(0, 12) + '…` |');
+    }
+  }
+  lines.push('');
+  lines.push('> 报告由受控执行链产出：候选来自冻结快照，检查结论来自平台解析，代码质量在证据不全时保持待定。');
+  lines.push('');
+  return lines.join('\n');
+}

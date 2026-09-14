@@ -69,6 +69,16 @@ export function buildApp(databasePath = ':memory:', options: AppOptions = {}) {
     }
   });
   app.get('/api/runs', () => runs.list());
+  app.get<{ Params: { runId: string; attemptId: string } }>('/api/runs/:runId/:attemptId/report', (request, reply) => {
+    let body: string;
+    try {
+      // 先取到内容再设置 content-type：出错时才能按 JSON 返回错误。
+      body = runs.report(request.params.runId, request.params.attemptId);
+    } catch (error) {
+      return reply.code(404).send({ error: error instanceof Error ? error.message : '未找到运行记录。' });
+    }
+    return reply.type('text/markdown; charset=utf-8').send(body);
+  });
   app.get<{ Params: { runId: string; attemptId: string } }>('/api/runs/:runId/:attemptId', (request, reply) => {
     try {
       return runs.status(request.params.runId, request.params.attemptId);

@@ -67,6 +67,7 @@ flowchart LR
 | `POST /api/runs` | 正式提交入口：需要 `x-bench-token`，候选目录必须位于 `BENCH_SUBMISSIONS_DIR` 之内，冻结后自动触发验证 |
 | `GET /api/runs` | 列出运行记录的状态摘要 |
 | `GET /api/runs/:runId/:attemptId` | 返回阶段、已知失败、可重试原因与证据引用 |
+| `GET /api/runs/:runId/:attemptId/report` | 导出该次运行的 Markdown 报告（检查表、评分、证据） |
 | `bench list / show` | 查看题目目录或完整元数据 |
 | `bench score <file>` | 计算 JSON 输入，可输出 JSON 或 Markdown（预览语义，不执行候选代码） |
 | `bench submit <题目> <候选目录> --key <幂等键>` | 正式提交入口：冻结候选快照并自动触发受控验证 |

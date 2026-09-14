@@ -2,7 +2,7 @@ import { existsSync, statSync } from 'node:fs';
 import { isAbsolute, relative, resolve } from 'node:path';
 import type { RunStatus, RunSubmission } from '@fsa/contracts';
 import { createEnvelope, createRunStore, defaultRunRoot } from '@fsa/runs';
-import { listRunStatuses, readRunStatus, verifySubmission } from '@fsa/executor';
+import { listRunStatuses, readRunStatus, renderRunReport, verifySubmission } from '@fsa/executor';
 
 /** 正式运行入口：需要提交根目录与访问令牌同时配置才会启用。 */
 export interface RunEntryOptions {
@@ -20,6 +20,7 @@ export interface RunEntry {
   readonly disabledReason: string | null;
   submit(submission: RunSubmission): Promise<RunStatus>;
   status(runId: string, attemptId: string): RunStatus;
+  report(runId: string, attemptId: string): string;
   list(): RunStatus[];
 }
 
@@ -69,6 +70,9 @@ export function openRunEntry(options: RunEntryOptions = {}): RunEntry {
     },
     status(runId: string, attemptId: string): RunStatus {
       return readRunStatus(store, runId, attemptId);
+    },
+    report(runId: string, attemptId: string): string {
+      return renderRunReport(store, runId, attemptId);
     },
     list(): RunStatus[] {
       return listRunStatuses(store);
