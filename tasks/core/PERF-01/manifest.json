@@ -1,0 +1,137 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "PERF-01",
+  "taskVersion": "0.1.0",
+  "title": "消除重复解析并保持结果",
+  "runtime": "typescript",
+  "runtimeRange": "node >=24.14.1 <25",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "public-tests/**/*.test.ts"
+    ],
+    "hidden": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "__checks__/**/*.test.ts"
+    ]
+  },
+  "grader": {
+    "checks": "graders/PERF-01/checks",
+    "referencePatch": "graders/PERF-01/reference.patch",
+    "alternative": "graders/PERF-01/alternative",
+    "defectDetectors": [
+      "public/input-accesses-are-linear",
+      "hidden/scaling-ratio-is-subquadratic"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/parses-and-sums",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "解析合法行并按 key 累加，空输入返回空对象。"
+    },
+    {
+      "id": "public/rejects-invalid-lines",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "非法行抛 InvalidLineError，index 指到具体行。"
+    },
+    {
+      "id": "public/matches-naive-reference",
+      "kind": "public",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "与朴素差分参考结果一致。"
+    },
+    {
+      "id": "public/input-accesses-are-linear",
+      "kind": "public",
+      "group": "resources",
+      "weight": 1,
+      "critical": true,
+      "summary": "对输入的元素访问次数必须是 O(n)。"
+    },
+    {
+      "id": "public/duplicate-heavy-input-is-linear",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "重复行密集的输入同样保持线性。"
+    },
+    {
+      "id": "hidden/scaling-ratio-is-subquadratic",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "4 倍规模下访问次数比值必须亚二次。"
+    },
+    {
+      "id": "hidden/parses-and-sums",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的解析与累加。"
+    },
+    {
+      "id": "hidden/rejects-invalid-lines",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的非法行。"
+    },
+    {
+      "id": "hidden/matches-naive-reference",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的差分一致。"
+    },
+    {
+      "id": "hidden/does-not-mutate-input",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "输入不可变且重复调用结果一致。"
+    }
+  ]
+}

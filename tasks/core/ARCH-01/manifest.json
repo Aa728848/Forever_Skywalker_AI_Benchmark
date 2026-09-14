@@ -1,0 +1,143 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "ARCH-01",
+  "taskVersion": "0.1.0",
+  "title": "浏览器与宿主依赖边界",
+  "runtime": "typescript",
+  "runtimeRange": "node >=24.14.1 <25",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "public-tests/**/*.test.ts"
+    ],
+    "hidden": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "__checks__/**/*.test.ts"
+    ]
+  },
+  "grader": {
+    "checks": "graders/ARCH-01/checks",
+    "referencePatch": "graders/ARCH-01/reference.patch",
+    "alternative": "graders/ARCH-01/alternative",
+    "defectDetectors": [
+      "hidden/defaults-and-validation",
+      "hidden/does-not-mutate-port",
+      "hidden/no-module-level-cache",
+      "hidden/reads-everything-through-the-port",
+      "public/defaults-and-validation",
+      "public/does-not-mutate-port",
+      "public/no-module-level-cache",
+      "public/reads-everything-through-the-port"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/reads-everything-through-the-port",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "宿主设置只通过注入端口读取，环境变量不得覆盖端口。"
+    },
+    {
+      "id": "public/no-module-level-cache",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "每次调用读取当前端口值，不做模块级缓存。"
+    },
+    {
+      "id": "public/defaults-and-validation",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "缺省 mode/retries 与非法取值报 SettingsError。"
+    },
+    {
+      "id": "public/result-is-frozen",
+      "kind": "public",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "结果冻结，调用方无法改写。"
+    },
+    {
+      "id": "public/does-not-mutate-port",
+      "kind": "public",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "只读端口、不新增字段。"
+    },
+    {
+      "id": "hidden/reads-everything-through-the-port",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下端口优先于环境变量。"
+    },
+    {
+      "id": "hidden/no-module-level-cache",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下两次调用看到不同端口值。"
+    },
+    {
+      "id": "hidden/defaults-and-validation",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的缺省与校验。"
+    },
+    {
+      "id": "hidden/result-is-frozen",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的冻结语义。"
+    },
+    {
+      "id": "hidden/does-not-mutate-port",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的只读端口。"
+    }
+  ]
+}

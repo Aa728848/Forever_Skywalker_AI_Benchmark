@@ -778,7 +778,7 @@
     "domain": "耦合与解耦",
     "difficulty": "easy",
     "track": "core",
-    "status": "designed",
+    "status": "fixture-ready",
     "runtime": "typescript",
     "sources": [
       "cwtools-vscode",
@@ -1114,7 +1114,7 @@
     "domain": "性能优化",
     "difficulty": "easy",
     "track": "core",
-    "status": "designed",
+    "status": "fixture-ready",
     "runtime": "typescript",
     "sources": [
       "deepseek-harness",

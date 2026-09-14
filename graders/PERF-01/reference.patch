@@ -1,0 +1,32 @@
+diff --git a/starter/src/summary.ts b/starter/src/summary.ts
+index f75d005..90066ea 100644
+--- a/starter/src/summary.ts
++++ b/starter/src/summary.ts
+@@ -20,21 +20,14 @@ export function parseLine(line: string, index = 0): ParsedLine {
+   return { key: match[1] as string, value: Number(match[2]) };
+ }
+ 
++/** 单次遍历累加：每个 key 只扫描一次输入。 */
+ export function summarizeRecords(lines: readonly string[]): Record<string, number> {
+-  const keys: string[] = [];
+-  const result: Record<string, number> = {};
++  const totals = new Map<string, number>();
+   for (let index = 0; index < lines.length; index += 1) {
+     const parsed = parseLine(lines[index] as string, index);
+-    if (!keys.includes(parsed.key)) keys.push(parsed.key);
+-  }
+-  // 缺陷：为了求和中途结果，对每个 key 重新全量扫描输入，复杂度退化到 O(key 数 × 行数)。
+-  for (const key of keys) {
+-    let sum = 0;
+-    for (const line of lines) {
+-      const parsed = parseLine(line, 0);
+-      if (parsed.key === key) sum += parsed.value;
+-    }
+-    result[key] = sum;
++    totals.set(parsed.key, (totals.get(parsed.key) ?? 0) + parsed.value);
+   }
++  const result: Record<string, number> = {};
++  for (const [key, value] of totals) result[key] = value;
+   return result;
+ }
+\ No newline at end of file

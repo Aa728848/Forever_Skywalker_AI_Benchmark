@@ -1,0 +1,32 @@
+diff --git a/starter/src/settings.ts b/starter/src/settings.ts
+index e9ca16d..16d3466 100644
+--- a/starter/src/settings.ts
++++ b/starter/src/settings.ts
+@@ -17,18 +17,14 @@ export class SettingsError extends Error {
+   }
+ }
+ 
+-let cached: Settings | null = null;
+-
+ export function resolveSettings(port: HostPort): Settings {
+-  // 缺陷：模块级缓存让第二次调用看不到新的宿主设置。
+-  if (cached !== null) return cached;
+-  // 缺陷：直接读宿主环境变量，绕过注入端口，且优先级高于端口。
+-  const mode = (process.env.APP_MODE ?? port.readSetting('mode')) === 'prod' ? 'prod' : 'dev';
+-  const endpoint = process.env.APP_ENDPOINT ?? port.readSetting('endpoint');
+-  if (endpoint === null || endpoint === undefined || endpoint === '') throw new SettingsError('endpoint', '缺少 endpoint');
++  const mode = port.readSetting('mode') === 'prod' ? 'prod' : 'dev';
++  const endpoint = port.readSetting('endpoint');
++  if (endpoint === null || endpoint.trim() === '') throw new SettingsError('endpoint', '缺少 endpoint');
+   const raw = port.readSetting('retries');
+-  const retries = raw === null ? 3 : Number(raw);
+-  if (!Number.isInteger(retries) || retries < 0 || retries > 10) throw new SettingsError('retries', 'retries 必须是 0..10 的整数');
+-  cached = Object.freeze({ mode, endpoint, retries });
+-  return cached;
++  if (raw === null) return Object.freeze({ mode, endpoint, retries: 3 });
++  if (!/^\d+$/.test(raw)) throw new SettingsError('retries', 'retries 必须是 0..10 的整数');
++  const retries = Number(raw);
++  if (retries > 10) throw new SettingsError('retries', 'retries 必须是 0..10 的整数');
++  return Object.freeze({ mode, endpoint, retries });
+ }
+\ No newline at end of file
