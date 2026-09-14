@@ -133,6 +133,18 @@ importers:
         specifier: workspace:*
         version: link:../tasks
 
+  packages/static:
+    dependencies:
+      '@fsa/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@fsa/core':
+        specifier: workspace:*
+        version: link:../core
+      '@fsa/judge':
+        specifier: workspace:*
+        version: link:../judge
+
   packages/tasks:
     dependencies:
       '@fsa/catalog':

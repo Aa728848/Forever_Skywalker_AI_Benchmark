@@ -1,0 +1,12 @@
+{
+  "name": "@fsa/static",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "dependencies": {
+    "@fsa/contracts": "workspace:*",
+    "@fsa/core": "workspace:*",
+    "@fsa/judge": "workspace:*"
+  }
+}
