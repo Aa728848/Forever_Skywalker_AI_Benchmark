@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { applyReferencePatch, exportWorkspace, readManifest } from '@fsa/tasks';
 import { createEnvelope, createRunStore, digestTree, readRunEvents, submissionBaseline } from '@fsa/runs';
 import type { SubmissionEnvelope } from '@fsa/contracts';
-import { classifyExecution, executeAttempt, listRunStatuses, readExecutionScore, readRunStatus, runPhase, verifySubmission } from './index.ts';
+import { classifyExecution, executeAttempt, listRunStatuses, readExecutionScore, readRunStatus, runPhase, staticObjectiveFor, verifySubmission } from './index.ts';
 
 const taskId = 'CACHE-02';
 
@@ -323,4 +323,29 @@ describe('质量证据接入执行档案', () => {
       for (const path of [storeRoot, candidate]) rmSync(path, { recursive: true, force: true });
     }
   }, 180_000);
+});
+
+describe('静态客观分的运行时适配', () => {
+  const report = {
+    ruleVersion: '0.1.0',
+    evidenceId: 'static-report',
+    files: [],
+    violations: [],
+    scores: { simplicity: 90, maintainability: 80, decoupling: 70 },
+  };
+
+  it('typescript 题把三个 static 维度并入客观证据', () => {
+    const manifest = { ...readManifest('CACHE-02'), runtime: 'typescript' as const };
+    const objective = staticObjectiveFor(manifest, report);
+    expect(objective).toMatchObject({
+      simplicity: { score: 90, kind: 'static', evidence: ['static-report'] },
+      maintainability: { score: 80, kind: 'static' },
+      decoupling: { score: 70, kind: 'static' },
+    });
+  });
+
+  it('非 typescript 题不产出静态客观分，避免用“没有 .ts 文件”的满分冒充质量结论', () => {
+    const manifest = { ...readManifest('CACHE-02'), runtime: 'fsharp' as const };
+    expect(staticObjectiveFor(manifest, report)).toBeNull();
+  });
 });

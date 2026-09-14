@@ -6,7 +6,7 @@ import { basename, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { scoreExecution, type QualityEvidence } from '@fsa/core';
-import { analyzeWorkspace, type StaticPolicy } from '@fsa/static';
+import { analyzeWorkspace, type StaticPolicy, type StaticReport } from '@fsa/static';
 import {
   executionResultValidator, executionScoreValidator, explainExecutionResult, runStatusValidator,
   type ExecutionArtifact, type ExecutionCheck, type ExecutionClassification,
@@ -266,6 +266,19 @@ function checkRows(manifest: TaskManifest, phases: readonly PhaseExecution[]): E
   });
 }
 
+/**
+ * 静态客观分只覆盖 typescript；其它运行时（如 F#）没有对应规则时返回 null，
+ * 而不是把“没有 .ts 文件”的满分当成质量结论。
+ */
+export function staticObjectiveFor(task: TaskManifest, report: StaticReport): QualityEvidence['objective'] | null {
+  if (task.runtime !== 'typescript') return null;
+  return {
+    simplicity: { score: report.scores.simplicity, evidence: [report.evidenceId], kind: 'static' },
+    maintainability: { score: report.scores.maintainability, evidence: [report.evidenceId], kind: 'static' },
+    decoupling: { score: report.scores.decoupling, evidence: [report.evidenceId], kind: 'static' },
+  };
+}
+
 /** 组装容器阶段：docker 调用替换本地直接命令，采样报告写到容器内 /work 再由宿主读取。 */
 function containerTransport(input: {
   kind: 'public' | 'hidden';
@@ -491,12 +504,12 @@ export async function executeAttempt(options: ExecuteOptions): Promise<Execution
     writeFileSync(staticPath, JSON.stringify(report, null, 2) + '\n');
     result.artifacts.push(artifactOf('static.json', staticPath, artifactDirectory));
     result.evidenceRefs = [...result.evidenceRefs, 'static.json'];
-    objective = {
-      ...objective,
-      simplicity: { score: report.scores.simplicity, evidence: [report.evidenceId], kind: 'static' },
-      maintainability: { score: report.scores.maintainability, evidence: [report.evidenceId], kind: 'static' },
-      decoupling: { score: report.scores.decoupling, evidence: [report.evidenceId], kind: 'static' },
-    };
+    const staticObjective = staticObjectiveFor(task, report);
+    if (staticObjective === null) {
+      notes.push('静态规则只覆盖 typescript，本题运行时是 ' + task.runtime + '：静态客观分未校准，保持缺失（不得当作满分）。');
+    } else {
+      objective = { ...objective, ...staticObjective };
+    }
     appendRunEvent(outcome.directory, {
       type: 'static.analyzed',
       actor: 'executor',
@@ -505,7 +518,9 @@ export async function executeAttempt(options: ExecuteOptions): Promise<Execution
       evidenceRefs: ['static.json'],
       id: eventId('static.analyzed'),
     });
-    notes.push('静态客观分按规则版本 ' + report.ruleVersion + ' 测量，违规 ' + report.violations.length + ' 条；它只覆盖 simplicity/maintainability/decoupling。');
+    if (task.runtime === 'typescript') {
+      notes.push('静态客观分按规则版本 ' + report.ruleVersion + ' 测量，违规 ' + report.violations.length + ' 条；它只覆盖 simplicity/maintainability/decoupling。');
+    }
   }
   if (options.review !== undefined) {
     const reviewPath = join(artifactDirectory, 'review.json');
