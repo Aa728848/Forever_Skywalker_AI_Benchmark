@@ -1,0 +1,42 @@
+diff --git a/starter/src/snapshot.ts b/starter/src/snapshot.ts
+index 4830cfc..dbb8460 100644
+--- a/starter/src/snapshot.ts
++++ b/starter/src/snapshot.ts
+@@ -32,10 +32,32 @@ export class UnknownStateError extends Error {
+ 
+ export const orderStates: readonly OrderState[] = ['draft', 'placed', 'paid', 'shipped', 'cancelled'];
+ 
++/** v1 的状态名到 v2 的冻结映射。 */
++const legacyStates: Record<string, OrderState> = {
++  new: 'draft',
++  active: 'placed',
++  done: 'shipped',
++};
++
++function assertState(candidate: unknown, message: string): OrderState {
++  if (typeof candidate !== 'string' || !orderStates.includes(candidate as OrderState)) {
++    throw new InvalidSnapshotError(message);
++  }
++  return candidate as OrderState;
++}
++
+ export function migrate(raw: unknown): Snapshot {
+   if (typeof raw !== 'object' || raw === null) throw new InvalidSnapshotError('快照必须是对象');
+-  // 缺陷：不检查 version，也不认 v1 的 status 字段，直接把 state 当作 v2。
+-  const state = (raw as { state?: unknown }).state;
+-  if (typeof state !== 'string') throw new InvalidSnapshotError('缺少 state');
+-  return { version: 2, state: state as OrderState };
++  const version = (raw as { version?: unknown }).version;
++  if (version === 2) {
++    return { version: 2, state: assertState((raw as { state?: unknown }).state, 'v2 快照的 state 非法') };
++  }
++  if (version === 1) {
++    const status = (raw as { status?: unknown }).status;
++    if (typeof status !== 'string') throw new InvalidSnapshotError('v1 快照缺少 status');
++    const mapped = legacyStates[status];
++    if (mapped === undefined) throw new UnknownStateError(status);
++    return { version: 2, state: mapped };
++  }
++  throw new UnsupportedVersionError(String(version));
+ }
+\ No newline at end of file
