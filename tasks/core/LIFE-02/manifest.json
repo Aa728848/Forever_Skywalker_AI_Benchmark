@@ -1,0 +1,141 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "LIFE-02",
+  "taskVersion": "0.1.0",
+  "title": "流结束、超时和迟到回调",
+  "runtime": "typescript",
+  "runtimeRange": "node >=24.14.1 <25",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "public-tests/**/*.test.ts"
+    ],
+    "hidden": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "__checks__/**/*.test.ts"
+    ]
+  },
+  "grader": {
+    "checks": "graders/LIFE-02/checks",
+    "referencePatch": "graders/LIFE-02/reference.patch",
+    "alternative": "graders/LIFE-02/alternative",
+    "defectDetectors": [
+      "hidden/ignores-events-after-end",
+      "hidden/ignores-events-after-error",
+      "hidden/timeout-freezes-stream",
+      "public/ignores-events-after-end",
+      "public/ignores-events-after-error",
+      "public/timeout-freezes-stream"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/collects-data-until-end",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "正常收集到 end。"
+    },
+    {
+      "id": "public/ignores-events-after-end",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "结束后到达的事件一律忽略。"
+    },
+    {
+      "id": "public/ignores-events-after-error",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "出错后保留第一条错误并忽略后续。"
+    },
+    {
+      "id": "public/timeout-freezes-stream",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "超时冻结流且幂等。"
+    },
+    {
+      "id": "public/summary-is-a-snapshot",
+      "kind": "public",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "summary 是快照。"
+    },
+    {
+      "id": "hidden/collects-data-until-end",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的正常收集。"
+    },
+    {
+      "id": "hidden/ignores-events-after-end",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的迟到事件。"
+    },
+    {
+      "id": "hidden/ignores-events-after-error",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的错误语义。"
+    },
+    {
+      "id": "hidden/timeout-freezes-stream",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的超时。"
+    },
+    {
+      "id": "hidden/summary-is-a-snapshot",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的快照语义。"
+    }
+  ]
+}

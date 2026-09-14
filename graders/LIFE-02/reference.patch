@@ -1,0 +1,53 @@
+diff --git a/starter/src/stream.ts b/starter/src/stream.ts
+index 06ef746..c0a6cf2 100644
+--- a/starter/src/stream.ts
++++ b/starter/src/stream.ts
+@@ -14,11 +14,13 @@ export interface CollectorOptions {
+   readonly timeoutMs?: number;
+ }
+ 
++type Terminal = 'open' | 'ended' | 'errored' | 'timed-out';
++
+ export class StreamCollector {
+   readonly #timeoutMs: number;
+   #total = 0;
+   #count = 0;
+-  #ended = false;
++  #terminal: Terminal = 'open';
+   #error: string | null = null;
+ 
+   constructor(options: CollectorOptions = {}) {
+@@ -26,26 +28,29 @@ export class StreamCollector {
+   }
+ 
+   push(event: StreamEvent): void {
+-    // 缺陷：没有终态概念——end/error/timeout 之后到达的事件照样生效。
++    // 终态之后一律忽略：迟到回调不得改变结果。
++    if (this.#terminal !== 'open') return;
+     if (event.kind === 'data') {
+       this.#total += event.value;
+       this.#count += 1;
+       return;
+     }
+     if (event.kind === 'end') {
+-      this.#ended = true;
++      this.#terminal = 'ended';
+       return;
+     }
++    this.#terminal = 'errored';
+     this.#error = event.message;
+   }
+ 
+   timeout(): void {
+-    // 缺陷：超时只记录消息，不冻结流，也不幂等。
++    if (this.#terminal !== 'open') return;
++    this.#terminal = 'timed-out';
+     this.#error = '超时';
+   }
+ 
+   get summary(): StreamSummary {
+-    return { total: this.#total, count: this.#count, ended: this.#ended, error: this.#error };
++    return { total: this.#total, count: this.#count, ended: this.#terminal === 'ended', error: this.#error };
+   }
+ 
+   get timeoutMs(): number {

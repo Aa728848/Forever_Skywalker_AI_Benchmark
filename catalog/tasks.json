@@ -1027,7 +1027,7 @@
     "domain": "生命周期",
     "difficulty": "medium",
     "track": "core",
-    "status": "designed",
+    "status": "fixture-ready",
     "runtime": "typescript",
     "sources": [
       "dsh-web",
