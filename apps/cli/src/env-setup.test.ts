@@ -49,7 +49,7 @@ it.each(['q', '2'])('取消或放弃保存时不创建.env，内存中的生成�
 
 it('补齐现有文件的裁判密钥不覆盖既有配置，摘要不泄露密钥且子进程环境取得新值', async () => {
   const token = 'fixture#token$() " with \\slashes';
-  const context = setup(['', '1', ''], token);
+  const context = setup(['', '2', '1', ''], token);
   const values = {
     BENCH_RUN_TOKEN: 'retained-local-token', BENCH_SUBMISSIONS_DIR: 'existing-answers', BENCH_RUN_DIR: 'existing-runs', BENCH_PROFILE: 'local',
     BENCH_DSH_ROOT: 'existing-dsh', BENCH_DSH_HOME: 'existing-home', BENCH_DSH_REPORT_DIR: 'existing-reports', BENCH_MEASURE_PERFORMANCE: '1',

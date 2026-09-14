@@ -2,6 +2,10 @@
 
 更新：2026-09-14。本文件描述当前状态；历史 M0/M1 Note 保留当时事实，不用于推断当前完成度。
 
+## 最新交付：DSH 工作区权限与报告路径
+
+DSH 自动比较新增 `BENCH_DSH_WORKSPACE_PERMISSION` / `--workspace-permission`，支持 `read-only`、`workspace-write`（默认，建议代码题使用）和 `danger-full-access`。运行时通过 DSH 公开的 `DSH_PERMISSION_MODE` 环境变量传给 SDK；每题独立工作区作为边界，权限写入 `experiment.json` 并显示在 `report.md`。快速启动和首次 `.env` 配置均可选择，完整访问会显示警告。报告默认位于 `data/experiments/<时间戳>-<随机ID>/`，结束时打印 `report.md`、`experiment.json`、`evidence.json.gz` 的绝对路径；`BENCH_DSH_REPORT_DIR` 或 `--output` 可更改父目录。相关记录见 [DSH 权限 Note](notes/implemented/feature/2026-09-15-dsh-workspace-permission.md) 与 [报告位置 Note](notes/implemented/feature/2026-09-14-report-location-output.md)。本轮未调用真实模型/裁判。
+
 用户已授权继续完成项目和安装 Linux 依赖。工作目录：`C:/Users/A/Documents/ChatGPT/Forever_Skywalker_AI_Benchmark`。七个来源仓库只读；接手先检查 git status，保留当前改动，不重新初始化。
 
 用户已自行重启Windows，固定Linux容器已配置并验收。实际模型评测仍暂停；不会因环境就绪自动调用真实裁判。

@@ -7,6 +7,21 @@ import { pathToFileURL } from 'node:url';
 export const dshPresetLabels = { standard: '标准', ptc: 'PTC', minimal: '极简', cordis: '创造' } as const;
 export type DshPreset = keyof typeof dshPresetLabels;
 
+/** DSH file-effect permission modes exposed by its public sandbox-policy profile. */
+export const dshWorkspacePermissionLabels = {
+  'read-only': '只读（禁止修改工作区）',
+  'workspace-write': '工作区可写（仅当前题目目录）',
+  'danger-full-access': '完整访问（DSH 不限制文件修改）',
+} as const;
+export type DshWorkspacePermission = keyof typeof dshWorkspacePermissionLabels;
+
+export function resolveDshWorkspacePermission(value: string): DshWorkspacePermission {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'full' || normalized === 'danger') return 'danger-full-access';
+  if (Object.hasOwn(dshWorkspacePermissionLabels, normalized)) return normalized as DshWorkspacePermission;
+  throw new Error('DSH 工作区权限必须是 read-only、workspace-write 或 danger-full-access。');
+}
+
 export function resolveDshPreset(value: string): DshPreset {
   const normalized = value.trim().toLowerCase().replace(/模式$/, '').trim();
   for (const [id, label] of Object.entries(dshPresetLabels)) {
@@ -24,6 +39,8 @@ export interface DshRunOptions {
   model: string;
   reasoningEffort: string;
   agentPreset?: DshPreset;
+  /** DSH sandbox-policy file permission; defaults to workspace-write for coding tasks. */
+  workspacePermission?: DshWorkspacePermission;
   /** 本次作答的运行资料目录；调用方只能在 SDK close 确认后清理。 */
   scratchDirectory?: string;
   /** DSH 的每次模型请求输出上限，不是整题 Token 预算。 */
@@ -117,13 +134,14 @@ export function checkDshInstallation(dshRoot: string): DshInstallation {
   return { dshRoot: root, sdkPath: file('packages/sdk/client/lib/index.js'), cliPath: file('apps/cli/lib/bin.js'), version: sdk.version };
 }
 
-function childEnvironment(env: NodeJS.ProcessEnv, dshHome: string): NodeJS.ProcessEnv {
+function childEnvironment(env: NodeJS.ProcessEnv, dshHome: string, workspacePermission: DshWorkspacePermission): NodeJS.ProcessEnv {
   const clean: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(env)) {
     const name = key.toUpperCase();
     if (!name.startsWith('BENCH_') && !['NODE_OPTIONS', 'NODE_PATH', 'DSH_HOME'].includes(name)) clean[key] = value;
   }
   clean.DSH_HOME = dshHome;
+  clean.DSH_PERMISSION_MODE = workspacePermission;
   clean.DSH_TELEMETRY_DISABLED = '1';
   return clean;
 }
@@ -206,6 +224,7 @@ export async function runDsh(options: DshRunOptions, dependencies: DshDependenci
   if (!statSync(workspace).isDirectory()) throw new Error('DSH workspace 必须是目录。');
   const dshHome = resolve(options.dshHome);
   const preset = resolveDshPreset(options.agentPreset ?? 'standard');
+  const workspacePermission = resolveDshWorkspacePermission(options.workspacePermission ?? options.env?.BENCH_DSH_WORKSPACE_PERMISSION ?? options.env?.DSH_PERMISSION_MODE ?? 'workspace-write');
   const ownScratch = options.scratchDirectory === undefined;
   const scratch = options.scratchDirectory === undefined ? mkdtempSync(join(tmpdir(), 'fsa-dsh-runtime-')) : resolve(options.scratchDirectory);
   let prepared: ReturnType<typeof preparePreset>;
@@ -216,7 +235,7 @@ export async function runDsh(options: DshRunOptions, dependencies: DshDependenci
     profile: options.profile ?? 'sdk', provider: options.provider, model: options.model,
     ...(options.reasoningEffort === 'default' ? {} : { reasoningEffort: options.reasoningEffort }), maxTokens: options.maxTokens,
     patches: [prepared.patch],
-    env: childEnvironment(options.env ?? process.env, dshHome),
+    env: childEnvironment(options.env ?? process.env, dshHome, workspacePermission),
   };
   // 显式工厂用于不调用模型的协议/生命周期测试；生产只加载上述已验证的构建产物。
   let harness: DshHarness;

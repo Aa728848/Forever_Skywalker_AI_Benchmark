@@ -9,7 +9,7 @@ import { tasks } from '../packages/catalog/src/index.ts';
 import { probeContainerRuntime, requirePinnedImage } from '../packages/executor/src/index.ts';
 import { judgeConfigFromEnvironment, JudgeUnavailableError } from '../packages/judge/src/index.ts';
 import { runDshComparison, validateComparison, type DshComparisonOptions } from '../packages/evaluation/src/dsh-comparison.ts';
-import { checkDshInstallation, resolveDshPreset } from '../packages/evaluation/src/dsh.ts';
+import { checkDshInstallation, resolveDshPreset, resolveDshWorkspacePermission } from '../packages/evaluation/src/dsh.ts';
 import { cleanupComparisonScratch, createComparisonScratch } from '../packages/evaluation/src/comparison-artifacts.ts';
 
 const usage = `DSH 自动模式对比（固定 Linux 评分，沿用你的 DSH home）
@@ -25,18 +25,19 @@ pnpm dsh:compare --model <模型 ID> --check
 默认标准预设、CACHE-02、off/high、每组一次、每题 20 分钟、每请求输出上限 16384 Token。
 --reasoning 指定一个思考等级；已有 --modes off,high,max 可同时比较多个等级。
 --reasoning default 沿用供应商/模型默认值，省略思考参数；未声明推理等级的模型使用此项。default 不等同 off。
+--workspace-permission read-only|workspace-write|danger-full-access 设置 DSH 工作区文件权限，默认 workspace-write。权限会写入 experiment.json。
 --all 选择全部已具备题目包的题，不能与 --tasks 同时使用。
 --check 只核对本地文件、容器和裁判参数；不启动 DSH、不调用模型。
 --minutes / --max-tokens 调整作答预算；--no-measure 跳过性能采样（完整质量分保持待定）。
 输出目录只保留报告及压缩证据；其余本次临时数据在报告确认保存后清理。
-DSH 配置：BENCH_DSH_ROOT、BENCH_DSH_HOME、BENCH_DSH_PROFILE、BENCH_DSH_PROVIDER、BENCH_DSH_MODEL、BENCH_DSH_PRESETS、BENCH_DSH_REASONING_EFFORT、BENCH_DSH_REPORT_DIR。
+DSH 配置：BENCH_DSH_ROOT、BENCH_DSH_HOME、BENCH_DSH_PROFILE、BENCH_DSH_PROVIDER、BENCH_DSH_MODEL、BENCH_DSH_PRESETS、BENCH_DSH_REASONING_EFFORT、BENCH_DSH_WORKSPACE_PERMISSION、BENCH_DSH_REPORT_DIR。
 真实运行会调用 DSH 已配置的作答模型，以及本项目已配置的裁判。Ctrl+C 停止当前实验。`;
 
 try {
   const { values, positionals } = parseArgs({ options: {
     help: { type: 'boolean' }, check: { type: 'boolean' }, model: { type: 'string' }, provider: { type: 'string' },
     preset: { type: 'string' }, presets: { type: 'string' }, reasoning: { type: 'string' }, output: { type: 'string' },
-    tasks: { type: 'string' }, all: { type: 'boolean' }, modes: { type: 'string' },
+    tasks: { type: 'string' }, all: { type: 'boolean' }, modes: { type: 'string' }, 'workspace-permission': { type: 'string' },
     repeat: { type: 'string', default: '1' }, minutes: { type: 'string', default: '20' },
     'max-tokens': { type: 'string', default: '16384' }, 'no-measure': { type: 'boolean' },
   } });
@@ -52,6 +53,7 @@ try {
       dshRoot: resolve(process.env.BENCH_DSH_ROOT || join(homedir(), 'Documents', 'deepseek-harness')),
       dshHome: resolve(process.env.BENCH_DSH_HOME || process.env.DSH_HOME || join(homedir(), '.dsh')),
       profile: process.env.BENCH_DSH_PROFILE || 'sdk', provider: values.provider || process.env.BENCH_DSH_PROVIDER || 'deepseek-official',
+      workspacePermission: resolveDshWorkspacePermission(values['workspace-permission'] || process.env.BENCH_DSH_WORKSPACE_PERMISSION || process.env.DSH_PERMISSION_MODE || 'workspace-write'),
       model: values.model || process.env.BENCH_DSH_MODEL || '',
       // PowerShell 的 pnpm shim 会把未引用的逗号列表作为空格列表传入。
       presets: (values.presets || values.preset || process.env.BENCH_DSH_PRESETS || 'standard').split(/[,\s]+/).filter(Boolean).map(resolveDshPreset),
@@ -88,7 +90,7 @@ try {
       process.once('SIGINT', cancel); process.once('SIGTERM', cancel);
       try {
         const report = await runDshComparison(options, { signal: controller.signal, onProgress: message => console.log(message) });
-        console.log(`实验状态：${report.state}\n对比报告：${join(options.outputDirectory, 'report.md')}\n完整记录：${join(options.outputDirectory, 'experiment.json')}\n清理：${report.cleanup.state}${report.cleanup.directory ? '，保留路径：' + report.cleanup.directory : ''}`);
+        console.log(`实验状态：${report.state}\n报告目录：${options.outputDirectory}\n对比报告：${join(options.outputDirectory, 'report.md')}\n完整记录：${join(options.outputDirectory, 'experiment.json')}\n压缩证据：${join(options.outputDirectory, 'evidence.json.gz')}\n清理：${report.cleanup.state}${report.cleanup.directory ? '，保留路径：' + report.cleanup.directory : ''}`);
         if (report.state !== 'completed' || report.rows.some(row => row.evaluation?.status.classification !== 'passed')) process.exitCode = 1;
       } finally { process.removeListener('SIGINT', cancel); process.removeListener('SIGTERM', cancel); }
     }

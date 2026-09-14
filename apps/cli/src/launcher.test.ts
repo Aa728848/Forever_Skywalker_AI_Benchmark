@@ -19,11 +19,12 @@ const catalog = { warning: null, providers: [
 
 it('供应商限定模型与推理能力，多选组合计数和路径原样传参，默认只预检', async () => {
   const outputPath = "reports/含空格 & '引号' $(never-run)";
-  const context = terminal(['dsh', 'gateway-b', '', 'same-model', 'all', 'high,off', 'level', 'hard,extreme', '2', '15', '2048', 'no', outputPath, '']);
+  const context = terminal(['dsh', 'gateway-b', '', 'same-model', 'all', 'high,off', '2', 'level', 'hard,extreme', '2', '15', '2048', 'no', outputPath, '']);
   const plan = await selectLaunchPlan(context.io, {}, async () => catalog);
   expect(plan?.command).toBe('dsh:compare');
   const args = plan!.args;
   expect(args.slice(0, 8)).toEqual(['--provider', 'gateway-b', '--model', 'same-model', '--presets', 'standard,ptc,minimal,cordis', '--modes', 'high,off']);
+  expect(args[args.indexOf('--workspace-permission') + 1]).toBe('workspace-write');
   expect(args[args.indexOf('--tasks') + 1]!.split(',')).toHaveLength(24);
   expect(args).toContain('--no-measure'); expect(args.at(-1)).toBe('--check');
   expect(args[args.indexOf('--output') + 1]).toBe(resolve(repositoryRoot, outputPath));
@@ -32,7 +33,7 @@ it('供应商限定模型与推理能力，多选组合计数和路径原样传�
 });
 
 it('没有等级声明时不会继承另一供应商同名模型能力或不支持的.env等级', async () => {
-  const context = terminal(['dsh', 'gateway-a', '', 'same-model', '', '', '', '', '', '', '', '', 'run']);
+  const context = terminal(['dsh', 'gateway-a', '', 'same-model', '', '', '', '', '', '', '', '', '', 'run']);
   const plan = await selectLaunchPlan(context.io, { BENCH_DSH_REASONING_EFFORT: 'off,high' }, async () => catalog);
   expect(plan!.args[plan!.args.indexOf('--modes') + 1]).toBe('default');
   expect(plan!.args).not.toContain('--check');
@@ -40,7 +41,7 @@ it('没有等级声明时不会继承另一供应商同名模型能力或不支�
 });
 
 it('目录读取失败可手工输入，错误等级和预算必须重新选择', async () => {
-  const context = terminal(['dsh', '', 'custom', 'model-id', 'standard', '__manual__', 'not valid!', 'high,high', 'smoke', '0', '21', '3', '1.5', '10', '-1', '4096', 'yes', 'reports', 'check']);
+  const context = terminal(['dsh', '', 'custom', 'model-id', 'standard', '__manual__', 'not valid!', 'high,high', '2', 'smoke', '0', '21', '3', '1.5', '10', '-1', '4096', 'yes', 'reports', 'check']);
   const plan = await selectLaunchPlan(context.io, {}, async () => ({ providers: [], warning: '未读到目录，请手工填写。' }));
   expect(plan!.args.slice(0, 8)).toEqual(['--provider', 'custom', '--model', 'model-id', '--presets', 'standard', '--modes', 'high']);
   expect(plan!.args[plan!.args.indexOf('--repeat') + 1]).toBe('3');
@@ -50,7 +51,7 @@ it('目录读取失败可手工输入，错误等级和预算必须重新选择'
 
 it('最终输入结束或q取消不会生成会启动模型的计划', async () => {
   for (const end of [[], ['q']]) {
-    const context = terminal(['dsh', 'gateway-a', '', 'same-model', '', '', '', '', '', '', '', '', ...end]);
+    const context = terminal(['dsh', 'gateway-a', '', 'same-model', '', '', '', '', '', '', '', '', '', ...end]);
     expect(await selectLaunchPlan(context.io, {}, async () => catalog)).toBeNull();
     expect(context.output.join('\n')).toContain('未启动测评');
   }

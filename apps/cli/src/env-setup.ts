@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import { judgeConfigFromEnvironment, JudgeUnavailableError } from '@fsa/judge';
 import { readProjectEnvironment, saveProjectEnvironment } from './env-file.ts';
 import { collectJudgeSetup, type JudgeSetupIO } from './judge-setup.ts';
+import { dshWorkspacePermissionLabels, resolveDshWorkspacePermission } from '../../../packages/evaluation/src/dsh.ts';
 
 export interface EnvironmentSetupResult { env: NodeJS.ProcessEnv; saved: boolean; cancelled: boolean }
 class SetupCancelled extends Error {}
@@ -15,6 +16,7 @@ function missingGroups(env: NodeJS.ProcessEnv): string[] {
   const groups: string[] = [];
   if (!present(env.BENCH_RUN_TOKEN) || !present(env.BENCH_SUBMISSIONS_DIR) || !present(env.BENCH_PROFILE)) groups.push('基础运行配置');
   if (env.BENCH_PROFILE === 'linux-container' && (!present(env.BENCH_IMAGE) || !present(env.BENCH_IMAGE_DIGEST))) groups.push('固定 Linux 镜像');
+  if (present(env.BENCH_DSH_ROOT) && present(env.BENCH_DSH_HOME) && !present(env.BENCH_DSH_WORKSPACE_PERMISSION)) groups.push('DSH 工作区权限');
   try { judgeConfigFromEnvironment(env); }
   catch (error) { if (!(error instanceof JudgeUnavailableError)) throw error; groups.push('裁判配置'); }
   return groups;
@@ -115,6 +117,13 @@ export async function configureProjectEnvironment(io: JudgeSetupIO, options: { r
         setMissing('BENCH_DSH_PROFILE', 'sdk');
       }
     } else io.say('已有 DSH 路径保持不变。');
+    if (present(merged().BENCH_DSH_ROOT) && present(merged().BENCH_DSH_HOME) && !present(env.BENCH_DSH_WORKSPACE_PERMISSION)) {
+      const permission = await pick(io, 'DSH 工作区权限（写入 .env；默认仅当前题目目录可写）', Object.entries(dshWorkspacePermissionLabels).map(([id, label]) => `${label} [${id}]`), 2);
+      updates.BENCH_DSH_WORKSPACE_PERMISSION = resolveDshWorkspacePermission(Object.keys(dshWorkspacePermissionLabels)[permission - 1]!);
+    } else if (present(env.BENCH_DSH_WORKSPACE_PERMISSION)) {
+      try { io.say(`已有 DSH 工作区权限：${dshWorkspacePermissionLabels[resolveDshWorkspacePermission(env.BENCH_DSH_WORKSPACE_PERMISSION!)]}，保持不变。`); }
+      catch { io.say('已有 DSH 工作区权限值无法识别；启动向导中会要求重新选择。'); }
+    }
     if (!present(env.BENCH_DSH_REPORT_DIR)) setMissing('BENCH_DSH_REPORT_DIR', (await pathValue(io, 'DSH 报告父目录', join(options.root, 'data', 'experiments'), options.root))!);
     io.say('DSH 作答供应商的密钥仍由 DSH 自己管理，不复制到本项目。');
 

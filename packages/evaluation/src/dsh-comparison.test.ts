@@ -13,7 +13,7 @@ import { comparisonGroups, renderComparison, runDshComparison, type DshCompariso
 function setup() {
   const scratch = mkdtempSync(join(tmpdir(), 'fsa-dsh-comparison-test-'));
   const options: DshComparisonOptions = {
-    dshRoot: join(scratch, 'unused-sdk'), dshHome: join(scratch, 'unused-home'), profile: 'sdk',
+    dshRoot: join(scratch, 'unused-sdk'), dshHome: join(scratch, 'unused-home'), profile: 'sdk', workspacePermission: 'workspace-write',
     provider: 'scripted', model: 'fixture-test-only', presets: ['standard'], modes: ['off', 'high'], taskIds: ['CACHE-02'], repeats: 2,
     maxTokens: 1024, timeoutMs: 1000, outputDirectory: join(scratch, 'experiment'),
     image: 'unused-test-image', imageDigest: 'sha256:' + '0'.repeat(64), measurePerformance: false,
@@ -42,6 +42,7 @@ it('独立导出、反转重复顺序，模拟作答经真实验证，并保留�
       env: {},
       async solve(options) {
         workspaces.add(options.workspace); sessions.add(options.sessionId);
+        expect(options.workspacePermission).toBe('workspace-write');
         expect(existsSync(join(options.workspace, 'TASK.md'))).toBe(true);
         expect(existsSync(join(options.workspace, 'graders'))).toBe(false);
         initialSources.push(readFileSync(join(options.workspace, 'starter/src/keyed-loader.ts'), 'utf8'));
@@ -71,6 +72,8 @@ it('独立导出、反转重复顺序，模拟作答经真实验证，并保留�
     expect(groups.find(group => group.mode === 'off')).toMatchObject({ planned: 2, completed: 2, passed: 0, graded: 2, total: null });
     expect(groups.find(group => group.mode === 'off')!.functional).toBeLessThan(50);
     expect(JSON.parse(readFileSync(join(context.options.outputDirectory, 'experiment.json'), 'utf8')).rows).toHaveLength(4);
+    expect(JSON.parse(readFileSync(join(context.options.outputDirectory, 'experiment.json'), 'utf8')).settings.workspacePermission).toBe('workspace-write');
+    expect(readFileSync(join(context.options.outputDirectory, 'report.md'), 'utf8')).toContain('工作区权限：workspace-write');
     const drifted = structuredClone(report);
     drifted.rows[0]!.evaluation!.judgeKey = 'judge-a'; drifted.rows[1]!.evaluation!.judgeKey = 'judge-b';
     expect(comparisonGroups(drifted).drift).toContain('裁判配置或实际模型不一致');
@@ -100,6 +103,7 @@ it('相同思考等级下不同 DSH 预设分别评分，指定模型透传且�
       env: {},
       async solve(options) {
         expect(options.model).toBe('fixture-test-only'); expect(options.reasoningEffort).toBe('high');
+        expect(options.workspacePermission).toBe('workspace-write');
         if (options.agentPreset === 'ptc') expect(applyReferencePatch(readManifest('CACHE-02'), options.workspace, join(context.scratch, 'patch')).exitCode).toBe(0);
         return { ...solverResult(options), presetFingerprint: options.agentPreset === 'ptc' ? 'ptc-fixture' : 'standard-fixture' };
       },

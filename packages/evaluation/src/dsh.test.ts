@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { checkDshInstallation, DshCleanupError, resolveDshPreset, runDsh, type DshHarness, type DshRunOptions } from './dsh.ts';
+import { checkDshInstallation, DshCleanupError, resolveDshPreset, resolveDshWorkspacePermission, runDsh, type DshHarness, type DshRunOptions } from './dsh.ts';
 
 let temporaryRoot: string;
 let options: DshRunOptions;
@@ -54,7 +54,7 @@ describe('DSH automation adapter', () => {
     const createHarness = vi.fn((launch) => {
       expect(launch.processCwd).toBe(options.workspace);
       expect(launch.cwd).toBe(options.workspace);
-      expect(launch.env).toEqual({ PATH: 'runtime-path', DEEPSEEK_API_KEY: 'solver-secret', DSH_HOME: options.dshHome, DSH_TELEMETRY_DISABLED: '1' });
+      expect(launch.env).toEqual({ PATH: 'runtime-path', DEEPSEEK_API_KEY: 'solver-secret', DSH_HOME: options.dshHome, DSH_PERMISSION_MODE: 'workspace-write', DSH_TELEMETRY_DISABLED: '1' });
       expect(launch.dshBin).toBe(join(options.dshRoot, 'apps/cli/lib/bin.js'));
       return { run: vi.fn(async () => result('completed')), close };
     });
@@ -90,6 +90,38 @@ describe('DSH automation adapter', () => {
     expect(report.finishReason).toBe('completed');
     expect(report.requestedModel).toMatchObject({ provider, model: 'same-model', reasoningEffort: effort === 'default' ? null : effort });
     expect(report.observedRoutes).toEqual([{ provider, model: 'same-model' }]);
+  });
+
+  it('透传 DSH 工作区权限环境变量并保持 BENCH 控制变量隔离', async () => {
+    const createHarness = vi.fn((launch) => {
+      expect(launch.env.DSH_PERMISSION_MODE).toBe('read-only');
+      expect(launch.env.BENCH_DSH_WORKSPACE_PERMISSION).toBeUndefined();
+      return { close: async () => {}, run: async () => ({ ...result('completed'), events: [
+        { type: 'agent-preset/selected', data: { agentPreset: 'standard' } },
+        { type: 'turn/end', data: { reason: { kind: 'completed' } } },
+      ] }) };
+    });
+    const report = await runDsh({ ...options, env: {
+      PATH: 'runtime-path', DSH_PERMISSION_MODE: 'read-only',
+    } }, { createHarness });
+    expect(report.finishReason).toBe('completed');
+    expect(createHarness).toHaveBeenCalledOnce();
+  });
+
+  it('显式工作区权限优先于环境变量，并拒绝未知值', async () => {
+    const createHarness = vi.fn((launch) => {
+      expect(launch.env.DSH_PERMISSION_MODE).toBe('danger-full-access');
+      return { close: async () => {}, run: async () => ({ ...result('completed'), events: [
+        { type: 'agent-preset/selected', data: { agentPreset: 'standard' } },
+        { type: 'turn/end', data: { reason: { kind: 'completed' } } },
+      ] }) };
+    });
+    await expect(runDsh({ ...options, workspacePermission: 'danger-full-access', env: {
+      DSH_PERMISSION_MODE: 'read-only',
+    } }, { createHarness })).resolves.toMatchObject({ finishReason: 'completed' });
+    expect(resolveDshWorkspacePermission('full')).toBe('danger-full-access');
+    expect(() => resolveDshWorkspacePermission('invalid')).toThrow('工作区权限');
+    expect(() => resolveDshWorkspacePermission('toString')).toThrow('工作区权限');
   });
 
   it.each(['max-tokens', 'error', undefined])('does not turn idle with %s into completed', async reason => {

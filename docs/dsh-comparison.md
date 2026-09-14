@@ -35,12 +35,15 @@ BENCH_DSH_PROVIDER=deepseek-official
 BENCH_DSH_MODEL=你的模型ID
 BENCH_DSH_PRESETS=standard,ptc,minimal,cordis
 BENCH_DSH_REASONING_EFFORT=high
+BENCH_DSH_WORKSPACE_PERMISSION=workspace-write
 BENCH_DSH_REPORT_DIR=C:/Users/A/Documents/DSH-Reports
 ```
 
 保存配置后，日常只运行 `pnpm dsh:compare`。命令行优先于 `.env`；`--provider` 可选择本次使用的 DSH 供应商路由。`--preset` 选择一个预设，`--presets` 接受逗号分隔列表，二者不能同时填写。`--reasoning` 选择一个思考等级，已有 `--modes` 仍接受多个思考等级，二者不能同时填写。这些参数只作用于本次创建的 DSH 会话。
 
 未声明推理等级的模型使用 `--reasoning default`（也可设置 `BENCH_DSH_REASONING_EFFORT=default`）：本项目会省略 DSH SDK 的 `reasoningEffort` 字段，由供应商/模型配置决定行为。`default` 不等同于关闭思考；`off`、`high` 等仍要求模型明确支持该等级，原有默认 Off/High 比较不变。手动添加的自定义模型默认没有等级声明，不能直接给它传 High；若需要控制等级，先按 DSH 的 `providers.zh.md` 在模型配置中声明 `reasoningEfforts`。
+
+工作区权限通过 `BENCH_DSH_WORKSPACE_PERMISSION` 设置，可选 `read-only`（只读）、`workspace-write`（默认，仅允许修改当前题目工作区）和 `danger-full-access`（完整文件访问）。向导会在首次配置或选择 DSH 测评时询问该项。权限由 DSH 的 `DSH_PERMISSION_MODE` 传给 SDK，并以每题独立工作区为根；建议评测模型使用 `workspace-write`，避免暴露评测仓库中的隐藏检查和参考答案。
 
 ```powershell
 pnpm dsh:compare --provider gateway-a --model "same-model" --preset standard --reasoning default
@@ -87,6 +90,14 @@ pnpm dsh:compare --model <模型ID> --no-measure
 - `report.md`：中文模式对比。
 - `experiment.json`：完整实验配置、逐次结果、状态及归档摘要。
 - `evidence.json.gz`：压缩 JSON 证据，包含最终作答代码（包括失败/取消的代码）、冻结 RunStore、实际检查、评分与评审材料、各组选择及分级汇总。每文件记录相对路径、Base64 内容、字节数与 SHA-256，可独立解压复核。
+
+例如未指定 `--output` 时，Windows 默认目录是：
+
+```text
+C:\\Users\\A\\Documents\\ChatGPT\\Forever_Skywalker_AI_Benchmark\\data\\experiments\\<实验时间戳>-<随机ID>\\
+```
+
+命令结束会打印该实验目录以及 `report.md`、`experiment.json`、`evidence.json.gz` 三个文件的绝对路径；复制 `report.md` 即可查看中文对比结果。`--output "C:\\Users\\A\\Documents\\DSH-Reports"` 时，时间戳子目录会创建在该目录下。手工 `bench submit` 的运行记录仍写入 `BENCH_RUN_DIR`（默认 `data/runs`），不会混入上述实验目录。
 
 评分使用本次独占 RunStore；会话、缓存、附件、预设补丁、候选工作区和评分中间目录均放入本次临时根。压缩证据写入并逐文件回读校验、两份报告保存成功后才删除临时根。原有 `BENCH_RUN_DIR` 的历史记录不参与删除，新比较也不再写入默认 Web 运行列表；报告是该次比较的完整交付物。
 

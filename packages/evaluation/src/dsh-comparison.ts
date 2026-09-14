@@ -7,7 +7,7 @@ import { readRunStatus, verifySubmission } from '@fsa/executor';
 import { createEnvelope, createRunStore, digestTree, type RunStore } from '@fsa/runs';
 import { exportWorkspace } from '@fsa/tasks';
 import { createQualityProvider } from './index.ts';
-import { DshCleanupError, runDsh, type DshPreset, type DshRunOptions, type DshRunResult } from './dsh.ts';
+import { DshCleanupError, resolveDshWorkspacePermission, runDsh, type DshPreset, type DshRunOptions, type DshRunResult, type DshWorkspacePermission } from './dsh.ts';
 import { inspectRunSelection, summarizeRuns } from './suite.ts';
 import { archiveComparisonEvidence, cleanupComparisonScratch, createComparisonScratch } from './comparison-artifacts.ts';
 
@@ -17,6 +17,7 @@ export interface DshComparisonOptions {
   dshRoot: string;
   dshHome: string;
   profile: string;
+  workspacePermission: DshWorkspacePermission;
   provider: string;
   model: string;
   presets: DshPreset[];
@@ -74,6 +75,7 @@ export interface ComparisonServices {
 
 export function validateComparison(options: DshComparisonOptions): void {
   if (!options.model.trim() || !options.provider.trim() || !options.profile.trim()) throw new Error('需要明确的 DSH 模型、供应商和 SDK profile。');
+  resolveDshWorkspacePermission(options.workspacePermission);
   if (options.taskIds.length < 1 || options.taskIds.length > 55 || new Set(options.taskIds).size !== options.taskIds.length) throw new Error('请选择 1–55 道不重复的题目。');
   for (const id of options.taskIds) {
     if (requireTask(id).status === 'designed') throw new Error(`${id} 尚未具备题目包。`);
@@ -126,6 +128,7 @@ export function renderComparison(report: DshComparisonReport): string {
     '# DSH 模式对比', '',
     `实验：${report.id} · 状态：${report.state}`, '',
     `作答：${cell(report.settings.provider)} / ${cell(report.settings.model)} · DSH profile：${cell(report.settings.profile)}`,
+    `工作区权限：${cell(report.settings.workspacePermission)}（每题独立工作区为边界）`,
     `每题 ${report.settings.repeats} 次；每次限时 ${report.settings.timeoutMs / 60_000} 分钟；每次模型请求输出上限 ${report.settings.maxTokens} Token（不是整题总预算）。`, '',
     ...report.settings.modes.includes('default') ? ['default 表示未向 DSH 指定思考等级，沿用供应商/模型配置；不等同于 off，也不代表已测得实际思考深度。', ''] : [],
     '以下为所选题目的试评均分，核心题与来源集成题的分级汇总另存；缺测不补分。', '',
@@ -193,6 +196,7 @@ export async function runDshComparison(options: DshComparisonOptions, services: 
         services.onProgress?.(`${row.taskId} · ${row.preset} / ${row.mode} · 第 ${row.repetition} 次：DSH 作答中`);
         row.solver = await solve({ dshRoot: options.dshRoot, dshHome: options.dshHome, profile: options.profile,
           agentPreset: row.preset, scratchDirectory: runtimeDirectory,
+          workspacePermission: options.workspacePermission,
           workspace, provider: options.provider, model: options.model, reasoningEffort: row.mode,
           maxTokens: options.maxTokens, sessionId: row.sessionId, prompt: comparisonPrompt, timeoutMs: options.timeoutMs, env,
           ...(services.signal ? { signal: services.signal } : {}) });

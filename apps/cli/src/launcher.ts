@@ -4,7 +4,7 @@ import { tasks } from '@fsa/catalog';
 import { difficulties, difficultyLabels } from '@fsa/contracts';
 import { repositoryRoot } from '../../../packages/tasks/src/index.ts';
 import { judgeConfigFromEnvironment, JudgeUnavailableError } from '@fsa/judge';
-import { dshPresetLabels, resolveDshPreset } from '../../../packages/evaluation/src/dsh.ts';
+import { dshPresetLabels, dshWorkspacePermissionLabels, resolveDshPreset, resolveDshWorkspacePermission } from '../../../packages/evaluation/src/dsh.ts';
 import { discoverDshModels } from '../../../packages/evaluation/src/dsh-catalog.ts';
 
 export interface LauncherIO {
@@ -152,6 +152,14 @@ async function dshPlan(io: LauncherIO, env: NodeJS.ProcessEnv, discover: typeof 
     }
   }
 
+  const permissionDefault = (() => {
+    try { return resolveDshWorkspacePermission(env.BENCH_DSH_WORKSPACE_PERMISSION || env.DSH_PERMISSION_MODE || 'workspace-write'); }
+    catch { io.say('.env 中工作区权限无效，本次默认使用 workspace-write。'); return 'workspace-write' as const; }
+  })();
+  const [selectedWorkspacePermission] = await choose(io, 'DSH 工作区文件权限（会写入实验记录）', Object.entries(dshWorkspacePermissionLabels).map(([id, label]) => ({ id, label: `${label} [${id}]` })), [permissionDefault]);
+  const workspacePermission = selectedWorkspacePermission ?? permissionDefault;
+  if (workspacePermission === 'danger-full-access') io.say('警告：完整访问会取消 DSH 文件沙箱限制，仅建议在隔离环境中使用。');
+
   io.say('\n阶段 3/5：选择题目。');
   const taskIds = await selectTasks(io);
   io.say('\n阶段 4/5：作答预算和报告。');
@@ -162,11 +170,11 @@ async function dshPlan(io: LauncherIO, env: NodeJS.ProcessEnv, discover: typeof 
   const output = await directory(io, '报告父目录', env.BENCH_DSH_REPORT_DIR || join(repositoryRoot, 'data', 'experiments'));
   const plan: LaunchPlan = { command: 'dsh:compare', args: [
     '--provider', providerId, '--model', modelId, '--presets', presets.join(','), '--modes', modes.join(','),
-    '--tasks', taskIds.join(','), '--repeat', String(repeat), '--minutes', String(minutes), '--max-tokens', String(maxTokens),
+    '--workspace-permission', workspacePermission, '--tasks', taskIds.join(','), '--repeat', String(repeat), '--minutes', String(minutes), '--max-tokens', String(maxTokens),
     '--output', output, ...(measure === 'no' ? ['--no-measure'] : []),
   ] };
   io.say('\n阶段 5/5：核对计划。');
-  io.say(`作答：${providerId} / ${modelId}\n模式：${presets.map(id => dshPresetLabels[id as keyof typeof dshPresetLabels]).join('、')}\n思考：${modes.join('、')}\n题目：${taskIds.join('、')}\n总计：${taskIds.length} 题 × ${presets.length} 模式 × ${modes.length} 思考等级 × ${repeat} 次 = ${taskIds.length * presets.length * modes.length * repeat} 次作答。\n每次限时 ${minutes} 分钟；每请求输出上限 ${maxTokens} Token。\n报告：${output}\n正常结束后保留报告和压缩证据，清理本次临时作答数据。`);
+  io.say(`作答：${providerId} / ${modelId}\n模式：${presets.map(id => dshPresetLabels[id as keyof typeof dshPresetLabels]).join('、')}\n思考：${modes.join('、')}\n工作区权限：${dshWorkspacePermissionLabels[workspacePermission as keyof typeof dshWorkspacePermissionLabels]}\n题目：${taskIds.join('、')}\n总计：${taskIds.length} 题 × ${presets.length} 模式 × ${modes.length} 思考等级 × ${repeat} 次 = ${taskIds.length * presets.length * modes.length * repeat} 次作答。\n每次限时 ${minutes} 分钟；每请求输出上限 ${maxTokens} Token。\n报告父目录：${output}\n每次实验会在该目录建立时间戳子目录，并保存 report.md、experiment.json、evidence.json.gz。\n正常结束后保留报告和压缩证据，清理本次临时作答数据。`);
   describeJudge(io, env);
   io.say(`可复制的命令：\n${displayLaunchCommand(plan)}`);
   const [action] = await choose(io, '接下来', [
