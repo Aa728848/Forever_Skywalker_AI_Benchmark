@@ -27,10 +27,23 @@ interface TaskSpec {
   defectDetectors: string[];
 }
 
+const written: string[] = [];
+const packageDirectories = (id: string): string[] => ['tasks/core/' + id, 'graders/' + id];
+
 function write(relative: string, content: string): void {
   const path = join(repositoryRoot, relative);
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, content.endsWith('\n') ? content : content + '\n');
+  written.push(relative);
+}
+
+/** 验证未通过时回滚：删除本次写出的文件，避免留下状态为 designed 的残缺题目包。 */
+function rollback(id: string): void {
+  for (const relative of written) rmSync(join(repositoryRoot, relative), { force: true });
+  for (const directory of packageDirectories(id)) {
+    rmSync(join(repositoryRoot, directory), { recursive: true, force: true });
+  }
+  console.error('已回滚本次写出的资产：' + written.length + ' 个文件。');
 }
 
 function capture(argv: readonly string[], cwd: string, timeoutMs = 600_000): { status: number | null; stdout: string; stderr: string } {
@@ -164,9 +177,10 @@ if (verify.status !== 0) {
   if (starterClean) {
     console.error('起始版本没有任何失败项：缺陷注入或检查设计有问题，拒绝自动收敛，保持 designed 状态。');
     console.log(showStages(verify));
+    rollback(spec.id);
     process.exitCode = 1;
   }
-  if (publicObserved !== null && hiddenObserved !== null && othersPassed && publicObserved.length + hiddenObserved.length > 0) {
+  if (!starterClean && publicObserved !== null && hiddenObserved !== null && othersPassed && publicObserved.length + hiddenObserved.length > 0) {
     const declared = [...spec.defectDetectors].sort();
     const observed = [...publicObserved, ...hiddenObserved].sort();
     console.log('起始版本失败项与声明不一致，按实测收敛：');
@@ -178,12 +192,6 @@ if (verify.status !== 0) {
     writeFileSync(manifestPath, JSON.stringify(manifestJson, null, 2) + '\n');
     verify = capture(['node', join(repositoryRoot, 'scripts', 'task.ts'), 'verify', spec.id], repositoryRoot);
     console.log(showStages(verify));
-  } else if (publicObserved !== null && hiddenObserved !== null && publicObserved.length + hiddenObserved.length === 0) {
-    // 起始版本一条都不失败，说明缺陷注入或检查写错了：不能把空数组写进 manifest（协议要求至少一项）。
-    // 只设置退出码并继续走下面的失败分支：直接 process.exit 会丢掉尚未刷新的诊断输出。
-    console.error('起始版本没有任何失败项：缺陷注入或检查设计有问题，拒绝自动收敛，保持 designed 状态。');
-    console.log(showStages(verify));
-    process.exitCode = 1;
   }
 }
 if (verify.status !== 0) {
@@ -191,6 +199,7 @@ if (verify.status !== 0) {
   // 不再只打印阶段行：验证器在阶段开始前抛错（协议校验、补丁应用失败等）时必须原样可见。
   console.error(verify.stdout.trim());
   if (verify.stderr.trim() !== '') console.error(verify.stderr.trim());
+  rollback(spec.id);
   process.exitCode = 1;
 } else {
   // 5) 状态推进 + 目录刷新

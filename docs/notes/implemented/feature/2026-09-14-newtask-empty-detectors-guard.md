@@ -46,7 +46,17 @@ Status: implemented
      正确构造是让参考实现只多一行注释：补丁非空，而起始版本仍然通过全部检查。
 - 修正后实测：stderr 打印“起始版本没有任何失败项：缺陷注入或检查设计有问题，拒绝自动收敛，保持 designed 状态。”，
   退出码 1，`catalog/tasks.json` 中 FE-02 仍为 `designed`，且**没有写出 manifest**。
-- 失败路径仍会留下已写出的题目包文件（本次测试后已手动清理）；正确做法是先写临时目录、验证通过后再落位，属于已知缺陷。
+- 失败路径原先会留下已写出的题目包文件；现在 `write()` 记录本次写出的每个文件，任何失败分支都会调用 `rollback(id)`：
+  删除这些文件并移除该题的 `tasks/core/<ID>` 与 `graders/<ID>` 目录（只针对本次生成，不会碰别的题目）。
+- 同时清掉了重复分支：`starterClean` 判定与旧的 `else if` 判空分支语义重复，现在只保留前者。
+
+## Verification（补充）
+
+- 回滚实测：`node scripts/newtask.ts <FE-02 规格>` → stderr 依次打印
+  「起始版本没有任何失败项：… 保持 designed 状态。」与「已回滚本次写出的资产：8 个文件。」；
+  `tasks/core/FE-02` 与 `graders/FE-02` 均为不存在（`Test-Path` 为 `False`），
+  `catalog/tasks.json` 中 FE-02 仍为 `designed`，退出码 1。
+- `pnpm check`：exit 0（89 项 vitest）。
 - 生成器失败时会**留下已写出的题目包文件**（本次测试后已手动清理）；这属于已知缺陷，
   正确做法是先写临时目录、验证通过后再落到 `tasks/core` 与 `graders`。
 
