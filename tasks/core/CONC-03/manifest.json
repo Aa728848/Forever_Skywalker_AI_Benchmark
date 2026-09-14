@@ -1,0 +1,139 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "CONC-03",
+  "taskVersion": "0.1.0",
+  "title": "多资源锁顺序和饥饿控制",
+  "runtime": "typescript",
+  "runtimeRange": "node >=24.14.1 <25",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "public-tests/**/*.test.ts"
+    ],
+    "hidden": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "__checks__/**/*.test.ts"
+    ]
+  },
+  "grader": {
+    "checks": "graders/CONC-03/checks",
+    "referencePatch": "graders/CONC-03/reference.patch",
+    "alternative": "graders/CONC-03/alternative",
+    "defectDetectors": [
+      "hidden/first-come-first-served",
+      "hidden/newcomers-cannot-jump-the-queue",
+      "public/first-come-first-served",
+      "public/newcomers-cannot-jump-the-queue"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/grants-when-free",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "空闲时立即授予并正确统计等待者。"
+    },
+    {
+      "id": "public/first-come-first-served",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "释放时把资源交给队首。"
+    },
+    {
+      "id": "public/newcomers-cannot-jump-the-queue",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "队列非空时新请求不得插队。"
+    },
+    {
+      "id": "public/release-is-idempotent",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "Release 幂等。"
+    },
+    {
+      "id": "public/resources-are-independent",
+      "kind": "public",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "不同资源互不影响。"
+    },
+    {
+      "id": "hidden/grants-when-free",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的立即授予。"
+    },
+    {
+      "id": "hidden/first-come-first-served",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的先来先服务。"
+    },
+    {
+      "id": "hidden/newcomers-cannot-jump-the-queue",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的禁止插队。"
+    },
+    {
+      "id": "hidden/release-is-idempotent",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的幂等释放。"
+    },
+    {
+      "id": "hidden/resources-are-independent",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的资源独立。"
+    }
+  ]
+}

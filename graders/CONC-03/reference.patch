@@ -1,0 +1,46 @@
+diff --git a/starter/src/locks.ts b/starter/src/locks.ts
+index 4e86301..477e23a 100644
+--- a/starter/src/locks.ts
++++ b/starter/src/locks.ts
+@@ -15,15 +15,14 @@ export class LockManager {
+   }
+ 
+   acquire(resource: string): Promise<Release> {
+-    if (!this.#held.has(resource)) {
+-      // 缺陷：只要资源空闲就直接授予，排队中的请求被后来者插队（饥饿）。
++    // 只要有人在等同一个资源，新请求就必须排队，保证先来先服务。
++    const queued = this.#waiting.get(resource) ?? [];
++    if (!this.#held.has(resource) && queued.length === 0) {
+       this.#held.add(resource);
+       return Promise.resolve(this.#grant(resource));
+     }
+     return new Promise<Release>(resolve => {
+-      const list = this.#waiting.get(resource) ?? [];
+-      list.push({ resolve });
+-      this.#waiting.set(resource, list);
++      this.#waiting.set(resource, [...queued, { resolve }]);
+     });
+   }
+ 
+@@ -34,12 +33,15 @@ export class LockManager {
+       released = true;
+       this.#held.delete(resource);
+       const list = this.#waiting.get(resource) ?? [];
+-      // 缺陷：唤醒最后入队者（LIFO），先来的请求被无限推迟。
+-      const next = list.pop();
+-      if (next !== undefined) {
+-        this.#held.add(resource);
+-        next.resolve(this.#grant(resource));
++      const next = list.shift();
++      if (next === undefined) {
++        this.#waiting.delete(resource);
++        return;
+       }
++      if (list.length === 0) this.#waiting.delete(resource);
++      else this.#waiting.set(resource, list);
++      this.#held.add(resource);
++      next.resolve(this.#grant(resource));
+     };
+   }
+ }
+\ No newline at end of file
