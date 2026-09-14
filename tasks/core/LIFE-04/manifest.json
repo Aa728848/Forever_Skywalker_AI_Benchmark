@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "LIFE-04",
-  "taskVersion": "0.1.0",
+  "taskVersion": "0.1.1",
   "title": "子进程故障、回收和验收重入隔离",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -43,7 +43,11 @@
     "alternative": "graders/LIFE-04/alternative",
     "defectDetectors": [
       "hidden/rejects-concurrent-acceptance",
-      "public/rejects-concurrent-acceptance"
+      "public/rejects-concurrent-acceptance",
+      "public/judge-context-does-not-reenter-acceptance",
+      "public/new-snapshot-invalidates-old-passing-result",
+      "hidden/timeout-reaps-real-descendant",
+      "hidden/late-completion-cannot-publish-old-snapshot"
     ]
   },
   "limits": {
@@ -132,6 +136,54 @@
       "weight": 1,
       "critical": false,
       "summary": "隐藏样本：每个子进程都被回收。"
+    },
+    {
+      "id": "public/real-child-crash-is-classified",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "启动真实Node子进程并正确识别非零退出。"
+    },
+    {
+      "id": "public/judge-context-does-not-reenter-acceptance",
+      "kind": "public",
+      "group": "regression",
+      "weight": 1,
+      "critical": true,
+      "summary": "裁判上下文不能启动自身验收子进程。"
+    },
+    {
+      "id": "public/new-snapshot-invalidates-old-passing-result",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "切换快照立即撤销旧通过结论。"
+    },
+    {
+      "id": "hidden/late-completion-cannot-publish-old-snapshot",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "旧完成事件不得发布新快照结果，运行期间拒绝重入。"
+    },
+    {
+      "id": "hidden/timeout-reaps-real-descendant",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": true,
+      "summary": "实际超时终止父子进程树，检查后代已退出。"
+    },
+    {
+      "id": "hidden/spawn-errors-release-busy",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "同步参数错误和异步启动失败均释放busy，不遗留锁定。"
     }
   ]
 }

@@ -1,0 +1,115 @@
+{
+  "sourceRepository": "cwtools-vscode",
+  "commit": "753a0d7c2df1f4285911febf2d10a949887f4499",
+  "license": "MIT",
+  "files": [
+    {
+      "sourcePath": "src/LSP/Log.fs",
+      "path": "starter/upstream/src/LSP/Log.fs",
+      "sha256": "ebe6d31f164d50759a29d24872e21d5cc3507e748f261d56996fae5f7aa9adf0",
+      "bytes": 235
+    },
+    {
+      "sourcePath": "src/LSP/Ser.fs",
+      "path": "starter/upstream/src/LSP/Ser.fs",
+      "sha256": "da92677639195b51030a3c8c6aa7648b58b367c683a9770354cbccdb12441ff5",
+      "bytes": 11267
+    },
+    {
+      "sourcePath": "src/LSP/Types.fs",
+      "path": "starter/upstream/src/LSP/Types.fs",
+      "sha256": "3c0817529acc430a9937f3769116dbe1745e451e9d56e58cd02e2505b5c16e15",
+      "bytes": 23059
+    },
+    {
+      "sourcePath": "src/LSP/Tokenizer.fs",
+      "path": "starter/upstream/src/LSP/Tokenizer.fs",
+      "sha256": "741cd4b44dc48bffe7247a7f71c2881b16ccf390933179a705be092b83957e13",
+      "bytes": 3074
+    },
+    {
+      "sourcePath": "src/LSP/Parser.fs",
+      "path": "starter/upstream/src/LSP/Parser.fs",
+      "sha256": "e5240bc258ca10e304e187e7d0eb4d45eb53731fea0aae9a3d4b9231ed2e4f30",
+      "bytes": 14292
+    },
+    {
+      "sourcePath": "src/LSP/PathIdentity.fs",
+      "path": "starter/upstream/src/LSP/PathIdentity.fs",
+      "sha256": "41db6ee5493745612b7a8e0ed665eb94d764688d58bef071804465bf8222e6b0",
+      "bytes": 996
+    },
+    {
+      "sourcePath": "src/LSP/DocumentStore.fs",
+      "path": "starter/upstream/src/LSP/DocumentStore.fs",
+      "sha256": "498b87942f69511bd43f8db420151d004ed1801bb75009ef83b5c1b23e2555b2",
+      "bytes": 10553
+    },
+    {
+      "sourcePath": "src/LSP/Locking.fs",
+      "path": "starter/upstream/src/LSP/Locking.fs",
+      "sha256": "81ac8239403fb15af8fa9f5129968486a519586f805338fb0ff0a7ea707c878c",
+      "bytes": 5909
+    },
+    {
+      "sourcePath": "src/Main/DiagnosticInvalidation.fs",
+      "path": "starter/upstream/src/Main/DiagnosticInvalidation.fs",
+      "sha256": "c697d2cf3abb3b46c582e34eb6cda6e363b163e221ff9b1fff12658011b6dac4",
+      "bytes": 9722
+    },
+    {
+      "sourcePath": "src/Main/RefreshLockPhases.fs",
+      "path": "starter/upstream/src/Main/RefreshLockPhases.fs",
+      "sha256": "e5b92f4af0bb676be35ab05e8f5e4a617571e13746d2e0a2ed6a827905b702d3",
+      "bytes": 8928
+    },
+    {
+      "sourcePath": "src/TestHelpers.fsx",
+      "path": "starter/upstream/src/TestHelpers.fsx",
+      "sha256": "42cb60dfe272902b5f31fe5ef7303e899aae537ae749146c5665b91e8dce4743",
+      "bytes": 3935
+    },
+    {
+      "sourcePath": "src/LSP/DocumentStore.Tests.fsx",
+      "path": "starter/upstream/src/LSP/DocumentStore.Tests.fsx",
+      "sha256": "ac6084bb559a0cbdbd0102ce645e380541021d817e14543a8cd9ae2c642a1d92",
+      "bytes": 2338
+    },
+    {
+      "sourcePath": "LICENSE.md",
+      "path": "starter/upstream/LICENSE.md",
+      "sha256": "76d3e826cabe4d2937c75c136770f98cf16951657adc5c180ad0d4ed8524d7ff",
+      "bytes": 1246
+    },
+    {
+      "sourcePath": "Directory.Packages.props",
+      "path": "starter/upstream/Directory.Packages.props",
+      "sha256": "888c00ccd65d42d45973759cb0c4be6cf09607e28dcae2607eabf4673eaf0419",
+      "bytes": 567
+    }
+  ],
+  "dependencies": [
+    {
+      "name": "FSharp.Data.dll",
+      "version": "3.3.1",
+      "path": "starter/lib/FSharp.Data.dll",
+      "sha256": "4d290445b1b75f05f777016b632883082cc4b47ca77109ae5d5755b9db30109c",
+      "bytes": 983552,
+      "license": "Apache-2.0"
+    },
+    {
+      "name": "FSharp.Data.DesignTime.dll",
+      "version": "3.3.1",
+      "path": "starter/lib/FSharp.Data.DesignTime.dll",
+      "sha256": "57011d59da4c75538c054744385c0acb3b92381f466999f37f1b347732abe7de",
+      "bytes": 2267136,
+      "license": "Apache-2.0"
+    }
+  ],
+  "dependencyPackageSha512": "ztB+Mmq281tg+3+yFKAglZGH+vPtxQppbvdSXugkcB87/MdHhuJBzaWBqVpGWgUN9WJ30R6SQVzrkrwLvCUicQ==",
+  "scope": "固定来源实际模块组合；不是完整扩展打包或全仓测试。",
+  "mutations": [
+    "DocumentStore.getCachedText 忽略版本，注入过期文本缓存缺陷",
+    "Pipeline.Publish 忽略生命周期/版本准入，注入迟到发布缺陷"
+  ]
+}

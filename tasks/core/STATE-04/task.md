@@ -1,6 +1,6 @@
 # STATE-04 · UI、服务、缓存的故障后一致性
 
-- 难度：极度困难；题型：独立核心题；能力域：持久化与故障恢复。运行时：TypeScript on Node.js 24。题目版本：0.1.0。
+- 难度：极度困难；题型：独立核心题；能力域：持久化与故障恢复。运行时：TypeScript on Node.js 24。题目版本：0.1.1。
 
 ## 背景
 
@@ -28,6 +28,30 @@ export class Coordinator {
 3. 失败之后三层状态必须一致：都不包含该值，`applied` 不变。
 4. 重复提交同一个值是幂等的：不重复 `apply`。
 5. 回滚只针对本次提交**已经应用**的层，不得回滚未应用过的层。
+
+## 持久化重启与通知收敛（0.1.1）
+
+保留 Coordinator 的同步层接口；另在 `starter/src/durable-coordinator.ts` 修复持久化服务与缓存/界面投影的重启一致性。
+
+```ts
+export type CrashPoint = 'before-commit' | 'after-commit' | 'after-cache' | 'after-ui';
+export interface View { readonly revision: number; readonly values: readonly string[] }
+export interface Views { readonly service: View; readonly cache: View; readonly ui: View }
+export class DurableConflictError extends Error {}
+export class DurableCoordinator {
+  constructor(directory: string, checkpoint?: (point: CrashPoint) => void);
+  snapshot(): Views;
+  recover(): Views;
+  notify(revision: number): Views;
+  commit(key: string, value: string): Promise<View>;
+}
+```
+
+- 服务事务是持久事实，缓存和界面是可重建投影。成功提交 revision 递增一次；相同键/相同值重试不能增加交易，不同值抛 DurableConflictError。
+- checkpoint 在所示边界调用，可以抛异常或使真实子进程退出。before-commit 失败不能留下事务；after-commit 及之后的中断不能丢失已提交事务。
+- 新实例打开同一目录时必须恢复最新服务事实，并重建落后或丢失的缓存/界面投影，使三者的 revision 与 values 一致。
+- notify 只接收 0 到当前服务 revision 的安全整数；非法版本抛 RangeError。重复或迟到通知须与最新服务状态收敛，不得重新执行交易或回退界面。
+- 目录由调用方提供；存储格式由实现选择，只允许单进程写入。验收包括真实文件与进程退出，不要求模拟机器断电或多主数据库。
 
 ## 限制
 

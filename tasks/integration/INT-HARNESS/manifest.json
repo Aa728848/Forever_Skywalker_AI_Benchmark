@@ -1,0 +1,108 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "INT-HARNESS",
+  "taskVersion": "0.1.0",
+  "title": "长会话续跑与重连一致性",
+  "runtime": "typescript",
+  "runtimeRange": "node >=24.14.1 <25",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "node",
+      "--test",
+      "--test-isolation=process",
+      "--test-reporter=tap",
+      "public-tests/**/*.test.mjs"
+    ],
+    "hidden": [
+      "node",
+      "--test",
+      "--test-isolation=process",
+      "--test-reporter=tap",
+      "__checks__/**/*.test.mjs"
+    ]
+  },
+  "grader": {
+    "checks": "graders/INT-HARNESS/checks",
+    "referencePatch": "graders/INT-HARNESS/reference.patch",
+    "alternative": "graders/INT-HARNESS/alternative",
+    "defectDetectors": [
+      "public/behavior-reconnect-prefix-and-assembly",
+      "public/boundary-zero-prefix-and-invalid-compact",
+      "public/state-gap-cannot-publish",
+      "hidden/resources-large-compact-prefix",
+      "hidden/state-foreign-attempt-isolation"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/behavior-reconnect-prefix-and-assembly",
+      "kind": "public",
+      "group": "behavior",
+      "summary": "真实压缩流经客户端前缀重建和组装器得到无重复全文。",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "public/boundary-zero-prefix-and-invalid-compact",
+      "kind": "public",
+      "group": "boundary",
+      "summary": "零前缀不产生幽灵帧，压缩数据错误仍被真实验证器拒绝。",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "public/state-gap-cannot-publish",
+      "kind": "public",
+      "group": "state",
+      "summary": "索引缺口请求重新baseline，不推进错位内容。",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/regression-settlement-and-rebaseline",
+      "kind": "hidden",
+      "group": "regression",
+      "summary": "真实durable结算等待end，重复结算触发恢复，替换后旧attempt无效。",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/resources-large-compact-prefix",
+      "kind": "hidden",
+      "group": "resources",
+      "summary": "100000增量压缩为一个run，客户端只重建公开指定前缀。",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/state-foreign-attempt-isolation",
+      "kind": "hidden",
+      "group": "state",
+      "summary": "外来attempt与结束帧不能改变当前已重建前缀。",
+      "weight": 1,
+      "critical": true
+    }
+  ]
+}

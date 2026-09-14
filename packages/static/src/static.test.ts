@@ -1,11 +1,11 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { ExecutionResult, TaskManifest } from '@fsa/contracts';
 import { scoreExecution } from '@fsa/core';
 import { createScriptedJudge, sampleVerdict, type ReviewRequest } from '@fsa/judge';
-import { analyzeWorkspace, staticRuleVersion, type StaticPolicy } from './index.ts';
+import { analyzeWorkspace, defaultPolicy, staticRuleVersion, type StaticPolicy } from './index.ts';
 
 const policy: StaticPolicy = {
   language: 'typescript',
@@ -59,20 +59,98 @@ describe('静态客观分', () => {
     } finally { rmSync(directory, { recursive: true, force: true }); }
   });
 
-  it('拒绝非 typescript 规则', () => {
+  it('拒绝不支持的语言规则', () => {
     const directory = workspace({});
     try {
-      expect(() => analyzeWorkspace(directory, { ...policy, language: 'python' as 'typescript' })).toThrow(RangeError);
+      expect(() => analyzeWorkspace(directory, { ...policy, language: 'rust' as 'typescript' })).toThrow(RangeError);
     } finally { rmSync(directory, { recursive: true, force: true }); }
   });
-  it('空工作区也能产出报告', () => {
+  it('空工作区拒绝产出虚构满分', () => {
     const directory = workspace({});
+    try {
+      expect(() => analyzeWorkspace(directory, policy)).toThrow(/没有可分析/);
+    } finally { rmSync(directory, { recursive: true, force: true }); }
+  });
+
+  it('按AST测量箭头、方法、嵌套函数，字符串和注释不会制造决策点', () => {
+    const directory = workspace({ 'src/view.tsx': `
+      const arrow = value => value ? 1 : 0;
+      class Subject { test(value: boolean) { return value && true; } }
+      function outer() { const inner = () => { if (true) return "if || ? }"; }; return inner; }
+      const view = () => <span title="if && || ?">test</span>;
+    ` });
     try {
       const report = analyzeWorkspace(directory, policy);
-      expect(report.files).toEqual([]);
-      expect(report.scores).toEqual({ simplicity: 100, maintainability: 100, decoupling: 100 });
+      expect(report.files[0]?.functions.map(fn => [fn.name, fn.decisionPoints])).toEqual([
+        ['arrow', 1], ['test', 1], ['outer', 0], ['inner', 1], ['view', 0],
+      ]);
     } finally { rmSync(directory, { recursive: true, force: true }); }
   });
+
+  it('禁止导入覆盖side-effect、require及node别名，不扫描注释与平台检查', () => {
+    const directory = workspace({ 'src/x.ts': `import 'child_process';\nconst module = require('node:child_process');\n// import 'node:child_process';`,
+      'public-tests/check.ts': `import 'node:child_process';` });
+    try {
+      const report = analyzeWorkspace(directory, policy);
+      expect(report.files).toHaveLength(1);
+      expect(report.scores.decoupling).toBe(50);
+    } finally { rmSync(directory, { recursive: true, force: true }); }
+  });
+
+  it('冻结分析范围不能越出工作区，语法损坏不能自动得到满分', () => {
+    const directory = workspace({ 'src/x.ts': 'export function broken( {' });
+    try {
+      expect(() => analyzeWorkspace(directory, policy)).toThrow(/语法错误/);
+      expect(() => analyzeWorkspace(directory, { ...policy, includeFiles: ['../outside.ts'] })).toThrow(/范围无效/);
+    } finally { rmSync(directory, { recursive: true, force: true }); }
+  });
+});
+
+describe('Python 与 F# 语法树证据', () => {
+  it('Python只解析源码，函数内决策不混入字符串，候选顶层副作用不会运行', () => {
+    const directory = workspace({ 'src/source.py': `
+from pathlib import Path
+import subprocess
+Path(__file__).with_suffix('.executed').write_text('must not run')
+def outer(value):
+    def inner():
+        return 1 if value else 0
+    if value and value > 1:
+        return 'if while or and'
+    return inner()
+` });
+    try {
+      const report = analyzeWorkspace(directory, { ...defaultPolicy('python'), forbiddenImports: ['subprocess'] });
+      expect(report.files[0]?.functions.map(fn => [fn.name, fn.decisionPoints])).toEqual([['outer', 2], ['inner', 1]]);
+      expect(report.scores.decoupling).toBe(75);
+      expect(existsSync(join(directory, 'src/source.executed'))).toBe(false);
+    } finally { rmSync(directory, { recursive: true, force: true }); }
+  });
+
+  it('F#使用SDK解析函数、方法与open依赖，不执行候选文件', () => {
+    const directory = workspace({ 'src/Source.fsx': `
+open System.IO
+File.WriteAllText(__SOURCE_DIRECTORY__ + "/source.executed", "must not run")
+let outer value =
+    let inner () = if value then 1 else 0
+    let branch = if value then 1 else 0
+    if value && branch > 0 then "if while" else "x"
+type Subject() =
+    member _.Run(value) = if value then 1 else 0
+` });
+    try {
+      const report = analyzeWorkspace(directory, { ...defaultPolicy('fsharp'), forbiddenImports: ['System.IO'] });
+      expect(report.files[0]?.functions.map(fn => [fn.name, fn.decisionPoints])).toEqual([['outer', 3], ['inner', 1], ['_.Run', 1]]);
+      expect(report.scores.decoupling).toBe(75);
+      expect(existsSync(join(directory, 'src/source.executed'))).toBe(false);
+    } finally { rmSync(directory, { recursive: true, force: true }); }
+  }, 30_000);
+
+  it.each([['python', 'broken.py', 'def broken(:'], ['fsharp', 'Broken.fsx', 'let broken = (']] as const)('%s语法错误不产生质量满分', (language, file, source) => {
+    const directory = workspace({ [file]: source });
+    try { expect(() => analyzeWorkspace(directory, defaultPolicy(language))).toThrow(/解析失败/); }
+    finally { rmSync(directory, { recursive: true, force: true }); }
+  }, 30_000);
 });
 
 describe('静态客观分接入评分桥', () => {
@@ -80,7 +158,7 @@ describe('静态客观分接入评分桥', () => {
     const directory = workspace({ 'src/clean.ts': 'export const value = 1;\n' });
     try {
       const report = analyzeWorkspace(directory, policy);
-      const request: ReviewRequest = { runId: 'run-1', attemptId: 'attempt-1', taskId: 'CACHE-02', promptVersion: 'review-v1', materials: [] };
+      const request: ReviewRequest = { runId: 'run-1', attemptId: 'attempt-1', taskId: 'CACHE-02', promptVersion: 'review-v1', materials: [{ id: 'candidate-1', kind: 'candidate', text: 'export const value = 1;' }] };
       const judge = createScriptedJudge([JSON.stringify(sampleVerdict(request, { simplicity: 80, maintainability: 80, decoupling: 80, performance: 80 }, ['candidate-1']))]);
       const outcome = await judge.review(request);
       expect(outcome.verdict.dimensions.simplicity.score).toBe(80);

@@ -34,7 +34,6 @@ export class Invalidator {
     for (const id of changed) {
       if (!this.#consumers.has(id)) throw new UnknownNodeError(id);
       affected.add(id);
-      // 缺陷：只失效直接依赖者，间接依赖与环内其它节点被漏掉。
       for (const consumer of this.#consumers.get(id) as string[]) affected.add(consumer);
     }
     return [...affected].sort();

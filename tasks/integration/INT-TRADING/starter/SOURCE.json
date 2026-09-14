@@ -1,0 +1,40 @@
+{
+  "task": "INT-TRADING",
+  "kind": "frozen-original-module-subset",
+  "sources": [
+    {
+      "path": "packages/client-ui-trading/src/tasks/ledger.ts",
+      "upstreamPath": "packages/client-ui-trading/src/tasks/ledger.ts",
+      "commit": "b6cf5535093cdc43fc61a7037d997bace7fb0e6d",
+      "sha256": "7cb0c9de4fea45ac64c2f738128ed3a6ee4e1852391aecbc2a56da68632e75d1"
+    },
+    {
+      "path": "packages/client-ui-trading/src/client/tasks-protocol.ts",
+      "upstreamPath": "packages/client-ui-trading/src/client/tasks-protocol.ts",
+      "commit": "b6cf5535093cdc43fc61a7037d997bace7fb0e6d",
+      "sha256": "b1f9ac1c1c4b8b9db4d068b0f26e160d7e32701bbb58f28af0bd0a1b4ce6ccd6"
+    },
+    {
+      "path": "packages/client-ui-trading/src/client/tasks-schedule.ts",
+      "upstreamPath": "packages/client-ui-trading/src/client/tasks-schedule.ts",
+      "commit": "b6cf5535093cdc43fc61a7037d997bace7fb0e6d",
+      "sha256": "81340e8ebb44c19bf673a438950fed47224840221fffb19de295e11a2659aeca"
+    },
+    {
+      "path": "packages/client-ui-trading/src/ttl-cache.ts",
+      "upstreamPath": "packages/client-ui-trading/src/ttl-cache.ts",
+      "commit": "b6cf5535093cdc43fc61a7037d997bace7fb0e6d",
+      "sha256": "28312dac4aa249aa39f3fe1390421b9d1eefbcd6b24cd273de3757435f69c289"
+    },
+    {
+      "path": "LICENSE",
+      "upstreamPath": "LICENSE",
+      "commit": "b6cf5535093cdc43fc61a7037d997bace7fb0e6d",
+      "sha256": "750f098ef622768b6ee058aff07700fecb29a9fc43e117e05e2188325e020558"
+    }
+  ],
+  "dependencies": [
+    "Node.js 24.14.1 标准库；源提交内的协议、cron调度、TTL缓存四模块，无第三方运行时包"
+  ],
+  "changes": "固定上游版本中的真实缺陷：TasksLedger.commit 在 fsync/rename 确认之前更新 this.document，写失败留下幽灵任务与已消费的幂等键。参考改为确认后发布，替代采用失败回滚。"
+}

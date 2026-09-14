@@ -1,0 +1,171 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "INT-WEB",
+  "taskVersion": "0.1.0",
+  "title": "插件安装、卸载和失败恢复",
+  "runtime": "typescript",
+  "runtimeRange": "node >=24.14.1 <25 (--experimental-transform-types), vendored yaml 2.9.0",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      },
+      {
+        "from": "upstream-tests",
+        "to": "upstream-tests"
+      },
+      {
+        "from": "LICENSE",
+        "to": "LICENSE"
+      },
+      {
+        "from": "source-provenance.json",
+        "to": "source-provenance.json"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "node",
+      "--experimental-transform-types",
+      "--test",
+      "--test-reporter=tap",
+      "public-tests/**/*.test.mjs"
+    ],
+    "hidden": [
+      "node",
+      "--experimental-transform-types",
+      "--test",
+      "--test-reporter=tap",
+      "__checks__/**/*.test.mjs"
+    ]
+  },
+  "grader": {
+    "checks": "graders/INT-WEB/checks",
+    "referencePatch": "graders/INT-WEB/reference.patch",
+    "alternative": "graders/INT-WEB/alternative",
+    "defectDetectors": [
+      "public/reinstall-mounts-once-and-uninstall-releases-ownership",
+      "public/gateway-preserves-single-mount-composition",
+      "public/failed-install-clears-real-client-progress-and-can-retry",
+      "public/config-patch-invalidates-real-pool-and-tunnel",
+      "hidden/repeated-module-apply-keeps-one-registration",
+      "hidden/reconciliation-preserves-existing-dependency-and-comments",
+      "hidden/sibling-tunnels-close-on-alias-deletion-and-new-config-reconnects",
+      "hidden/client-http-error-does-not-leave-progress-stuck"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 768,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/reinstall-mounts-once-and-uninstall-releases-ownership",
+      "kind": "public",
+      "group": "state",
+      "critical": true,
+      "weight": 1,
+      "summary": "重复安装只挂载一次，卸载后可重新挂载。"
+    },
+    {
+      "id": "public/gateway-preserves-single-mount-composition",
+      "kind": "public",
+      "group": "behavior",
+      "critical": true,
+      "weight": 1,
+      "summary": "真实gateway与YAML组成不产生重复bundle挂载。"
+    },
+    {
+      "id": "public/failed-install-clears-real-client-progress-and-can-retry",
+      "kind": "public",
+      "group": "state",
+      "critical": true,
+      "weight": 1,
+      "summary": "真实客户端face通过HTTP感知失败、回滚、恢复idle并重试。"
+    },
+    {
+      "id": "public/config-patch-invalidates-real-pool-and-tunnel",
+      "kind": "public",
+      "group": "state",
+      "critical": true,
+      "weight": 1,
+      "summary": "HTTP配置变更关闭原连接和真实localhost隧道。"
+    },
+    {
+      "id": "public/invalid-cli-input-never-starts-a-process",
+      "kind": "public",
+      "group": "boundary",
+      "critical": true,
+      "weight": 1,
+      "summary": "非法CLI参数不启动传输。"
+    },
+    {
+      "id": "public/remove-success-must-really-change-manifest",
+      "kind": "public",
+      "group": "regression",
+      "critical": false,
+      "weight": 1,
+      "summary": "卸载成功必须对应真实manifest删除。"
+    },
+    {
+      "id": "hidden/repeated-module-apply-keeps-one-registration",
+      "kind": "hidden",
+      "group": "state",
+      "critical": true,
+      "weight": 1,
+      "summary": "不同模块闭包实例仍共享挂载所有权。"
+    },
+    {
+      "id": "hidden/reconciliation-preserves-existing-dependency-and-comments",
+      "kind": "hidden",
+      "group": "regression",
+      "critical": true,
+      "weight": 1,
+      "summary": "连续安装保留已有依赖与用户注释，去掉重复bundle。"
+    },
+    {
+      "id": "hidden/sibling-tunnels-close-on-alias-deletion-and-new-config-reconnects",
+      "kind": "hidden",
+      "group": "resources",
+      "critical": true,
+      "weight": 1,
+      "summary": "删除别名关闭全部兄弟监听，重新添加使用新配置。"
+    },
+    {
+      "id": "hidden/client-http-error-does-not-leave-progress-stuck",
+      "kind": "hidden",
+      "group": "boundary",
+      "critical": true,
+      "weight": 1,
+      "summary": "HTTP启动失败后客户端进度不挂起。"
+    },
+    {
+      "id": "hidden/invalid-host-patch-preserves-live-config-and-connection",
+      "kind": "hidden",
+      "group": "boundary",
+      "critical": false,
+      "weight": 1,
+      "summary": "非法host更新不破坏已有配置和连接。"
+    },
+    {
+      "id": "hidden/finished-job-retention-is-bounded",
+      "kind": "hidden",
+      "group": "resources",
+      "critical": false,
+      "weight": 1,
+      "summary": "真实gateway完成记录淘汰到固定100条。"
+    }
+  ]
+}

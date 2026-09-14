@@ -1,6 +1,8 @@
 import { spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { closeSync, mkdirSync, openSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { controlledTestCommand } from '@fsa/tasks';
 
 /**
  * 容器档案：把冻结快照以只读隐藏检查挂载进固定镜像，用容器自身的限额与网络策略执行。
@@ -63,6 +65,7 @@ export interface ContainerInvocationOptions {
   readonly imageDigest: string;
   readonly workspace: string;
   readonly hiddenChecksDirectory: string;
+  readonly publicChecksDirectory?: string;
   readonly samplerHostPath: string;
   readonly argv: readonly string[];
   readonly limits: ContainerLimits;
@@ -70,6 +73,7 @@ export interface ContainerInvocationOptions {
 }
 
 export interface ContainerInvocation {
+  readonly name: string;
   readonly reference: string;
   readonly argv: string[];
   readonly cwd: string;
@@ -79,18 +83,19 @@ export interface ContainerInvocation {
 /** 容器运行时的固定引用：镜像名 + manifest digest。 */
 export function containerImageReference(image: string, imageDigest: string): string {
   if (!/^sha256:[a-f0-9]{64}$/.test(imageDigest)) throw new InfrastructureUnavailableError('容器镜像 digest 非法：' + imageDigest);
-  if (image.trim() === '') throw new InfrastructureUnavailableError('容器镜像引用不能为空。');
+  if (image === imageDigest) return imageDigest;
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._/:\-]*$/.test(image)) throw new InfrastructureUnavailableError('容器镜像引用非法。');
   return image + '@' + imageDigest;
 }
 
 /** docker 自身的失败码：125 参数或守护进程问题，126 无法执行，127 命令不存在。 */
 export function isContainerRuntimeFailure(exitCode: number | null): boolean {
-  return exitCode !== null && exitCode >= 125;
+  return exitCode !== null && exitCode >= 125 && exitCode <= 127;
 }
 
 /** node 命令在容器内使用镜像提供的 node，并注入只读挂载的采样器。 */
 export function buildContainerArgv(declared: readonly string[], memoryMb: number): string[] {
-  const [executable = '', ...rest] = declared;
+  const [executable = '', ...rest] = controlledTestCommand(declared);
   if (executable !== 'node') return [...declared];
   return ['node', '--import=' + containerSamplerUrl, '--max-old-space-size=' + memoryMb, ...rest];
 }
@@ -107,8 +112,14 @@ function dockerClientEnvironment(): NodeJS.ProcessEnv {
 
 export function buildContainerInvocation(options: ContainerInvocationOptions): ContainerInvocation {
   const reference = containerImageReference(options.image, options.imageDigest);
+  const name = 'fsa-' + randomUUID();
   const argv = [
-    options.runtime.command, 'run', '--rm',
+    options.runtime.command, 'run', '--name', name, '--pull', 'never', '--init',
+    '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
+    '--user', String(process.getuid?.() || 1000) + ':' + String(process.getgid?.() || 1000),
+    '--tmpfs', '/tmp:rw,nosuid,nodev,size=256m,mode=1777',
+    '--env', 'HOME=/tmp', '--env', 'DOTNET_CLI_HOME=/tmp',
+    '--env', 'DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1', '--env', 'DOTNET_CLI_TELEMETRY_OPTOUT=1',
     '--network', 'none',
     '--cpus', String(options.limits.cpus),
     '--memory', options.limits.memoryMb + 'm',
@@ -119,11 +130,14 @@ export function buildContainerInvocation(options: ContainerInvocationOptions): C
     '--volume', options.hiddenChecksDirectory + ':' + hiddenChecksMount + ':ro',
     '--volume', options.samplerHostPath + ':' + containerSamplerPath + ':ro',
   ];
+  if (options.publicChecksDirectory !== undefined) {
+    argv.push('--volume', options.publicChecksDirectory + ':/work/public-tests:ro');
+  }
   if (options.resourceReportContainerPath !== null) {
     argv.push('--env', 'FSA_RESOURCE_REPORT=' + options.resourceReportContainerPath);
   }
   argv.push(reference, ...options.argv);
-  return { reference, argv, cwd: options.workspace, environment: dockerClientEnvironment() };
+  return { name, reference, argv, cwd: options.workspace, environment: dockerClientEnvironment() };
 }
 
 export interface ContainerRuntimeOptions {
@@ -164,6 +178,10 @@ export function requirePinnedImage(
   });
   if (inspected.exitCode !== 0) {
     throw new InfrastructureUnavailableError('本地没有按 digest 固定的镜像 ' + reference + '；正式执行不会在运行期拉取镜像。');
+  }
+  if (image === imageDigest) {
+    const metadata = JSON.parse(inspected.stdout) as Array<{ Id?: string }>;
+    if (metadata[0]?.Id !== imageDigest) throw new InfrastructureUnavailableError('本地镜像 ID 与固定摘要不一致。');
   }
   return reference;
 }

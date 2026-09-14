@@ -1,12 +1,13 @@
 import { spawnSync } from 'node:child_process';
-import { closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import { requireTask } from '../packages/catalog/src/index.ts';
+import { functionalWeights } from '../packages/contracts/src/index.ts';
 import { repositoryRoot } from '../packages/tasks/src/index.ts';
 
 /**
- * 题目包生成器：按一份规格写出 tasks/core/<ID>/ 与 graders/<ID>/ 全套资产，生成参考补丁，
+ * 题目包生成器：按一份规格写出 tasks/<track>/<ID>/ 与 graders/<ID>/ 全套资产，生成参考补丁，
  * 运行三向验证，并在通过后把题目状态推进到 fixture-ready、刷新生成的目录。
  * 用法：node scripts/newtask.ts <规格 JSON 路径>
  */
@@ -23,12 +24,13 @@ interface TaskSpec {
   patchPaths: string[];
   publicTests: Record<string, string>;
   hiddenChecks: Record<string, string>;
+  commands?: { public: string[]; hidden: string[] };
   checks: CheckSpec[];
   defectDetectors: string[];
 }
 
 const written: string[] = [];
-const packageDirectories = (id: string): string[] => ['tasks/core/' + id, 'graders/' + id];
+const packageDirectories = (id: string): string[] => ['tasks/' + (requireTask(id).track === 'core' ? 'core' : 'integration') + '/' + id, 'graders/' + id];
 
 function write(relative: string, content: string): void {
   const path = join(repositoryRoot, relative);
@@ -39,9 +41,10 @@ function write(relative: string, content: string): void {
 
 /** 验证未通过时回滚：删除本次写出的文件，避免留下状态为 designed 的残缺题目包。 */
 function rollback(id: string): void {
-  for (const relative of written) rmSync(join(repositoryRoot, relative), { force: true });
   for (const directory of packageDirectories(id)) {
-    rmSync(join(repositoryRoot, directory), { recursive: true, force: true });
+    const absolute = resolve(repositoryRoot, directory);
+    if (!absolute.startsWith(resolve(repositoryRoot) + sep)) throw new Error('拒绝清理工作区之外的路径：' + absolute);
+    rmSync(absolute, { recursive: true, force: true });
   }
   console.error('已回滚本次写出的资产：' + written.length + ' 个文件。');
 }
@@ -94,22 +97,33 @@ const specPath = process.argv[2];
 if (specPath === undefined) throw new Error('用法：node scripts/newtask.ts <规格 JSON 路径>');
 const spec = JSON.parse(readFileSync(specPath, 'utf8')) as TaskSpec;
 const task = requireTask(spec.id);
+const packageRoot = packageDirectories(spec.id)[0] as string;
+// 生成器只创建新题，绝不覆盖既有受信资产；否则失败回滚会删除此前已验收的题目。
+for (const directory of packageDirectories(spec.id)) {
+  if (existsSync(join(repositoryRoot, directory))) throw new Error('题目资产已存在，拒绝覆盖：' + directory);
+}
+for (const group of Object.keys(functionalWeights)) {
+  if (!spec.checks.some(check => check.group === group && check.weight > 0)) {
+    throw new Error('缺少预先声明的正权重评分检查组：' + group);
+  }
+}
+if (spec.defectDetectors.length === 0) throw new Error('必须预先声明至少一个起始缺陷检出项。');
 // 题库是元数据的唯一来源：规格只能声明，冲突时以题库为准并明确告警，
 // 否则 readManifest 的交叉校验会在阶段开始前抛错，看起来像“验证没有任何输出”。
 if (spec.runtime !== undefined && spec.runtime !== task.runtime) console.warn('规格 runtime 与题库不一致，以题库为准：' + spec.runtime + ' → ' + task.runtime);
 if (spec.title !== task.title) console.warn('规格 title 与题库不一致，以题库为准：' + spec.title + ' → ' + task.title);
-const runtime = spec.runtime ?? task.runtime;
-const runtimeRange = runtime === 'fsharp' ? 'dotnet >= 10.0' : 'node >=24.14.1 <25';
+const runtime = task.runtime;
+const runtimeRange = spec.runtimeRange ?? (runtime === 'fsharp' ? 'dotnet >= 10.0' : runtime === 'python' ? 'python >=3.11 <3.14' : 'node >=24.14.1 <25');
 const publicTests = Object.keys(spec.publicTests);
 const hiddenChecks = Object.keys(spec.hiddenChecks);
 const paths = runtime === 'fsharp' ? [hiddenChecks[0] as string] : ['__checks__/**/*.test.ts'];
 
 // 1) 起始版本、公开检查、隐藏检查、替代实现
-for (const [relative, content] of Object.entries(spec.files.starter)) write('tasks/core/' + spec.id + '/starter/' + relative, content);
-for (const [name, content] of Object.entries(spec.publicTests)) write('tasks/core/' + spec.id + '/public-tests/' + name, content);
+for (const [relative, content] of Object.entries(spec.files.starter)) write(packageRoot + '/starter/' + relative, content);
+for (const [name, content] of Object.entries(spec.publicTests)) write(packageRoot + '/public-tests/' + name, content);
 for (const [name, content] of Object.entries(spec.hiddenChecks)) write('graders/' + spec.id + '/checks/' + name, content);
 for (const [relative, content] of Object.entries(spec.files.alternative)) write('graders/' + spec.id + '/alternative/starter/' + relative, content);
-write('tasks/core/' + spec.id + '/task.md', spec.taskMd);
+write(packageRoot + '/task.md', spec.taskMd);
 write('graders/' + spec.id + '/README.md', spec.readme);
 
 // 2) 参考补丁
@@ -136,9 +150,11 @@ const manifest = {
     { from: 'starter', to: 'starter' },
     { from: 'public-tests', to: 'public-tests' },
   ] },
-  commands: runtime === 'fsharp'
+  commands: spec.commands ?? (runtime === 'fsharp'
     ? { public: ['dotnet', 'fsi', 'public-tests/' + (publicTests[0] as string)], hidden: ['dotnet', 'fsi', '__checks__/' + (hiddenChecks[0] as string)] }
-    : { public: ['node', '--test', '--test-isolation=none', '--test-reporter=tap', 'public-tests/**/*.test.ts'], hidden: ['node', '--test', '--test-isolation=none', '--test-reporter=tap', '__checks__/**/*.test.ts'] },
+    : runtime === 'python'
+      ? { public: ['python', '-B', 'public-tests/' + (publicTests[0] as string)], hidden: ['python', '-B', '__checks__/' + (hiddenChecks[0] as string)] }
+      : { public: ['node', '--test', '--test-isolation=process', '--test-reporter=tap', 'public-tests/**/*.test.ts'], hidden: ['node', '--test', '--test-isolation=process', '--test-reporter=tap', '__checks__/**/*.test.ts'] }),
   grader: {
     checks: 'graders/' + spec.id + '/checks',
     referencePatch: 'graders/' + spec.id + '/reference.patch',
@@ -148,52 +164,15 @@ const manifest = {
   limits: { timeoutMs: 60000, memoryMb: 512, cpus: 1, network: false },
   checks: spec.checks,
 };
-write('tasks/core/' + spec.id + '/manifest.json', JSON.stringify(manifest, null, 2));
+write(packageRoot + '/manifest.json', JSON.stringify(manifest, null, 2));
 console.log('已写入 ' + spec.id + ' 的题目包（' + publicTests.length + ' 个公开检查文件，' + hiddenChecks.length + ' 个隐藏检查文件）');
 void paths;
 
 // 4) 三向验证
-const observedFailures = (stdout: string, stage: 'starter-public' | 'starter-hidden'): string[] | null => {
-  const line = stdout.split('\n').find(item => item.startsWith((stage === 'starter-public' ? '通过 ' : '通过 ') + stage) || item.includes(stage + '：'));
-  if (line === undefined) return null;
-  const match = /实际失败=\[([^\]]*)\]/.exec(line);
-  if (match === null) return null;
-  const raw = match[1] ?? '';
-  return raw.split(',').map(item => item.trim()).filter(item => item !== '');
-};
-
-let verify = capture(['node', join(repositoryRoot, 'scripts', 'task.ts'), 'verify', spec.id], repositoryRoot);
+const verify = capture(['node', join(repositoryRoot, 'scripts', 'task.ts'), 'verify', spec.id], repositoryRoot);
 const showStages = (result: { stdout: string }) => result.stdout.split('\n').filter(line => /通过 |不通过 |隐藏资产/.test(line)).join('\n');
 console.log(showStages(verify));
-
-// 起始版本的实测失败集合与声明不一致时按实测收敛，并在日志里明确列出差异供人工复核。
-if (verify.status !== 0) {
-  const publicObserved = observedFailures(verify.stdout, 'starter-public');
-  const hiddenObserved = observedFailures(verify.stdout, 'starter-hidden');
-  const othersPassed = verify.stdout.split('\n').every(line => !/^不通过 (reference|alternative)-/.test(line));
-  // 起始版本一条都不失败时，缺陷注入或检查本身有问题：拒绝收敛，也不推进状态。
-  const starterClean = /(?:通过|不通过) starter-public：exit=0，实际失败=\[\]/.test(verify.stdout)
-    && /(?:通过|不通过) starter-hidden：exit=0，实际失败=\[\]/.test(verify.stdout);
-  if (starterClean) {
-    console.error('起始版本没有任何失败项：缺陷注入或检查设计有问题，拒绝自动收敛，保持 designed 状态。');
-    console.log(showStages(verify));
-    rollback(spec.id);
-    process.exitCode = 1;
-  }
-  if (!starterClean && publicObserved !== null && hiddenObserved !== null && othersPassed && publicObserved.length + hiddenObserved.length > 0) {
-    const declared = [...spec.defectDetectors].sort();
-    const observed = [...publicObserved, ...hiddenObserved].sort();
-    console.log('起始版本失败项与声明不一致，按实测收敛：');
-    console.log('  新增：' + observed.filter(id => !declared.includes(id)).join('、'));
-    console.log('  移除：' + declared.filter(id => !observed.includes(id)).join('、'));
-    const manifestPath = join(repositoryRoot, 'tasks', 'core', spec.id, 'manifest.json');
-    const manifestJson = JSON.parse(readFileSync(manifestPath, 'utf8')) as { grader: { defectDetectors: string[] } };
-    manifestJson.grader.defectDetectors = observed;
-    writeFileSync(manifestPath, JSON.stringify(manifestJson, null, 2) + '\n');
-    verify = capture(['node', join(repositoryRoot, 'scripts', 'task.ts'), 'verify', spec.id], repositoryRoot);
-    console.log(showStages(verify));
-  }
-}
+// 实测失败集合必须与作者预声明一致，不能用观察结果反向改写预期。
 if (verify.status !== 0) {
   console.error('三向验证未通过，保持 designed 状态。原始输出如下：');
   // 不再只打印阶段行：验证器在阶段开始前抛错（协议校验、补丁应用失败等）时必须原样可见。
@@ -207,7 +186,10 @@ if (verify.status !== 0) {
   const tasks = JSON.parse(readFileSync(catalogPath, 'utf8')) as Array<{ id: string; status: string }>;
   for (const entry of tasks) if (entry.id === spec.id) entry.status = 'fixture-ready';
   writeFileSync(catalogPath, JSON.stringify(tasks, null, 2) + '\n');
-  const catalog = capture(['node', join(repositoryRoot, 'scripts', 'catalog.ts'), '--write'], repositoryRoot);
-  console.log(catalog.stdout.trim());
+  if (!process.argv.includes('--no-docs')) {
+    const catalog = capture(['node', join(repositoryRoot, 'scripts', 'catalog.ts'), '--write'], repositoryRoot);
+    if (catalog.status !== 0) throw new Error('目录生成失败：' + catalog.stderr + catalog.stdout);
+    console.log(catalog.stdout.trim());
+  }
   console.log(spec.id + ' 已通过三向验证并标记为 fixture-ready。');
 }

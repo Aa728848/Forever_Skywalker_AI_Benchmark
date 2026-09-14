@@ -13,7 +13,7 @@ type Gate() =
     let mutable writers = 0
 
     member _.Snapshot() : Snapshot =
-        lock counter (fun () -> { Readers = readers; Writers = writers; Waiters = 0 })
+        lock counter (fun () -> { Readers = readers; Writers = writers; Waiters = rw.WaitingWriteCount })
 
     member _.WithRead<'T>(action: unit -> 'T) : 'T =
         rw.EnterReadLock()
@@ -33,3 +33,8 @@ type Gate() =
             lock counter (fun () -> writers <- writers - 1)
             rw.ExitWriteLock()
 
+
+    /// 修改完成并释放写锁之后才通知，通知异常不持有锁。
+    member this.WithWriteThen<'T, 'U>(action: unit -> 'T, notify: 'T -> 'U) : 'U =
+        let value = this.WithWrite(action)
+        notify value

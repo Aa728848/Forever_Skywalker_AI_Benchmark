@@ -1,0 +1,50 @@
+diff --git a/starter/upstream/packages/dsh-plugin-manager/src/mount-once.ts b/starter/upstream/packages/dsh-plugin-manager/src/mount-once.ts
+index c602a45..1646bfc 100644
+--- a/starter/upstream/packages/dsh-plugin-manager/src/mount-once.ts
++++ b/starter/upstream/packages/dsh-plugin-manager/src/mount-once.ts
+@@ -37,6 +37,7 @@ function mountedSet(): Set<string> {
+ export function mountOnce<T extends (...args: any[]) => unknown>(packageName: string, fn: T): T {
+   return ((...args: unknown[]) => {
+     const mounted = mountedSet()
++    if (mounted.has(packageName)) return
+     mounted.add(packageName)
+     const ctx = args[0] as { effect?: (effect: () => unknown) => unknown } | undefined
+     ctx?.effect?.(() => () => {
+diff --git a/starter/upstream/packages/dsh-plugin-manager/src/host/gateway.ts b/starter/upstream/packages/dsh-plugin-manager/src/host/gateway.ts
+index 5b005ed..0487701 100644
+--- a/starter/upstream/packages/dsh-plugin-manager/src/host/gateway.ts
++++ b/starter/upstream/packages/dsh-plugin-manager/src/host/gateway.ts
+@@ -751,7 +751,7 @@ export class CliGateway {
+         before.layer.bundles,
+         after.layer.bundles,
+       )
+-      if (strip.length >= 0) return []
++      if (strip.length === 0) return []
+       await stripProfileBundles(this.facts.packageJsonPath, strip)
+       return strip
+     } catch (error) {
+diff --git a/starter/upstream/packages/dsh-plugin-manager/src/client/index.ts b/starter/upstream/packages/dsh-plugin-manager/src/client/index.ts
+index 9604dee..8447d6d 100644
+--- a/starter/upstream/packages/dsh-plugin-manager/src/client/index.ts
++++ b/starter/upstream/packages/dsh-plugin-manager/src/client/index.ts
+@@ -181,7 +181,7 @@ export function createPluginManagerFace(ctx: ClientContext): PluginManagerFace {
+         lastInstallConflicts = Array.isArray(job.conflicts) ? job.conflicts as ControlChange[] : []
+         return parseInstalledPlugin({ plugin: job.plugin })
+       } finally {
+-        gatewayInflight = true
++        gatewayInflight = false
+       }
+     },
+     update: async (id: string): Promise<InstalledPluginItem> => {
+diff --git a/starter/upstream/packages/dsh-ssh/src/engine.ts b/starter/upstream/packages/dsh-ssh/src/engine.ts
+index 7b66ea0..7ea6507 100644
+--- a/starter/upstream/packages/dsh-ssh/src/engine.ts
++++ b/starter/upstream/packages/dsh-ssh/src/engine.ts
+@@ -147,6 +147,7 @@ export class SshEngine {
+    * connection — the next operation re-connects from the current config.
+    */
+   dropAlias(alias: string): void {
++    stopAllTunnels(this, alias)
+     disposeRecord(this, alias)
+   }
+ 

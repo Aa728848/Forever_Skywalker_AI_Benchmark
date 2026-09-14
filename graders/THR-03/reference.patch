@@ -1,8 +1,8 @@
 diff --git a/starter/src/ReadWriteGate.fsx b/starter/src/ReadWriteGate.fsx
-index ef759ad..bc00532 100644
+index a525a1f..c161715 100644
 --- a/starter/src/ReadWriteGate.fsx
 +++ b/starter/src/ReadWriteGate.fsx
-@@ -5,28 +5,41 @@ open System.Threading
+@@ -5,32 +5,46 @@ open System.Threading
  
  type Snapshot = { Readers: int; Writers: int; Waiters: int }
  
@@ -43,6 +43,9 @@ index ef759ad..bc00532 100644
 -        writers <- writers - 1
 -        Monitor.Exit sync
 -        result
+-
+-
+-    /// 缺陷：通知仍在写临界区内执行，慢通知会阻塞其它读写者。
 +        lock sync (fun () ->
 +            waitingWriters <- waitingWriters + 1
 +            try
@@ -57,4 +60,10 @@ index ef759ad..bc00532 100644
 +            lock sync (fun () ->
 +                writers <- 0
 +                Monitor.PulseAll sync)
- 
++
++
++    /// 修改完成并释放写锁之后才通知，通知异常不持有锁。
+     member this.WithWriteThen<'T, 'U>(action: unit -> 'T, notify: 'T -> 'U) : 'U =
+-        this.WithWrite(fun () -> notify (action ()))
++        let value = this.WithWrite(action)
++        notify value

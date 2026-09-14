@@ -16,5 +16,6 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["apps", "packages", "scripts", "tasks", "tests", "vitest.config.ts", "playwright.config.ts"]
+  "include": ["apps", "packages", "scripts", "tasks", "tests", "vitest.config.ts", "playwright.config.ts"],
+  "exclude": ["tasks/integration/**/starter/**"]
 }

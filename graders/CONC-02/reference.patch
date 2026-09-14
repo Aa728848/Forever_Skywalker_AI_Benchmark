@@ -21,3 +21,35 @@ index 6cd2261..aa46e9b 100644
    }
  }
 \ No newline at end of file
+
+diff --git a/starter/src/token-session.ts b/starter/src/token-session.ts
+index d5f4f81..f98a36b 100644
+--- a/starter/src/token-session.ts
++++ b/starter/src/token-session.ts
+@@ -5,16 +5,22 @@ export class SignedOutError extends Error { constructor() { super('已注销');
+ export class TokenSession {
+   #tokens: Tokens | null;
+   #refreshPort: RefreshPort;
++  #generation = 0;
++  #pending: Promise<Tokens> | null = null;
+   constructor(tokens: Tokens, refreshPort: RefreshPort) { this.#tokens = { ...tokens }; this.#refreshPort = refreshPort; }
+   get current(): Tokens | null { return this.#tokens === null ? null : { ...this.#tokens }; }
+-  logout(): void { this.#tokens = null; }
++  logout(): void { this.#generation += 1; this.#tokens = null; this.#pending = null; }
+   refresh(): Promise<Tokens> {
+     if (this.#tokens === null) return Promise.reject(new SignedOutError());
++    if (this.#pending !== null) return this.#pending;
+     const original = this.#tokens;
+-    // 缺陷：并发调用各自刷新，且过期结果会在注销之后重新写回凭据。
+-    return Promise.resolve().then(() => this.#refreshPort(original.refreshToken)).then(tokens => {
++    const generation = this.#generation;
++    const pending = Promise.resolve().then(() => this.#refreshPort(original.refreshToken)).then(tokens => {
++      if (generation !== this.#generation) throw new SignedOutError();
+       this.#tokens = { accessToken: tokens.accessToken, refreshToken: tokens.refreshToken ?? original.refreshToken };
+       return { ...this.#tokens };
+-    });
++    }).finally(() => { if (this.#pending === pending) this.#pending = null; });
++    this.#pending = pending;
++    return pending;
+   }
+ }

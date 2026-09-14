@@ -1,0 +1,29 @@
+[
+  {
+    "id": "ghost-reverse-edges",
+    "description": "替换依赖时保留已经失效的反向边",
+    "patch": "graders/GRAPH-04/mutants/ghost-reverse-edges.patch",
+    "expectedFailures": [
+      "hidden/replaced-edges-have-no-ghost-consumers",
+      "hidden/seeded-churn-matches-independent-full-rebuild"
+    ]
+  },
+  {
+    "id": "drop-pending-batches",
+    "description": "新批次覆盖未发布的待算工作和删除项",
+    "patch": "graders/GRAPH-04/mutants/drop-pending-batches.patch",
+    "expectedFailures": [
+      "hidden/unpublished-batches-coalesce-with-tombstones",
+      "hidden/old-generation-cannot-publish-or-acknowledge"
+    ]
+  },
+  {
+    "id": "stale-generation-publish",
+    "description": "只检查签发身份但遗漏当前编辑代际",
+    "patch": "graders/GRAPH-04/mutants/stale-generation-publish.patch",
+    "expectedFailures": [
+      "hidden/old-generation-cannot-publish-or-acknowledge",
+      "hidden/frozen-input-and-reader-snapshot-survive-reentrant-edit"
+    ]
+  }
+]

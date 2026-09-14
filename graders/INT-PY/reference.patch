@@ -1,0 +1,33 @@
+diff --git a/starter/llm_verifier/fine_grained_reward.py b/starter/llm_verifier/fine_grained_reward.py
+index 2a5216d..451c738 100644
+--- a/starter/llm_verifier/fine_grained_reward.py
++++ b/starter/llm_verifier/fine_grained_reward.py
+@@ -675,7 +675,7 @@ def extract_score(text, tokens, position_logprobs, tag):
+             if tok in valid_tokens:
+                 val = valid_tokens[tok]
+                 p = math.exp(logprob)
+-                probs[val] = probs.get(val, 0.0) + p
++                probs[val] = max(probs.get(val, 0.0), p)
+ 
+     if probs:
+         unique_vals = sorted(set(valid_tokens.values()))
+@@ -907,7 +907,7 @@ def score_directed_pairs(lazy_client, tasks, needed_pairs, criteria,
+                 key, swap = futures[future]
+                 try:
+                     ra, rb = future.result()
+-                    if False and swap:  # scores back in candidate order
++                    if swap:  # scores back in candidate order
+                         ra, rb = rb, ra
+                     entry = {"score_A": ra, "score_B": rb}
+                     cached[key] = entry
+diff --git a/starter/llm_verifier/pivot_tournament.py b/starter/llm_verifier/pivot_tournament.py
+index 2e1977e..8f22226 100644
+--- a/starter/llm_verifier/pivot_tournament.py
++++ b/starter/llm_verifier/pivot_tournament.py
+@@ -88,5 +88,5 @@ def select_best(n, ring, k, score):
+     pr_pairs = pivot_round_pairs(n, pivots)
+     accumulate(pr_pairs, score, w, c)
+ 
+-    best = max(range(n), key=lambda i: (w[i] / c[i] if c[i] else 0.0, i))
++    best = max(range(n), key=lambda i: (w[i] / c[i] if c[i] else 0.0, -i))
+     return best, len(ring) + len(pr_pairs)

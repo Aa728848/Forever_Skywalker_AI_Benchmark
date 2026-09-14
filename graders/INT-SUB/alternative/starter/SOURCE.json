@@ -1,0 +1,76 @@
+{
+  "task": "INT-SUB",
+  "kind": "frozen-original-module-subset",
+  "sources": [
+    {
+      "path": "src/host/oauth-service.ts",
+      "upstreamPath": "src/host/oauth-service.ts",
+      "commit": "464c98c2a506cdcc9768ef0b49731ba8aa429a90",
+      "sha256": "29bfa5de045f41cc53479d450a1890a8850a50d05cb8d4271d65c17d061f575a"
+    },
+    {
+      "path": "src/host/common/idle-watchdog.ts",
+      "upstreamPath": "src/host/common/idle-watchdog.ts",
+      "commit": "464c98c2a506cdcc9768ef0b49731ba8aa429a90",
+      "sha256": "dac7bd663be2860ec172aebe8eb37a3df3fcb39060233eaeb303ed5a2c17a8d7"
+    },
+    {
+      "path": "src/host/token-store.ts",
+      "upstreamPath": "src/host/token-store.ts",
+      "commit": "464c98c2a506cdcc9768ef0b49731ba8aa429a90",
+      "sha256": "47587c6c5627961a1f0a2de3f0495b4a51a63a71ecc09da85d7bcfe4f5afb4a8"
+    },
+    {
+      "path": "src/host/callback-server.ts",
+      "upstreamPath": "src/host/callback-server.ts",
+      "commit": "464c98c2a506cdcc9768ef0b49731ba8aa429a90",
+      "sha256": "db40aeec1a3d8ffb25b1cf1f7f5f43646366be1a119badc67989391589ff1cda"
+    },
+    {
+      "path": "src/compat.ts",
+      "upstreamPath": "src/compat.ts",
+      "commit": "464c98c2a506cdcc9768ef0b49731ba8aa429a90",
+      "sha256": "c5bf97f1edec8663864f2aa4226fd6daab2a34be927f8f517fda0447479acb99"
+    },
+    {
+      "path": "src/shared/contracts.ts",
+      "upstreamPath": "src/shared/contracts.ts",
+      "commit": "464c98c2a506cdcc9768ef0b49731ba8aa429a90",
+      "sha256": "ec5bab57ec912b5c5a8f43bcc31f71773bc52859a13bc2be8405e00dc51990ea"
+    },
+    {
+      "path": "LICENSE",
+      "upstreamPath": "LICENSE",
+      "commit": "464c98c2a506cdcc9768ef0b49731ba8aa429a90",
+      "sha256": "7fa27e1eef2e695bcf0e20288c9a20fb47394cb8e8fdeee87cb58f31ed2cde13"
+    },
+    {
+      "path": "vendor/deepseek-harness/packages/util/timeout/src/index.ts",
+      "upstreamPath": "packages/util/timeout/src/index.ts",
+      "commit": "2377c272a8e839e0a84c9f0e623b867a1dce2014",
+      "sha256": "fdfd67e7d9c0a09668a4101880439f28446a8bf038f060a0bc4d27d941be562c"
+    },
+    {
+      "path": "vendor/deepseek-harness/packages/llm/llm/src/error.ts",
+      "upstreamPath": "packages/llm/llm/src/error.ts",
+      "commit": "2377c272a8e839e0a84c9f0e623b867a1dce2014",
+      "sha256": "d5a46153de9293456b7c998f849b4e3f1a95c3830777aab932cdc5acf036b1b1"
+    },
+    {
+      "path": "vendor/deepseek-harness/packages/llm/llm/src/index.ts",
+      "upstreamPath": "packages/llm/llm/src/index.ts",
+      "commit": "2377c272a8e839e0a84c9f0e623b867a1dce2014",
+      "sha256": "e9790c58a9ab112eb41165a4cab474df751dfe7bd13fd8ade68564ca11f7c4d5"
+    },
+    {
+      "path": "vendor/deepseek-harness/LICENSE",
+      "upstreamPath": "LICENSE",
+      "commit": "2377c272a8e839e0a84c9f0e623b867a1dce2014",
+      "sha256": "ebb4f09972aee8608be255debaf78451a68e95c290f55c240dec2ecfa16ea6be"
+    }
+  ],
+  "dependencies": [
+    "Node.js24.14.1；同一冻结subscription源码的OAuth/MemoryTokenStore/callback/compat模块；deepseek-harness固定2377c272...的真实timeout和完整index.ts/error.ts，受信加载器只提取index中的原LlmError声明（不是替身），附第二份MIT与hash"
+  ],
+  "changes": "OAuthService固定上游源码存在logout/dispose与在途refresh竞争，可写回已注销凭据；另在真实idle-watchdog中注入消费停止不取消上游的回归。参考采用代际+串行凭据提交，替代用AbortController代际和异步互斥。"
+}

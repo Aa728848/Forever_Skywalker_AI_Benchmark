@@ -30,3 +30,7 @@ type Gate() =
         Monitor.Exit sync
         result
 
+
+    /// 缺陷：通知仍在写临界区内执行，慢通知会阻塞其它读写者。
+    member this.WithWriteThen<'T, 'U>(action: unit -> 'T, notify: 'T -> 'U) : 'U =
+        this.WithWrite(fun () -> notify (action ()))

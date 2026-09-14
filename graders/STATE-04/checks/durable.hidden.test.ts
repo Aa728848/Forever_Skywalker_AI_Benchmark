@@ -1,0 +1,10 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { DurableCoordinator, type CrashPoint } from '../starter/src/durable-coordinator.ts';
+function temporary(work:(directory:string)=>Promise<void>) { const directory=mkdtempSync(join(tmpdir(),'fsa-durable-state-'));return work(directory).finally(()=>rmSync(directory,{recursive:true,force:true})); }
+import { spawnSync } from 'node:child_process';
+test('hidden/process-exit-after-durable-commit-recovers',()=>temporary(async directory=>{const moduleUrl=new URL('../starter/src/durable-coordinator.ts',import.meta.url).href;const script='const {DurableCoordinator}=await import('+JSON.stringify(moduleUrl)+');const state=new DurableCoordinator('+JSON.stringify(directory)+',point=>{if(point==="after-commit")process.exit(23)});await state.commit("transaction","trade");';const processResult=spawnSync(process.execPath,['--input-type=module','-e',script],{stdio:'ignore',timeout:10000,windowsHide:true});assert.equal(processResult.status,23);const state=new DurableCoordinator(directory);const snapshot=state.snapshot();assert.deepEqual(snapshot.cache,snapshot.service);assert.deepEqual(snapshot.ui,snapshot.service);assert.equal(snapshot.service.revision,1);await state.commit('transaction','trade');assert.equal(state.snapshot().service.revision,1);}));
+test('hidden/cache-ui-interruption-and-duplicate-notifications-converge',()=>temporary(async directory=>{for(const point of ['after-cache','after-ui'] as CrashPoint[]){const state=new DurableCoordinator(directory,at=>{if(at===point)throw new Error('crash')});await assert.rejects(state.commit(point,point));const next=new DurableCoordinator(directory);const expected=next.snapshot().service;assert.deepEqual(next.snapshot().cache,expected);assert.deepEqual(next.snapshot().ui,expected);next.notify(0);next.notify(expected.revision);assert.deepEqual(next.snapshot().ui,expected);await next.commit(point,point);assert.equal(next.snapshot().service.revision,expected.revision);}}));

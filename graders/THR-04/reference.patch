@@ -1,0 +1,13 @@
+diff --git a/starter/src/publisher.ts b/starter/src/publisher.ts
+index 51c6517..bf58fc7 100644
+--- a/starter/src/publisher.ts
++++ b/starter/src/publisher.ts
+@@ -18,7 +18,7 @@ export class Publisher {
+         worker.once('message',(value:number)=>{result=value;});worker.once('error',(failure:Error)=>{error=failure;});
+         worker.once('exit',code=>{if(code===0&&result!==undefined)resolve([job.id,result]);else reject(error??new Error('worker interrupted'));});
+       })));
+-      if(signal?.aborted)return false;
++      if(signal?.aborted||generation!==this.#latest)return false;
+       this.#values=new Map(values);this.#generation=generation;return true;
+     }catch(error){await Promise.all(workers.map(worker=>worker.terminate()));if(signal?.aborted)return false;throw error;}
+     finally{signal?.removeEventListener('abort',stop);}

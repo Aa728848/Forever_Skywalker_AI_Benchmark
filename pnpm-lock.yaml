@@ -35,9 +35,15 @@ importers:
       '@fsa/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@fsa/evaluation':
+        specifier: workspace:*
+        version: link:../../packages/evaluation
       '@fsa/executor':
         specifier: workspace:*
         version: link:../../packages/executor
+      '@fsa/judge':
+        specifier: workspace:*
+        version: link:../../packages/judge
       '@fsa/runs':
         specifier: workspace:*
         version: link:../../packages/runs
@@ -56,6 +62,9 @@ importers:
       '@fsa/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@fsa/evaluation':
+        specifier: workspace:*
+        version: link:../../packages/evaluation
       '@fsa/executor':
         specifier: workspace:*
         version: link:../../packages/executor
@@ -109,6 +118,33 @@ importers:
         specifier: workspace:*
         version: link:../contracts
 
+  packages/evaluation:
+    dependencies:
+      '@fsa/catalog':
+        specifier: workspace:*
+        version: link:../catalog
+      '@fsa/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@fsa/core':
+        specifier: workspace:*
+        version: link:../core
+      '@fsa/executor':
+        specifier: workspace:*
+        version: link:../executor
+      '@fsa/judge':
+        specifier: workspace:*
+        version: link:../judge
+      '@fsa/runs':
+        specifier: workspace:*
+        version: link:../runs
+      '@fsa/static':
+        specifier: workspace:*
+        version: link:../static
+      '@fsa/tasks':
+        specifier: workspace:*
+        version: link:../tasks
+
   packages/executor:
     dependencies:
       '@fsa/contracts':
@@ -153,6 +189,9 @@ importers:
       '@fsa/judge':
         specifier: workspace:*
         version: link:../judge
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
 
   packages/tasks:
     dependencies:

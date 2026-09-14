@@ -12,3 +12,45 @@ index f8e4318..29b6d52 100644
      const child = this.#port.spawn();
      this.#busy = true;
      return new Promise<AcceptanceResult>(resolve => {
+
+diff --git a/starter/src/process-acceptance.ts b/starter/src/process-acceptance.ts
+index e8063f0..447df97 100644
+--- a/starter/src/process-acceptance.ts
++++ b/starter/src/process-acceptance.ts
+@@ -1,10 +1,10 @@
+-import { spawn } from 'node:child_process';
++import { spawn, spawnSync } from 'node:child_process';
+ import { BusyError } from './acceptance.ts';
+ export interface ProcessCommand { readonly command: string; readonly args: readonly string[]; readonly cwd: string; readonly timeoutMs: number }
+ export interface ProcessResult { readonly snapshot: string; readonly fault: 'exited' | 'crashed' | 'killed' | 'timeout'; readonly exitCode: number | null; readonly signal: string | null; readonly pid: number }
+ function stopTree(pid: number): void {
+-  // 缺陷：只终止父进程，遗漏后代资源。
+-  try { process.kill(pid, 'SIGKILL'); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
++  if (process.platform === 'win32') { spawnSync('taskkill', ['/pid', String(pid), '/t', '/f'], { stdio: 'ignore', windowsHide: true, timeout: 10000 }); return; }
++  try { process.kill(-pid, 'SIGKILL'); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
+ }
+ export class ProcessAcceptance {
+   #command: ProcessCommand;
+@@ -15,9 +15,9 @@ export class ProcessAcceptance {
+   constructor(command: ProcessCommand) { if (!Number.isSafeInteger(command.timeoutMs) || command.timeoutMs < 1) throw new RangeError('超时预算非法'); this.#command = command; }
+   get busy(): boolean { return this.#busy; }
+   get latest(): ProcessResult | null { return this.#latest === null ? null : { ...this.#latest }; }
+-  invalidate(snapshot: string): void { this.#generation += 1; this.#snapshot = snapshot; /* 缺陷：旧快照通过结论未失效。 */ }
++  invalidate(snapshot: string): void { this.#generation += 1; this.#snapshot = snapshot; this.#latest = null; }
+   run(snapshot: string, context: 'development' | 'judge' = 'development'): Promise<ProcessResult | null> {
+-    if (context === 'judge') { /* 缺陷：裁判上下文仍触发自身验收。 */ }
++    if (context === 'judge') return Promise.resolve(null);
+     if (this.#busy) return Promise.reject(new BusyError());
+     this.invalidate(snapshot); const generation = this.#generation; this.#busy = true;
+     return new Promise((resolve, reject) => {
+@@ -30,8 +30,8 @@ export class ProcessAcceptance {
+       child.once('close', (exitCode, signal) => {
+         clearTimeout(timer); this.#busy = false; if (failed || child.pid === undefined) return;
+         stopTree(child.pid);
+-        const result: ProcessResult = { snapshot, fault: timedOut ? 'killed' : signal !== null ? 'killed' : exitCode === 0 ? 'exited' : 'crashed', exitCode, signal, pid: child.pid };
+-        if (generation <= this.#generation && snapshot === this.#snapshot) this.#latest = result;
++        const result: ProcessResult = { snapshot, fault: timedOut ? 'timeout' : signal !== null ? 'killed' : exitCode === 0 ? 'exited' : 'crashed', exitCode, signal, pid: child.pid };
++        if (generation === this.#generation && snapshot === this.#snapshot) this.#latest = result;
+         resolve(result);
+       });
+     });

@@ -1,0 +1,26 @@
+diff --git a/starter/src/storage.ts b/starter/src/storage.ts
+index 76f9481..0211e42 100644
+--- a/starter/src/storage.ts
++++ b/starter/src/storage.ts
+@@ -26,20 +26,7 @@ export class QueueStorage {
+ 
+   write<T>(operation: () => T): T {
+     this.assertOpen();
+-    try {
+-      this.db.exec('BEGIN IMMEDIATE');
+-    } catch (error) {
+-      if ((error as { errcode?: number }).errcode === 5) throw new QueueError('busy', 'another writer owns the transaction');
+-      throw error;
+-    }
+-    try {
+-      const value = operation();
+-      this.db.exec('COMMIT');
+-      return value;
+-    } catch (error) {
+-      this.db.exec('ROLLBACK');
+-      throw error;
+-    }
++    return operation();
+   }
+ 
+   close(): void {

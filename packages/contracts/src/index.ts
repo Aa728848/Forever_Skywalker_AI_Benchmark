@@ -248,13 +248,15 @@ export type ExecutionCheck = Type.Static<typeof ExecutionCheckSchema>;
 export const ExecutionPhaseSchema = Type.Object({
   kind: Type.Union([Type.Literal('public'), Type.Literal('hidden')]),
   declaredCommand: argv,
-  argv,
+  // 容器包装会添加资源、挂载和隔离参数；题目原始命令仍受上面的32项限制。
+  argv: Type.Array(Type.String({ minLength: 1, maxLength: 1000 }), { minItems: 1, maxItems: 128 }),
   cwd: text,
   timeoutMs: Type.Integer({ minimum: 1000 }),
   exitCode: Type.Union([Type.Integer(), Type.Null()]),
   signal: Type.Union([Type.String({ maxLength: 100 }), Type.Null()]),
   timedOut: Type.Boolean(),
   cancelled: Type.Boolean(),
+  outputLimitExceeded: Type.Optional(Type.Boolean()),
   durationMs: Type.Integer({ minimum: 0 }),
   resource: Type.Object({
     peakRssBytes: Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]),
@@ -289,7 +291,7 @@ export const ExecutionResultSchema = Type.Object({
     image: Type.Union([text, Type.Null()]),
     cpus: Type.Integer({ minimum: 1 }),
     totalMemoryMb: Type.Integer({ minimum: 1 }),
-    network: Type.Literal(false),
+    network: Type.Boolean(),
   }, { additionalProperties: false }),
   phases: Type.Array(ExecutionPhaseSchema, { minItems: 1, maxItems: 8 }),
   checks: Type.Array(ExecutionCheckSchema, { minItems: 1, maxItems: 200 }),
@@ -299,6 +301,7 @@ export const ExecutionResultSchema = Type.Object({
 }, { additionalProperties: false });
 export type ExecutionResult = Type.Static<typeof ExecutionResultSchema>;
 export type ExecutionPhase = Type.Static<typeof ExecutionPhaseSchema>;
+export const executionPhaseValidator = Schema.Compile(ExecutionPhaseSchema);
 export const executionResultValidator = Schema.Compile(ExecutionResultSchema);
 
 /** 正式运行入口的请求体：候选目录必须在平台配置的提交根目录之内。 */
@@ -335,7 +338,7 @@ export const RunStatusSchema = Type.Object({
     sameSnapshotOnly: Type.Boolean(),
   }, { additionalProperties: false }),
   scoring: Type.Object({
-    mode: Type.Union([Type.Literal('formal'), Type.Literal('pending')]),
+    mode: Type.Union([Type.Literal('formal'), Type.Literal('local'), Type.Literal('rehearsal'), Type.Literal('pending')]),
     functional: score,
     quality: score,
     total: score,
@@ -347,6 +350,7 @@ export const RunStatusSchema = Type.Object({
 }, { additionalProperties: false });
 export type RunStatus = Type.Static<typeof RunStatusSchema>;
 export const runStatusValidator = Schema.Compile(RunStatusSchema);
+export const runStatusesValidator = Schema.Compile(Type.Array(RunStatusSchema));
 
 /** 独立评审判决：四维分数必须各自引用证据，并记录模型、提示版本与调用成本。 */
 export const ReviewVerdictSchema = Type.Object({
@@ -373,6 +377,13 @@ export const ReviewVerdictSchema = Type.Object({
 }, { additionalProperties: false });
 export type ReviewVerdict = Type.Static<typeof ReviewVerdictSchema>;
 export const reviewVerdictValidator = Schema.Compile(ReviewVerdictSchema);
+export const HumanReviewSchema = Type.Object({
+  reviewer: text,
+  reason: text,
+  verdict: ReviewVerdictSchema,
+}, { additionalProperties: false });
+export type HumanReview = Type.Static<typeof HumanReviewSchema>;
+export const humanReviewValidator = Schema.Compile(HumanReviewSchema);
 
 /** 评审适配器配置：令牌只从环境读取，绝不写入配置或运行档案。 */
 export const JudgeConfigSchema = Type.Object({
@@ -383,6 +394,19 @@ export const JudgeConfigSchema = Type.Object({
   maxCalls: Type.Integer({ minimum: 1, maximum: 1000 }),
   maxInputTokens: Type.Integer({ minimum: 1 }),
   maxOutputTokens: Type.Integer({ minimum: 1 }),
+  api: Type.Optional(Type.Union([Type.Literal('chat-completions'), Type.Literal('responses'), Type.Literal('messages'), Type.Literal('generate-content')])),
+  reasoningEffort: Type.Optional(Type.Union([Type.Literal('none'), Type.Literal('minimal'), Type.Literal('low'), Type.Literal('medium'), Type.Literal('high'), Type.Literal('xhigh'), Type.Literal('max')])),
+  reasoningMode: Type.Optional(Type.Union([Type.Literal('standard'), Type.Literal('pro')])),
+  thinking: Type.Optional(Type.Union([Type.Literal('enabled'), Type.Literal('disabled'), Type.Literal('adaptive')])),
+  thinkingBudget: Type.Optional(Type.Integer({ minimum: -1 })),
+  temperature: Type.Optional(Type.Number({ minimum: 0, maximum: 2 })),
+  topP: Type.Optional(Type.Number({ exclusiveMinimum: 0, maximum: 1 })),
+  topK: Type.Optional(Type.Integer({ minimum: 1 })),
+  seed: Type.Optional(Type.Integer()),
+  verbosity: Type.Optional(Type.Union([Type.Literal('low'), Type.Literal('medium'), Type.Literal('high')])),
+  maxTokensPerCall: Type.Optional(Type.Integer({ minimum: 1 })),
+  outputFormat: Type.Optional(Type.Union([Type.Literal('json-object'), Type.Literal('prompt-json')])),
+  stream: Type.Optional(Type.Boolean()),
 }, { additionalProperties: false });
 export type JudgeConfig = Type.Static<typeof JudgeConfigSchema>;
 export const judgeConfigValidator = Schema.Compile(JudgeConfigSchema);
@@ -406,11 +430,11 @@ export const ExecutionGroupScoreSchema = Type.Object({
 
 /**
  * 正式评分：可用验证分项只来自受控执行结果；代码质量证据缺失时保持 null，总分待定。
- * mode=formal 的可信度来自冻结快照、平台实算摘要与受控执行链，不来自字段命名。
+ * local / rehearsal 不属于正式成绩；formal 还需要经校准的任务和完整可信证据链。
  */
 export const ExecutionScoreSchema = Type.Object({
   schemaVersion: Type.Literal('0.1.0'),
-  mode: Type.Literal('formal'),
+  mode: Type.Union([Type.Literal('formal'), Type.Literal('local'), Type.Literal('rehearsal')]),
   rubricVersion: Type.Literal('0.1.0'),
   runId: id,
   attemptId: id,
@@ -458,6 +482,31 @@ export const RunEventSchema = Type.Object({
 }, { additionalProperties: false });
 export type RunEvent = Type.Static<typeof RunEventSchema>;
 export const runEventValidator = Schema.Compile(RunEventSchema);
+
+export const RunDetailSchema = Type.Object({
+  status: RunStatusSchema,
+  execution: Type.Union([ExecutionResultSchema, Type.Null()]),
+  score: Type.Union([ExecutionScoreSchema, Type.Null()]),
+  events: Type.Array(RunEventSchema),
+}, { additionalProperties: false });
+export type RunDetail = Type.Static<typeof RunDetailSchema>;
+export const runDetailValidator = Schema.Compile(RunDetailSchema);
+
+/** 显式选择每题的一次作答；服务端不自动挑最高分或混入未选择的历史记录。 */
+export const RunSelectionSchema = Type.Array(Type.Object({ runId: id, attemptId: id }, { additionalProperties: false }), { minItems: 1, maxItems: 55 });
+export type RunSelection = Type.Static<typeof RunSelectionSchema>;
+export const runSelectionValidator = Schema.Compile(RunSelectionSchema);
+export const SuiteReportSchema = Type.Object({
+  generatedAt: text,
+  mode: Type.Union([Type.Literal('local'), Type.Literal('rehearsal'), Type.Literal('formal'), Type.Literal('pending')]),
+  environmentKey: Type.Union([text, Type.Null()]),
+  levels: Type.Array(Type.Object({ difficulty: DifficultySchema, expected: Type.Integer(), completed: Type.Integer(), score, passed: Type.Boolean() }, { additionalProperties: false })),
+  weightedTotal: score,
+  highestConsecutiveLevel: Type.Union([DifficultySchema, Type.Null()]),
+  selected: Type.Array(Type.Object({ runId: id, attemptId: id, taskId: id, taskVersion: text, track: trackSchema, scoreRevision: Type.Union([text, Type.Null()]), scoredAt: Type.Union([text, Type.Null()]), total: score, thresholdMet: Type.Union([Type.Boolean(), Type.Null()]) }, { additionalProperties: false })),
+}, { additionalProperties: false });
+export type SuiteReport = Type.Static<typeof SuiteReportSchema>;
+export const suiteReportValidator = Schema.Compile(SuiteReportSchema);
 
 
 

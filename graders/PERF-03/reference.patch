@@ -1,0 +1,20 @@
+diff --git a/starter/src/graph-stats.ts b/starter/src/graph-stats.ts
+index 6d878ef..557c5fe 100644
+--- a/starter/src/graph-stats.ts
++++ b/starter/src/graph-stats.ts
+@@ -1,9 +1,10 @@
+ export interface Vertex { readonly id: string; readonly dependencies: readonly string[] }
+ export interface Stats { readonly nodes: number; readonly edges: number; readonly inDegree: ReadonlyMap<string,number>; readonly roots: readonly string[]; readonly missing: readonly string[] }
+ export function graphStats(vertices: readonly Vertex[]): Stats {
+-  const ids=new Set(vertices.map(v=>v.id));if(ids.size!==vertices.length)throw new RangeError('duplicate vertex');
+-  // 缺陷：对每个顶点重新扫描所有边，稀疏图也退化为平方成本。
+-  const degree=new Map(vertices.map(v=>[v.id,vertices.reduce((n,source)=>n+(new Set(source.dependencies).has(v.id)?1:0),0)]));
+-  const missing=new Set(vertices.flatMap(v=>v.dependencies).filter(id=>!ids.has(id)));
+-  return {nodes:vertices.length,edges:[...degree.values()].reduce((a,b)=>a+b,0),inDegree:degree,roots:[...degree].filter(([,n])=>n===0).map(([id])=>id).sort(),missing:[...missing].sort()};
++  const degree=new Map<string,number>();for(const vertex of vertices){if(degree.has(vertex.id))throw new RangeError('duplicate vertex');degree.set(vertex.id,0);}
++  const missing=new Set<string>();let edges=0;
++  for(const source of vertices)for(const target of new Set(source.dependencies)){
++    const count=degree.get(target);if(count===undefined)missing.add(target);else{degree.set(target,count+1);edges++;}
++  }
++  return {nodes:degree.size,edges,inDegree:degree,roots:[...degree].filter(([,n])=>n===0).map(([id])=>id).sort(),missing:[...missing].sort()};
+ }

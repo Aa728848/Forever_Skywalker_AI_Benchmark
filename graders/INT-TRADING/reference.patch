@@ -1,0 +1,20 @@
+diff --git a/starter/packages/client-ui-trading/src/tasks/ledger.ts b/starter/packages/client-ui-trading/src/tasks/ledger.ts
+index 940b9cf..84fd8df 100644
+--- a/starter/packages/client-ui-trading/src/tasks/ledger.ts
++++ b/starter/packages/client-ui-trading/src/tasks/ledger.ts
+@@ -366,7 +366,6 @@ export class TasksLedger {
+   private commit(next: LedgerDocument): void {
+     next.revision += 1
+     next.recentRequests = next.recentRequests.slice(-MAX_REQUEST_CACHE)
+-    this.document = next
+     const payload = JSON.stringify(next)
+     const tmp = `${this.filePath}.tmp`
+     mkdirSync(dirname(this.filePath), { recursive: true })
+@@ -378,6 +377,7 @@ export class TasksLedger {
+       closeSync(fd)
+     }
+     renameSync(tmp, this.filePath)
++    this.document = next
+     if (process.platform !== 'win32') {
+       try {
+         chmodSync(this.filePath, 0o600)

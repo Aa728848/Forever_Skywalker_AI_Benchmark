@@ -117,6 +117,35 @@ report "hidden/nested-sequential-use-keeps-counts" (fun () ->
     let snapshot = gate.Snapshot()
     if snapshot.Readers <> 0 || snapshot.Writers <> 0 then failwith ("计数未回到 0：" + sprintf "%A" snapshot))
 
+report "hidden/notification-exception-keeps-gate-usable" (fun () ->
+    let gate = Gate()
+    expectThrew "通知抛异常" (attempt 3000 (fun () -> gate.WithWriteThen((fun () -> 1), (fun _ -> failwith "通知失败"))))
+    let value = expectOk "通知异常后的写入" (attempt 3000 (fun () -> gate.WithWrite(fun () -> 42)))
+    if value <> 42 then failwith "通知异常后锁不可用")
+
+report "hidden/queued-writer-precedes-new-reader" (fun () ->
+    let gate = Gate()
+    use initialEntered = new ManualResetEventSlim(false)
+    use releaseInitial = new ManualResetEventSlim(false)
+    use newcomerStarted = new ManualResetEventSlim(false)
+    let order = ConcurrentQueue<string>()
+    let failures = ConcurrentBag<string>()
+    let threads = ResizeArray<Thread>()
+    let start work = threads.Add(startThread (fun () -> try work () with error -> failures.Add(error.Message)))
+    try
+        start (fun () -> gate.WithRead(fun () -> initialEntered.Set(); releaseInitial.Wait(10000) |> ignore))
+        if not (initialEntered.Wait(3000)) then failwith "首个读者未进入"
+        start (fun () -> gate.WithWrite(fun () -> order.Enqueue("writer")))
+        if not (SpinWait.SpinUntil((fun () -> gate.Snapshot().Waiters > 0), 3000)) then failwith "未报告等待写者"
+        start (fun () -> newcomerStarted.Set(); gate.WithRead(fun () -> order.Enqueue("reader")))
+        if not (newcomerStarted.Wait(3000)) then failwith "新读者未启动"
+        releaseInitial.Set()
+        if not (joinWithin 10000 (List.ofSeq threads)) then failwith "等待中的线程未完成"
+        expectNoFailures "写者优先" failures
+        if List.ofSeq order <> [ "writer"; "reader" ] then failwith "新读者越过了等待写者"
+    finally
+        releaseInitial.Set()
+        joinWithin 10000 (List.ofSeq threads) |> ignore)
+
 printfn "# passed %d failed %d" passed failed
 if failed > 0 then exit 1
-

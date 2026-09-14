@@ -1,0 +1,103 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "LSP-03",
+  "taskVersion": "0.1.1",
+  "title": "取消和过期诊断隔离",
+  "runtime": "fsharp",
+  "runtimeRange": "dotnet >= 10.0",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "dotnet",
+      "fsi",
+      "public-tests/checks.fsx"
+    ],
+    "hidden": [
+      "dotnet",
+      "fsi",
+      "__checks__/checks.fsx"
+    ]
+  },
+  "grader": {
+    "checks": "graders/LSP-03/checks",
+    "referencePatch": "graders/LSP-03/reference.patch",
+    "alternative": "graders/LSP-03/alternative",
+    "defectDetectors": [
+      "public/cancel-and-stale-result",
+      "public/state-close-reopen",
+      "hidden/independent-documents",
+      "hidden/state-once-and-published-retained"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/cancel-and-stale-result",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "public/cancel-and-stale-result"
+    },
+    {
+      "id": "public/state-close-reopen",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "public/state-close-reopen"
+    },
+    {
+      "id": "public/version-rejection",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "public/version-rejection"
+    },
+    {
+      "id": "hidden/independent-documents",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": true,
+      "summary": "hidden/independent-documents"
+    },
+    {
+      "id": "hidden/state-once-and-published-retained",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "hidden/state-once-and-published-retained"
+    },
+    {
+      "id": "hidden/resource-parallel-publication",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": true,
+      "summary": "hidden/resource-parallel-publication"
+    }
+  ]
+}

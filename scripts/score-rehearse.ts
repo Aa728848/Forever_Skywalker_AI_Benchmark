@@ -8,8 +8,8 @@ import { readExecutionScore, readRunStatus, verifySubmission } from '../packages
 import type { StaticPolicy } from '../packages/static/src/index.ts';
 
 /**
- * 正式分数演练：导出 CACHE-02 → 应用参考补丁 → 提交 → 执行，并注入静态规则、脚本评审与
- * 一个显式标注的 benchmark 客观分，演示「可用验证 + 质量 + 总分」齐全的正式分数。
+ * 评分演练：导出 CACHE-02 → 应用参考补丁 → 提交 → 执行，并注入静态规则、脚本评审与
+ * 一个显式标注的 benchmark 客观分，演示分项齐全时的计算，绝不是正式成绩。
  * 脚本评审与 benchmark 分是演练输入，不是真实模型或真实基准成绩。
  */
 const taskId = 'CACHE-02';
@@ -39,11 +39,12 @@ try {
     submittedBy: 'rehearsal',
     staticPolicy: policy,
     review,
-    quality: { objective: { performance: { score: 88, evidence: ['benchmark-rehearsal'], kind: 'benchmark' } } },
+    quality: { mode: 'rehearsal', objective: { performance: { score: 88, evidence: ['benchmark-rehearsal'], kind: 'benchmark' } } },
   });
   const status = readRunStatus(store, outcome.submission.attempt.runId, outcome.submission.attempt.attemptId);
   const score = readExecutionScore(outcome.submission.directory);
   console.log('执行结论：' + outcome.execution.classification + '（隔离 ' + outcome.execution.isolation + '）');
+  console.log('评分模式：' + score?.mode + '（脚本评审与假设性能输入，仅供演练）');
   console.log('可用验证：' + score?.functional + ' / 50');
   console.log('质量维度：' + JSON.stringify(score?.dimensions));
   console.log('代码质量：' + score?.quality + ' / 50');

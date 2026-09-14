@@ -1,0 +1,114 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "PERF-03",
+  "taskVersion": "0.1.1",
+  "title": "图统计和索引的规模增长控制",
+  "runtime": "typescript",
+  "runtimeRange": "node >=24.14.1 <25",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "node",
+      "--test",
+      "--test-isolation=process",
+      "--test-reporter=tap",
+      "public-tests/**/*.test.ts"
+    ],
+    "hidden": [
+      "node",
+      "--test",
+      "--test-isolation=process",
+      "--test-reporter=tap",
+      "__checks__/**/*.test.ts"
+    ]
+  },
+  "grader": {
+    "checks": "graders/PERF-03/checks",
+    "referencePatch": "graders/PERF-03/reference.patch",
+    "alternative": "graders/PERF-03/alternative",
+    "defectDetectors": [
+      "public/resource-linear-sparse",
+      "hidden/resource-dense-budget",
+      "hidden/resource-paired-scaling"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/graph-semantics",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "public/graph-semantics"
+    },
+    {
+      "id": "public/resource-linear-sparse",
+      "kind": "public",
+      "group": "resources",
+      "weight": 1,
+      "critical": true,
+      "summary": "public/resource-linear-sparse"
+    },
+    {
+      "id": "public/boundary-duplicate-and-empty",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "public/boundary-duplicate-and-empty"
+    },
+    {
+      "id": "hidden/resource-dense-budget",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": true,
+      "summary": "hidden/resource-dense-budget"
+    },
+    {
+      "id": "hidden/differential-permutations",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": true,
+      "summary": "hidden/differential-permutations"
+    },
+    {
+      "id": "hidden/resource-paired-scaling",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": true,
+      "summary": "hidden/resource-paired-scaling"
+    },
+    {
+      "id": "hidden/state-input-changes-do-not-reuse-stale-index",
+      "kind": "hidden",
+      "group": "state",
+      "summary": "同一图对象在边变化和错误后重新计算，不复用过期索引。",
+      "weight": 1,
+      "critical": true
+    }
+  ]
+}

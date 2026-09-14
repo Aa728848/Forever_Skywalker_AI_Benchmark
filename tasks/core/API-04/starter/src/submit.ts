@@ -16,6 +16,7 @@ function entryKey(key: string): string {
   return 'task:' + key;
 }
 
+/** 旧接口保留既有的键去重语义；持久队列的新协议位于 queue.ts。 */
 export class TaskSubmitter {
   readonly #store: TaskStore;
   readonly #committed: string[] = [];
@@ -29,13 +30,27 @@ export class TaskSubmitter {
     return [...this.#committed];
   }
 
+  #ensure(key: string): string | null {
+    const existing = this.#store.read(entryKey(key));
+    if (existing === null) return null;
+    return existing.split('|')[0] as string;
+  }
+
   submit(key: string, payload: string): Promise<string> {
     if (key === '') return Promise.reject(new SubmitError(key, '提交键不得为空'));
-    // 缺陷：不读幂等记录、不查已有 taskId，每次都新建并覆盖写。
+    const found = this.#ensure(key);
+    if (found !== null) {
+      if (!this.#committed.includes(found)) this.#committed.push(found);
+      return Promise.resolve(found);
+    }
+    const candidate = 'task-' + Array.from({ length: key.length }, (_, index) => key.charCodeAt(index).toString(16).padStart(4, '0')).join('');
+    try {
+      this.#store.write(entryKey(key), candidate + '|' + payload);
+    } catch (error) {
+      return Promise.reject(new SubmitError(key, '写入失败：' + String(error)));
+    }
     this.#sequence += 1;
-    const taskId = 'task-' + this.#sequence;
-    this.#store.write(entryKey(key), taskId + '|' + payload);
-    this.#committed.push(taskId);
-    return Promise.resolve(taskId);
+    this.#committed.push(candidate);
+    return Promise.resolve(candidate);
   }
 }

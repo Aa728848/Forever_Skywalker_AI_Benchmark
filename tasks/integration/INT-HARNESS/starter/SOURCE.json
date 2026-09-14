@@ -1,0 +1,58 @@
+{
+  "task": "INT-HARNESS",
+  "kind": "frozen-original-module-subset",
+  "sources": [
+    {
+      "path": "packages/api/session-controller/src/client/sessions/assistant-stream.ts",
+      "upstreamPath": "packages/api/session-controller/src/client/sessions/assistant-stream.ts",
+      "commit": "2377c272a8e839e0a84c9f0e623b867a1dce2014",
+      "sha256": "fc4cb49fa268e1f3fa8baaf78eef5f61ec4f3c2f60910332ab79e3263a3dbd6b"
+    },
+    {
+      "path": "packages/llm/llm/src/assistant-stream.ts",
+      "upstreamPath": "packages/llm/llm/src/assistant-stream.ts",
+      "commit": "2377c272a8e839e0a84c9f0e623b867a1dce2014",
+      "sha256": "9ac0c19b83eb8243f4907579608e00f77d8c447c010f31afeec4a1e760f2da82"
+    },
+    {
+      "path": "packages/llm/llm/src/assembler.ts",
+      "upstreamPath": "packages/llm/llm/src/assembler.ts",
+      "commit": "2377c272a8e839e0a84c9f0e623b867a1dce2014",
+      "sha256": "ff30f5ca346015bfffeffb5ee3398901d03eb3429fda5d0d4e0c40e8638dfe58"
+    },
+    {
+      "path": "packages/llm/llm/src/message.ts",
+      "upstreamPath": "packages/llm/llm/src/message.ts",
+      "commit": "2377c272a8e839e0a84c9f0e623b867a1dce2014",
+      "sha256": "81322e50c2addcdad23a8c8f4d94e0f0958414478925fd3c5f0a9fc0031f7db3"
+    },
+    {
+      "path": "packages/util/brand/src/index.ts",
+      "upstreamPath": "packages/util/brand/src/index.ts",
+      "commit": "2377c272a8e839e0a84c9f0e623b867a1dce2014",
+      "sha256": "f9d6da858d7308117227dcc2306ce7246b7309b2ae22d413d289cbae51e83e98"
+    },
+    {
+      "path": "packages/util/values/src/index.ts",
+      "upstreamPath": "packages/util/values/src/index.ts",
+      "commit": "2377c272a8e839e0a84c9f0e623b867a1dce2014",
+      "sha256": "573c77ba7017fc747f90fdbd5445cfd565db6ff6d53a6b999f6c34ed842bbb8f"
+    },
+    {
+      "path": "packages/util/crypto/src/index.ts",
+      "upstreamPath": "packages/util/crypto/src/index.ts",
+      "commit": "2377c272a8e839e0a84c9f0e623b867a1dce2014",
+      "sha256": "6d314b677a163808a732c53fc509eebea1f8b8cc34b67031644dcfa4a97e28f0"
+    },
+    {
+      "path": "LICENSE",
+      "upstreamPath": "LICENSE",
+      "commit": "2377c272a8e839e0a84c9f0e623b867a1dce2014",
+      "sha256": "ebb4f09972aee8608be255debaf78451a68e95c290f55c240dec2ecfa16ea6be"
+    }
+  ],
+  "dependencies": [
+    "Node.js24.14.1；全部依赖为同一冻结提交的真实llm/assembler/message/brand/values/crypto模块，无npm安装"
+  ],
+  "changes": "在真实ClientAssistantStream中注入忽略重连前缀长度、忽略稠密帧序号的回归；另补上游nextIndex=0边界。只修该源模块，真实压缩/展开/组装/不可变值模块共同运行。"
+}

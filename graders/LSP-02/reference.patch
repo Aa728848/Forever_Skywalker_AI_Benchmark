@@ -1,0 +1,40 @@
+diff --git a/starter/src/DocumentEdits.fsx b/starter/src/DocumentEdits.fsx
+index a121d97..48619f6 100644
+--- a/starter/src/DocumentEdits.fsx
++++ b/starter/src/DocumentEdits.fsx
+@@ -5,13 +5,26 @@ type Span = { Start: Position; Finish: Position }
+ type Edit = { Range: Span option; Text: string }
+ type Document = { Text: string; Version: int }
+ 
++let private offset (text: string) (position: Position) =
++    if position.Line < 0 || position.Character < 0 then invalidArg "position" "negative position"
++    let lines = text.Split('\n')
++    if position.Line >= lines.Length then invalidArg "position" "line outside document"
++    let line = lines.[position.Line]
++    let length = if line.EndsWith("\r") then line.Length - 1 else line.Length
++    if position.Character > length then invalidArg "position" "column outside line"
++    (lines |> Array.take position.Line |> Array.sumBy (fun line -> line.Length + 1)) + position.Character
+ let apply (document: Document) version (edits: Edit list) =
+-    // 缺陷：忽略文档版本和行偏移，把列号当作全文下标。
+-    try
+-        let mutable text = document.Text
+-        for edit in edits do
+-            text <- match edit.Range with
+-                    | None -> edit.Text
+-                    | Some range -> text.Substring(0, range.Start.Character) + edit.Text + text.Substring(range.Finish.Character)
+-        Ok { Text = text; Version = version }
+-    with _ -> Error "invalid range"
++    if version <= document.Version then Error "stale version"
++    else
++        try
++            let mutable text = document.Text
++            for edit in edits do
++                text <- match edit.Range with
++                        | None -> edit.Text
++                        | Some range ->
++                            let first = offset text range.Start
++                            let finish = offset text range.Finish
++                            if finish < first then invalidArg "range" "reversed range"
++                            text.Substring(0, first) + edit.Text + text.Substring(finish)
++            Ok { Text = text; Version = version }
++        with :? System.ArgumentException -> Error "invalid range"

@@ -23,7 +23,7 @@
 | API-01 | 后端与服务协议 | 简单 | 请求校验与错误契约 | 核心 |
 | API-02 | 后端与服务协议 | 中等 | 分页与幂等写入 | 核心 |
 | API-03 | 后端与服务协议 | 困难 | SSE 序列恢复与背压 | 核心 |
-| API-04 | 后端与服务协议 | 极度困难 | 重启后任务提交与事务一致性 | 核心 |
+| API-04 | 后端与服务协议 | 极度困难 | 持久任务队列：并发领取、租约隔离与崩溃恢复 | 核心 |
 | CACHE-01 | 缓存 | 简单 | TTL 与有界淘汰 | 核心 |
 | CACHE-02 | 缓存 | 中等 | 同键加载合并与失败恢复 | 核心 |
 | CACHE-03 | 缓存 | 困难 | 失效期间的在途旧结果 | 核心 |
@@ -47,7 +47,7 @@
 | GRAPH-01 | 递归与图算法 | 简单 | 树遍历终止与叶节点 | 核心 |
 | GRAPH-02 | 递归与图算法 | 中等 | 图去重、环与确定性排序 | 核心 |
 | GRAPH-03 | 递归与图算法 | 困难 | 深层 AST 遍历与栈安全 | 核心 |
-| GRAPH-04 | 递归与图算法 | 极度困难 | 循环依赖图的增量失效与全量等价 | 核心 |
+| GRAPH-04 | 递归与图算法 | 极度困难 | 依赖图批次更新与诊断快照原子发布 | 核心 |
 | LIFE-01 | 生命周期 | 简单 | 订阅与定时器释放 | 核心 |
 | LIFE-02 | 生命周期 | 中等 | 流结束、超时和迟到回调 | 核心 |
 | LIFE-03 | 生命周期 | 困难 | 启动、停止和重启竞争 | 核心 |
@@ -120,7 +120,7 @@
 
 ### FE-03 · 长会话流式渲染与重连
 
-- 难度：困难；题型：独立核心题；状态：设计完成，夹具未实现。
+- 难度：困难；题型：独立核心题；状态：已有可执行夹具，尚未校准。
 - 能力域：前端交互；题目运行时：typescript。
 - 来源：dsh-web、deepseek-harness。
 - 任务：在独立任务仓库中实现或修复“长会话流式渲染与重连”。公开接口、输入规模和故障语义在题目发布前冻结；保持已有正确行为。
@@ -144,7 +144,7 @@
 
 ### FE-04 · 多工作区实时视图一致性与资源预算
 
-- 难度：极度困难；题型：独立核心题；状态：设计完成，夹具未实现。
+- 难度：极度困难；题型：独立核心题；状态：已有可执行夹具，尚未校准。
 - 能力域：前端交互；题目运行时：typescript。
 - 来源：dsh-web、deepseek-harness。
 - 任务：在独立任务仓库中实现或修复“多工作区实时视图一致性与资源预算”。公开接口、输入规模和故障语义在题目发布前冻结；保持已有正确行为。
@@ -193,7 +193,7 @@
 
 ### LSP-02 · UTF-16 增量编辑与版本
 
-- 难度：中等；题型：独立核心题；状态：设计完成，夹具未实现。
+- 难度：中等；题型：独立核心题；状态：已有可执行夹具，尚未校准。
 - 能力域：LSP 与编辑器协议；题目运行时：fsharp。
 - 来源：cwtools-vscode。
 - 任务：在独立任务仓库中实现或修复“UTF-16 增量编辑与版本”。公开接口、输入规模和故障语义在题目发布前冻结；保持已有正确行为。
@@ -218,7 +218,7 @@
 
 ### LSP-03 · 取消和过期诊断隔离
 
-- 难度：困难；题型：独立核心题；状态：设计完成，夹具未实现。
+- 难度：困难；题型：独立核心题；状态：已有可执行夹具，尚未校准。
 - 能力域：LSP 与编辑器协议；题目运行时：fsharp。
 - 来源：cwtools-vscode。
 - 任务：在独立任务仓库中实现或修复“取消和过期诊断隔离”。公开接口、输入规模和故障语义在题目发布前冻结；保持已有正确行为。
@@ -243,7 +243,7 @@
 
 ### LSP-04 · 并行工作区增量索引与安全发布
 
-- 难度：极度困难；题型：独立核心题；状态：设计完成，夹具未实现。
+- 难度：极度困难；题型：独立核心题；状态：已有可执行夹具，尚未校准。
 - 能力域：LSP 与编辑器协议；题目运行时：fsharp。
 - 来源：cwtools-vscode。
 - 任务：在独立任务仓库中实现或修复“并行工作区增量索引与安全发布”。公开接口、输入规模和故障语义在题目发布前冻结；保持已有正确行为。
@@ -338,29 +338,30 @@
 - `dsh-chatgpt-subscription/test/routes.test.ts`
 - `dsh-chatgpt-subscription/test/responses-client.test.ts`
 
-### API-04 · 重启后任务提交与事务一致性
+### API-04 · 持久任务队列：并发领取、租约隔离与崩溃恢复
 
 - 难度：极度困难；题型：独立核心题；状态：已有可执行夹具，尚未校准。
 - 能力域：后端与服务协议；题目运行时：typescript。
-- 来源：deepseek-harness、dsh-chatgpt-subscription。
-- 任务：在独立任务仓库中实现或修复“重启后任务提交与事务一致性”。公开接口、输入规模和故障语义在题目发布前冻结；保持已有正确行为。
+- 来源：deepseek-harness、dsh-trading。
+- 任务：多进程worker共同读取持久任务队列；在提交、领取和完成阶段发生进程退出、确认丢失、租约接管与迟到结果。修复请求身份和持久状态的一致性。
 
 验收不变量：
 
-- 提交事务与任务状态更新保持原子性
-- 进程在确认前后崩溃都可按请求键查询结果
-- 过期工作进程不得覆盖新一轮任务结果
+- 持久去重区分同内容重试与内容冲突，提交前后进程中断后可恢复
+- 跨进程原子领取与租约代际隔离，同名worker旧执行不能完成新租约
+- 结果和完成状态事务一致，确认丢失可重放，外部副作用边界明确
 
-公开检查：公开接口、正常样例、预算及以下不变量：提交事务与任务状态更新保持原子性；进程在确认前后崩溃都可按请求键查询结果；过期工作进程不得覆盖新一轮任务结果。
+公开检查：正常worker执行、内容冲突、租约、事务失败与旧TaskSubmitter兼容。
 
-隐藏检查：使用保留的随机种子、故障位置、真实线程屏障或事件交错，验证公开不变量；性能样本在隔离执行中采集。
+隐藏检查：真实SQLite文件、子进程提交前后退出、IPC屏障并发领取、旧租约结果、固定种子状态机和资源不增长。
 
-判定依据：参考实现通过全部检查，注入目标缺陷的起始版本必须失败；边界与状态性质由独立验证器检查。
+判定依据：参考与文档结构不同的替代通过；预声明近似错误修复覆盖只按键去重、只按worker校验及自动提交导致部分状态。
 
 来源定位：
 
-- `dsh-chatgpt-subscription/test/routes.test.ts`
-- `dsh-chatgpt-subscription/test/responses-client.test.ts`
+- `deepseek-harness/packages/session/session-persistence-jsonl/src/lease.ts`
+- `deepseek-harness/packages/session/session-persistence-jsonl/src/generation.ts`
+- `dsh-trading/packages/client-ui-trading/src/tasks/ledger.ts`
 
 ### CACHE-01 · TTL 与有界淘汰
 
@@ -436,7 +437,7 @@
 
 ### CACHE-04 · 并发冷启动、持久化和版本隔离
 
-- 难度：极度困难；题型：独立核心题；状态：设计完成，夹具未实现。
+- 难度：极度困难；题型：独立核心题；状态：已有可执行夹具，尚未校准。
 - 能力域：缓存；题目运行时：typescript。
 - 来源：dsh-trading、dsh-llm-verifier。
 - 任务：在独立任务仓库中实现或修复“并发冷启动、持久化和版本隔离”。公开接口、输入规模和故障语义在题目发布前冻结；保持已有正确行为。
@@ -535,7 +536,7 @@
 
 ### BND-04 · 超深、超大和畸形输入的有界解析
 
-- 难度：极度困难；题型：独立核心题；状态：设计完成，夹具未实现。
+- 难度：极度困难；题型：独立核心题；状态：已有可执行夹具，尚未校准。
 - 能力域：参数与边界解析；题目运行时：typescript。
 - 来源：dsh-chatgpt-subscription、dsh-llm-verifier、llm-as-a-verifier。
 - 任务：在独立任务仓库中实现或修复“超深、超大和畸形输入的有界解析”。公开接口、输入规模和故障语义在题目发布前冻结；保持已有正确行为。
@@ -585,7 +586,7 @@
 
 ### THR-02 · 有界线程池与任务异常
 
-- 难度：中等；题型：独立核心题；状态：设计完成，夹具未实现。
+- 难度：中等；题型：独立核心题；状态：已有可执行夹具，尚未校准。
 - 能力域：多线程；题目运行时：mixed。
 - 来源：cwtools-vscode、llm-as-a-verifier。
 - 任务：在独立任务仓库中实现或修复“有界线程池与任务异常”。公开接口、输入规模和故障语义在题目发布前冻结；保持已有正确行为。
@@ -635,7 +636,7 @@
 
 ### THR-04 · 多线程代际发布与中断恢复
 
-- 难度：极度困难；题型：独立核心题；状态：设计完成，夹具未实现。
+- 难度：极度困难；题型：独立核心题；状态：已有可执行夹具，尚未校准。
 - 能力域：多线程；题目运行时：mixed。
 - 来源：cwtools-vscode、llm-as-a-verifier。
 - 任务：在独立任务仓库中实现或修复“多线程代际发布与中断恢复”。公开接口、输入规模和故障语义在题目发布前冻结；保持已有正确行为。
@@ -929,30 +930,31 @@
 - `cwtools-vscode/src/Main/SemanticGraph.Tests.fsx`
 - `dsh-trading/packages/knowledge/test/graph.test.ts`
 
-### GRAPH-04 · 循环依赖图的增量失效与全量等价
+### GRAPH-04 · 依赖图批次更新与诊断快照原子发布
 
 - 难度：极度困难；题型：独立核心题；状态：已有可执行夹具，尚未校准。
 - 能力域：递归与图算法；题目运行时：typescript。
 - 来源：cwtools-vscode、dsh-trading。
-- 任务：在独立任务仓库中实现或修复“循环依赖图的增量失效与全量等价”。公开接口、输入规模和故障语义在题目发布前冻结；保持已有正确行为。
+- 任务：语言服务连续接收依赖变更，后台诊断计算可能失败、重入或乱序完成。修复批次图、待算集合与发布快照之间的一致性，保留静态可达性接口。
 
 验收不变量：
 
-- 循环依赖按强连通关系处理失效
-- 新增删除与依赖变更后的结果等于全量计算
-- 无关分区不被重复重建且更新成本随影响域增长
+- 批次增删改原子接受，删除后重建仍能准确传播依赖，未发布失效集合累计
+- 计算捕获不可变视图；失败可重试，旧代与同代晚到票据不覆盖确认发布
+- 只重算实际受影响文档，固定种子编辑序列与独立全量重建等价
 
-公开检查：公开接口、正常样例、预算及以下不变量：循环依赖按强连通关系处理失效；新增删除与依赖变更后的结果等于全量计算；无关分区不被重复重建且更新成本随影响域增长。
+公开检查：初次发布、钻石传播、删除重建及静态Invalidator兼容；五组评分规则冻结。
 
-隐藏检查：使用保留的随机种子、故障位置、真实线程屏障或事件交错，验证公开不变量；性能样本在隔离执行中采集。
+隐藏检查：75轮固定种子差分、未解析引用、回调重入、失败重试、跨代与同代竞争、12000无关文档的受信回调计数。
 
-判定依据：固定输出夹具、公开协议不变量与全量参考结果差分；变体先验证目标缺陷确实被检出。
+判定依据：参考/不同结构替代通过；3个近似错误修复分别检出旧反向边、累计待算丢失和旧代发布，保留完整原始证据。
 
 来源定位：
 
-- `cwtools-vscode/src/Main/PdxFlowAnalysis.Tests.fsx`
-- `cwtools-vscode/src/Main/SemanticGraph.Tests.fsx`
-- `dsh-trading/packages/knowledge/test/graph.test.ts`
+- `cwtools-vscode/src/Main/RefreshCoordinator.fs`
+- `cwtools-vscode/src/Main/DiagnosticInvalidation.fs`
+- `cwtools-vscode/src/Main/Program.fs`
+- `cwtools-vscode/src/Main/WorkspacePublication.Tests.fsx`
 
 ### LIFE-01 · 订阅与定时器释放
 
@@ -1106,7 +1108,7 @@
 
 ### PERF-03 · 图统计和索引的规模增长控制
 
-- 难度：困难；题型：独立核心题；状态：设计完成，夹具未实现。
+- 难度：困难；题型：独立核心题；状态：已有可执行夹具，尚未校准。
 - 能力域：性能优化；题目运行时：typescript。
 - 来源：deepseek-harness、dsh-trading。
 - 任务：在独立任务仓库中实现或修复“图统计和索引的规模增长控制”。公开接口、输入规模和故障语义在题目发布前冻结；保持已有正确行为。
@@ -1256,7 +1258,7 @@
 
 ### INT-CWT · LSP、缓存与编辑器全链路
 
-- 难度：极度困难；题型：原仓库集成题；状态：设计完成，夹具未实现。
+- 难度：极度困难；题型：原仓库集成题；状态：已有可执行夹具，尚未校准。
 - 能力域：原仓库集成；题目运行时：fsharp。
 - 来源：cwtools-vscode。
 - 任务：基于冻结版本的 cwtools-vscode 独立副本完成跨模块修改，保持原仓库公共契约。只使用合成数据和本地服务替身。
@@ -1281,7 +1283,7 @@
 
 ### INT-HARNESS · 长会话续跑与重连一致性
 
-- 难度：极度困难；题型：原仓库集成题；状态：设计完成，夹具未实现。
+- 难度：极度困难；题型：原仓库集成题；状态：已有可执行夹具，尚未校准。
 - 能力域：原仓库集成；题目运行时：typescript。
 - 来源：deepseek-harness。
 - 任务：基于冻结版本的 deepseek-harness 独立副本完成跨模块修改，保持原仓库公共契约。只使用合成数据和本地服务替身。
@@ -1301,10 +1303,13 @@
 来源定位：
 
 - `deepseek-harness/benchmarks/long-session-browser/long-session.bench.ts`
+- `deepseek-harness/packages/api/session-controller/src/client/sessions/assistant-stream.ts`
+- `deepseek-harness/packages/llm/llm/src/assistant-stream.ts`
+- `deepseek-harness/packages/llm/llm/src/assembler.ts`
 
 ### INT-SUB · 订阅适配器认证与流生命周期
 
-- 难度：困难；题型：原仓库集成题；状态：设计完成，夹具未实现。
+- 难度：困难；题型：原仓库集成题；状态：已有可执行夹具，尚未校准。
 - 能力域：原仓库集成；题目运行时：typescript。
 - 来源：dsh-chatgpt-subscription。
 - 任务：基于冻结版本的 dsh-chatgpt-subscription 独立副本完成跨模块修改，保持原仓库公共契约。只使用合成数据和本地服务替身。
@@ -1325,10 +1330,13 @@
 
 - `dsh-chatgpt-subscription/test/routes.test.ts`
 - `dsh-chatgpt-subscription/test/responses-client.test.ts`
+- `dsh-chatgpt-subscription/src/host/oauth-service.ts`
+- `dsh-chatgpt-subscription/src/host/common/idle-watchdog.ts`
+- `dsh-chatgpt-subscription/src/host/token-store.ts`
 
 ### INT-VERIFIER · 自动验收证据时效与重入控制
 
-- 难度：极度困难；题型：原仓库集成题；状态：设计完成，夹具未实现。
+- 难度：极度困难；题型：原仓库集成题；状态：已有可执行夹具，尚未校准。
 - 能力域：原仓库集成；题目运行时：typescript。
 - 来源：dsh-llm-verifier。
 - 任务：基于冻结版本的 dsh-llm-verifier 独立副本完成跨模块修改，保持原仓库公共契约。只使用合成数据和本地服务替身。
@@ -1348,10 +1356,14 @@
 来源定位：
 
 - `dsh-llm-verifier/src/cache.test.ts`
+- `dsh-llm-verifier/src/auto.ts`
+- `dsh-llm-verifier/src/engine.ts`
+- `dsh-llm-verifier/src/cache.ts`
+- `dsh-llm-verifier/src/replay.ts`
 
 ### INT-TRADING · 模拟行情与账本恢复一致性
 
-- 难度：极度困难；题型：原仓库集成题；状态：设计完成，夹具未实现。
+- 难度：极度困难；题型：原仓库集成题；状态：已有可执行夹具，尚未校准。
 - 能力域：原仓库集成；题目运行时：typescript。
 - 来源：dsh-trading。
 - 任务：基于冻结版本的 dsh-trading 独立副本完成跨模块修改，保持原仓库公共契约。只使用合成数据和本地服务替身。
@@ -1371,10 +1383,14 @@
 来源定位：
 
 - `dsh-trading/packages/client-ui-trading/test/ttl-cache.test.ts`
+- `dsh-trading/packages/client-ui-trading/src/tasks/ledger.ts`
+- `dsh-trading/packages/client-ui-trading/src/client/tasks-protocol.ts`
+- `dsh-trading/packages/client-ui-trading/src/client/tasks-schedule.ts`
+- `dsh-trading/packages/client-ui-trading/src/ttl-cache.ts`
 
 ### INT-WEB · 插件安装、卸载和失败恢复
 
-- 难度：困难；题型：原仓库集成题；状态：设计完成，夹具未实现。
+- 难度：困难；题型：原仓库集成题；状态：已有可执行夹具，尚未校准。
 - 能力域：原仓库集成；题目运行时：typescript。
 - 来源：dsh-web。
 - 任务：基于冻结版本的 dsh-web 独立副本完成跨模块修改，保持原仓库公共契约。只使用合成数据和本地服务替身。
@@ -1394,10 +1410,14 @@
 来源定位：
 
 - `dsh-web/packages/dsh-plugin-manager/tests/gateway-jobs.spec.ts`
+- `dsh-web/packages/dsh-plugin-manager/src/client/index.ts`
+- `dsh-web/packages/dsh-plugin-manager/src/host/gateway.ts`
+- `dsh-web/packages/dsh-ssh/src/routes.ts`
+- `dsh-web/packages/dsh-ssh/src/engine.ts`
 
 ### INT-PY · Python 裁判聚合与并发可复现性
 
-- 难度：困难；题型：原仓库集成题；状态：设计完成，夹具未实现。
+- 难度：困难；题型：原仓库集成题；状态：已有可执行夹具，尚未校准。
 - 能力域：原仓库集成；题目运行时：python。
 - 来源：llm-as-a-verifier。
 - 任务：基于冻结版本的 llm-as-a-verifier 独立副本完成跨模块修改，保持原仓库公共契约。只使用合成数据和本地服务替身。

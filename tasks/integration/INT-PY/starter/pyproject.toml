@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llm-verifier"
+version = "0.2.0"
+description = "A general-purpose LLM verification framework: fine-grained reward + Pivot Preference Tournament best-of-N selection."
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+license-files = ["LICENSE"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
+dependencies = [
+    "google-genai",
+    "openai",
+    "tqdm",
+]
+
+[project.urls]
+Homepage = "https://github.com/llm-as-a-verifier/llm-as-a-verifier"
+Repository = "https://github.com/llm-as-a-verifier/llm-as-a-verifier"
+Issues = "https://github.com/llm-as-a-verifier/llm-as-a-verifier/issues"
+
+[project.optional-dependencies]
+# Self-host the verifier model: pip install "llm-verifier[vllm]".
+# Needs vllm >= 0.19 for the structured-outputs choice constraint used by
+# the score-tag prefill.
+vllm = ["vllm>=0.19"]
+
+[tool.setuptools]
+packages = ["llm_verifier"]
+
+[tool.setuptools.package-data]
+llm_verifier = ["py.typed"]

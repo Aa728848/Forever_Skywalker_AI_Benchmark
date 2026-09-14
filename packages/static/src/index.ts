@@ -1,19 +1,24 @@
-import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
+import { lstatSync, readFileSync, readdirSync } from 'node:fs';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import ts from 'typescript';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 /**
  * 静态客观分：规则与阈值由题目/语言冻结后以数据传入，本模块只负责测量。
- * 规则刻意保持简单且公开：词法级函数体识别 + 决策点计数 + 禁止导入计数。
- * 已知限制：不解析 AST，只剥离块注释、行注释与模板字符串；升级规则必须提升规则版本并重新校准阈值。
+ * 规则保持公开：通过 TypeScript AST 识别函数、真实决策节点与模块导入，排除字符串和注释。
+ * 0.2.0 修复词法规则漏报；阈值仍须按题族校准，不能把未经校准的分数当成正式成绩。
  */
-export const staticRuleVersion = '0.1.0';
+export const staticRuleVersion = '0.2.0';
 
 export interface StaticPolicy {
-  readonly language: 'typescript';
+  readonly language: 'typescript' | 'python' | 'fsharp';
   readonly maxDecisionPointsPerFunction: number;
   readonly maxFunctionLines: number;
   readonly forbiddenImports: readonly string[];
   readonly evidenceId: string;
+  /** 平台冻结的改动范围；不传时分析工作区源文件，排除平台检查与依赖。 */
+  readonly includeFiles?: readonly string[];
 }
 
 export interface FunctionFacts {
@@ -32,67 +37,63 @@ export interface FileFacts {
 export interface StaticReport {
   readonly ruleVersion: string;
   readonly evidenceId: string;
+  readonly policy: StaticPolicy;
   readonly files: readonly FileFacts[];
   readonly violations: readonly string[];
   readonly scores: { readonly simplicity: number; readonly maintainability: number; readonly decoupling: number };
 }
 
-const decisionTokens = ['if', 'while', 'for', 'case', 'catch'];
-const symbolicTokens = ['&&', '||', '?'];
-
-function stripNoise(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, ' ')
-    .replace(/\/\/[^\n]*/g, ' ')
-    .replace(/`[^`]*`/g, '``');
+function isFunction(node: ts.Node): node is ts.FunctionLikeDeclaration {
+  return ts.isFunctionDeclaration(node) || ts.isFunctionExpression(node) || ts.isArrowFunction(node)
+    || ts.isMethodDeclaration(node) || ts.isConstructorDeclaration(node) || ts.isGetAccessor(node) || ts.isSetAccessor(node);
 }
 
-function countDecisions(body: string): number {
-  let count = 0;
-  for (const token of decisionTokens) {
-    const pattern = new RegExp('\\b' + token + '\\b', 'g');
-    count += (body.match(pattern) ?? []).length;
-  }
-  for (const token of symbolicTokens) count += body.split(token).length - 1;
-  return count;
-}
-
-function importsOf(source: string): string[] {
-  const found: string[] = [];
-  const pattern = /(?:from\s+|import\s*\(\s*)['\"]([^'\"]+)['\"]/g;
-  for (const match of source.matchAll(pattern)) found.push(match[1] as string);
-  return found;
-}
-
-function functionsOf(source: string): FunctionFacts[] {
-  const facts: FunctionFacts[] = [];
-  const pattern = /(?:function\s+([A-Za-z0-9_$]+)?\s*\([^)]*\)|([A-Za-z0-9_$]+)\s*=\s*(?:async\s*)?\([^)]*\)\s*=>)/g;
-  for (const match of source.matchAll(pattern)) {
-    const start = (match.index ?? 0) + match[0].length;
-    const brace = source.indexOf('{', start);
-    if (brace < 0) continue;
-    let depth = 0;
-    let end = brace;
-    for (let index = brace; index < source.length; index += 1) {
-      const character = source[index];
-      if (character === '{') depth += 1;
-      else if (character === '}') {
-        depth -= 1;
-        if (depth === 0) { end = index; break; }
-      }
+function factsOf(source: ts.SourceFile): Pick<FileFacts, 'functions' | 'imports'> {
+  const functions: FunctionFacts[] = [];
+  const imports: string[] = [];
+  const countDecisions = (root: ts.Node): number => {
+    let count = 0;
+    const visit = (node: ts.Node) => {
+      if (node !== root && isFunction(node)) return;
+      if (ts.isIfStatement(node) || ts.isWhileStatement(node) || ts.isDoStatement(node) || ts.isForStatement(node)
+        || ts.isForInStatement(node) || ts.isForOfStatement(node) || ts.isCaseClause(node) || ts.isCatchClause(node)
+        || ts.isConditionalExpression(node) || (ts.isBinaryExpression(node) && [ts.SyntaxKind.AmpersandAmpersandToken,
+          ts.SyntaxKind.BarBarToken, ts.SyntaxKind.QuestionQuestionToken].includes(node.operatorToken.kind))) count += 1;
+      ts.forEachChild(node, visit);
+    };
+    visit(root);
+    return count;
+  };
+  const addModule = (node: ts.Node | undefined) => {
+    if (node !== undefined && (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node))) imports.push(node.text);
+  };
+  const visit = (node: ts.Node) => {
+    if (isFunction(node) && node.body !== undefined) {
+      const parentName = ts.isVariableDeclaration(node.parent) ? node.parent.name : undefined;
+      const name = node.name?.getText(source) ?? parentName?.getText(source) ?? 'anonymous';
+      const first = source.getLineAndCharacterOfPosition(node.body.getStart(source)).line;
+      const last = source.getLineAndCharacterOfPosition(node.body.getEnd()).line;
+      functions.push({ name, lines: last - first + 1, decisionPoints: countDecisions(node.body) });
     }
-    const body = source.slice(brace, end + 1);
-    facts.push({ name: match[1] ?? match[2] ?? 'anonymous', lines: body.split('\n').length, decisionPoints: countDecisions(body) });
-  }
-  return facts;
+    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) addModule(node.moduleSpecifier);
+    if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)) addModule(node.moduleReference.expression);
+    if (ts.isCallExpression(node) && (node.expression.kind === ts.SyntaxKind.ImportKeyword
+      || (ts.isIdentifier(node.expression) && node.expression.text === 'require'))) addModule(node.arguments[0]);
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return { functions, imports };
 }
 
-function sourceFiles(root: string, current = root, acc: string[] = []): string[] {
+function sourceFiles(root: string, language: StaticPolicy['language'], current = root, acc: string[] = []): string[] {
   for (const entry of readdirSync(current).sort()) {
-    if (entry === 'node_modules' || entry === '.git') continue;
+    if (['node_modules', '.git', 'public-tests', '__checks__', '__pycache__', '.venv', 'bin', 'obj'].includes(entry)) continue;
     const absolute = join(current, entry);
-    if (statSync(absolute).isDirectory()) sourceFiles(root, absolute, acc);
-    else if (entry.endsWith('.ts') && !entry.endsWith('.d.ts')) acc.push(relative(root, absolute).split(sep).join('/'));
+    const stat = lstatSync(absolute);
+    if (stat.isSymbolicLink()) throw new Error('静态分析不接受符号链接：' + relative(root, absolute));
+    if (stat.isDirectory()) sourceFiles(root, language, absolute, acc);
+    else if (language === 'typescript' ? /\.[cm]?tsx?$/.test(entry) && !/\.d\.[cm]?ts$/.test(entry)
+      : language === 'python' ? entry.endsWith('.py') : /\.fsx?$/.test(entry)) acc.push(relative(root, absolute).split(sep).join('/'));
   }
   return acc;
 }
@@ -104,26 +105,65 @@ const clamp = (value: number): number => Math.max(0, Math.min(100, Math.round(va
  * 正式发布前必须按题族用真实作答分布校准并提升规则版本。
  */
 export function defaultTypeScriptPolicy(evidenceId = 'static-report'): StaticPolicy {
+  return defaultPolicy('typescript', evidenceId);
+}
+
+/** 各语言共享初始阈值只是可执行的测量策略，发布时必须各自校准并冻结。 */
+export function defaultPolicy(language: StaticPolicy['language'], evidenceId = 'static-report'): StaticPolicy {
   return {
-    language: 'typescript',
+    language,
     maxDecisionPointsPerFunction: 12,
     maxFunctionLines: 60,
-    forbiddenImports: ['node:child_process', 'node:worker_threads'],
+    forbiddenImports: [],
     evidenceId,
   };
 }
 
+function parseExternal(path: string, language: 'python' | 'fsharp'): Pick<FileFacts, 'functions' | 'imports'> {
+  let command: string;
+  let args: string[];
+  if (language === 'python') {
+    command = 'python';
+    args = ['-I', '-B', fileURLToPath(new URL('./python-ast.py', import.meta.url)), path];
+  } else {
+    command = 'dotnet';
+    const sdk = spawnSync(command, ['--list-sdks'], { encoding: 'utf8', timeout: 10_000, windowsHide: true });
+    if (sdk.error !== undefined || sdk.status !== 0) throw new Error('F# 静态分析需要可用的 .NET SDK。');
+    const last = sdk.stdout.trim().split(/\r?\n/).at(-1)?.match(/^(\S+) \[(.+)\]$/);
+    if (last === undefined || last === null) throw new Error('未发现 FSharp.Compiler.Service 所属的 SDK。');
+    const reference = join(last[2]!, last[1]!, 'FSharp', 'FSharp.Compiler.Service.dll');
+    args = ['fsi', '--nologo', '--readline-', '--reference:' + reference, '--exec', fileURLToPath(new URL('./fsharp-ast.fsx', import.meta.url)), path];
+  }
+  const parsed = spawnSync(command, args, { encoding: 'utf8', timeout: 30_000, maxBuffer: 4 * 1024 * 1024, windowsHide: true });
+  if (parsed.error !== undefined || parsed.status !== 0) throw new Error(language + ' 静态解析失败（不执行候选代码）：' + (parsed.error?.message ?? parsed.stderr.trim()));
+  return JSON.parse(parsed.stdout) as Pick<FileFacts, 'functions' | 'imports'>;
+}
+
 export function analyzeWorkspace(root: string, policy: StaticPolicy): StaticReport {
-  if (policy.language !== 'typescript') throw new RangeError('当前静态规则只支持 typescript。');
+  if (!['typescript', 'python', 'fsharp'].includes(policy.language)) throw new RangeError('静态规则只支持 typescript、python 与 fsharp。');
+  if (!Number.isInteger(policy.maxDecisionPointsPerFunction) || policy.maxDecisionPointsPerFunction < 0
+    || !Number.isInteger(policy.maxFunctionLines) || policy.maxFunctionLines < 1 || policy.evidenceId.trim() === '') {
+    throw new RangeError('静态策略的阈值或证据 ID 不合法。');
+  }
   const files: FileFacts[] = [];
   const violations: string[] = [];
   let overComplex = 0;
   let overLong = 0;
   let forbiddenHits = 0;
-  for (const path of sourceFiles(root)) {
+  const available = sourceFiles(root, policy.language);
+  const paths = policy.includeFiles === undefined ? available : [...new Set(policy.includeFiles)];
+  if (paths.length === 0) throw new Error('没有可分析的 ' + policy.language + ' 源文件，静态分保持待定。');
+  for (const path of paths) {
+    const local = relative(resolve(root), resolve(root, path));
+    if (isAbsolute(path) || local.startsWith('..' + sep) || local === '..' || !available.includes(path)) throw new Error('静态分析范围无效：' + path);
     const source = readFileSync(join(root, path), 'utf8');
-    const functions = functionsOf(stripNoise(source));
-    const imports = importsOf(source);
+    let measured: Pick<FileFacts, 'functions' | 'imports'>;
+    if (policy.language === 'typescript') {
+      const syntax = ts.transpileModule(source, { fileName: path, reportDiagnostics: true, compilerOptions: { target: ts.ScriptTarget.ESNext, jsx: ts.JsxEmit.Preserve } }).diagnostics ?? [];
+      if (syntax.some(item => item.category === ts.DiagnosticCategory.Error)) throw new Error('源文件存在语法错误，静态分保持待定：' + path);
+      measured = factsOf(ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true));
+    } else measured = parseExternal(resolve(root, path), policy.language);
+    const { functions, imports } = measured;
     files.push({ path, lines: source.split('\n').length, functions, imports });
     for (const fn of functions) {
       if (fn.decisionPoints > policy.maxDecisionPointsPerFunction) {
@@ -136,7 +176,8 @@ export function analyzeWorkspace(root: string, policy: StaticPolicy): StaticRepo
       }
     }
     for (const specifier of imports) {
-      if (policy.forbiddenImports.some(rule => specifier === rule || specifier.startsWith(rule + '/'))) {
+      const module = specifier.replace(/^node:/, '');
+      if (policy.forbiddenImports.some(rule => module === rule.replace(/^node:/, '') || module.startsWith(rule.replace(/^node:/, '') + (policy.language === 'typescript' ? '/' : '.')))) {
         forbiddenHits += 1;
         violations.push(path + ' 导入了禁止的模块 ' + specifier);
       }
@@ -145,6 +186,7 @@ export function analyzeWorkspace(root: string, policy: StaticPolicy): StaticRepo
   return {
     ruleVersion: staticRuleVersion,
     evidenceId: policy.evidenceId,
+    policy: structuredClone(policy),
     files,
     violations,
     scores: {

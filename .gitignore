@@ -10,3 +10,6 @@ coverage/
 .env
 .env.*
 !.env.example
+# INT-WEB 的固定离线依赖属于题目资产，须随仓库发布。
+!tasks/integration/INT-WEB/starter/vendor/yaml/dist/
+!tasks/integration/INT-WEB/starter/vendor/yaml/dist/**

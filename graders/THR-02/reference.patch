@@ -1,0 +1,28 @@
+diff --git a/starter/src/thread-pool.ts b/starter/src/thread-pool.ts
+index 05e8226..6e51c9a 100644
+--- a/starter/src/thread-pool.ts
++++ b/starter/src/thread-pool.ts
+@@ -3,18 +3,18 @@ export interface Job { readonly id: string; readonly value: number; readonly cra
+ interface Pending { job: Job; resolve(value:number):void; reject(error:Error):void }
+ 
+ export class ThreadPool {
+-   readonly #queue:Pending[]=[]; #active=0; #closed=false;
++  readonly #size:number; readonly #queue:Pending[]=[]; #active=0; #closed=false;
+   #closing:Promise<void>|undefined; #drained:(()=>void)|undefined;
+-  constructor(size:number){if(!Number.isInteger(size)||size<1||size>8)throw new RangeError('size 1..8');void size;}
+-  submit(job:Job):Promise<number>{return new Promise((resolve,reject)=>{this.#queue.push({job,resolve,reject});this.#pump();});}
++  constructor(size:number){if(!Number.isInteger(size)||size<1||size>8)throw new RangeError('size 1..8');this.#size=size;}
++  submit(job:Job):Promise<number>{if(this.#closed)return Promise.reject(new Error('pool closed'));return new Promise((resolve,reject)=>{this.#queue.push({job,resolve,reject});this.#pump();});}
+   #pump():void{
+-    while(this.#queue.length){
++    while(this.#active<this.#size&&this.#queue.length){
+       const entry=this.#queue.shift()!;this.#active++;
+       const worker=new Worker(new URL('./worker.ts',import.meta.url),{workerData:entry.job});
+       let value:number|undefined;let error:Error|undefined;
+       worker.once('message',(result:number)=>{value=result;});
+       worker.once('error',(failure:Error)=>{error=failure;});
+-      worker.once('exit',code=>{this.#active--;if(code===0&&value!==undefined)entry.resolve(value);else {void error;entry.resolve(0);};this.#pump();});
++      worker.once('exit',code=>{this.#active--;if(code===0&&value!==undefined)entry.resolve(value);else entry.reject(error??new Error('worker exit '+code));this.#pump();});
+     }
+     if(this.#closed&&this.#active===0&&this.#queue.length===0)this.#drained?.();
+   }

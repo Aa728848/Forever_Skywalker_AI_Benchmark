@@ -9,7 +9,8 @@
   },
   "scripts": {
     "dev": "pnpm --parallel --filter @fsa/api --filter @fsa/web dev",
-    "bench": "tsx apps/cli/src/main.ts",
+    "bench": "node --env-file-if-exists=.env --import tsx apps/cli/src/main.ts",
+    "dsh:compare": "node --env-file-if-exists=.env --import tsx scripts/dsh-compare.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "build": "pnpm --filter @fsa/web build",
@@ -20,9 +21,14 @@
     "check": "pnpm typecheck && pnpm catalog:check && pnpm test && pnpm build",
     "task:export": "node scripts/task.ts export",
     "task:verify": "node scripts/task.ts verify",
+    "task:mutants": "node scripts/mutants.ts",
     "run:rehearse": "node scripts/run.ts",
     "trial": "node scripts/trial.ts",
-    "score:rehearse": "node scripts/score-rehearse.ts"
+    "score:rehearse": "node scripts/score-rehearse.ts",
+    "container:status": "node scripts/container.ts status",
+    "container:build": "node scripts/container.ts build",
+    "container:verify": "node scripts/container-verify.ts",
+    "container:trial": "node scripts/container.ts trial"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",

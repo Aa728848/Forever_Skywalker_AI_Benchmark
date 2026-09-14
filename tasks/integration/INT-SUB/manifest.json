@@ -1,0 +1,107 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "INT-SUB",
+  "taskVersion": "0.1.0",
+  "title": "订阅适配器认证与流生命周期",
+  "runtime": "typescript",
+  "runtimeRange": "node >=24.14.1 <25",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "node",
+      "--test",
+      "--test-isolation=process",
+      "--test-reporter=tap",
+      "public-tests/**/*.test.mjs"
+    ],
+    "hidden": [
+      "node",
+      "--test",
+      "--test-isolation=process",
+      "--test-reporter=tap",
+      "__checks__/**/*.test.mjs"
+    ]
+  },
+  "grader": {
+    "checks": "graders/INT-SUB/checks",
+    "referencePatch": "graders/INT-SUB/reference.patch",
+    "alternative": "graders/INT-SUB/alternative",
+    "defectDetectors": [
+      "public/state-logout-blocks-late-refresh",
+      "public/resources-consumer-stop-aborts-source",
+      "hidden/state-save-in-flight-then-logout",
+      "hidden/boundary-disposed-and-caller-cancel"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/behavior-refresh-single-flight",
+      "kind": "public",
+      "group": "behavior",
+      "summary": "真实OAuth与MemoryTokenStore合并刷新并保留未轮换refresh_token。",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "public/state-logout-blocks-late-refresh",
+      "kind": "public",
+      "group": "state",
+      "summary": "注销完成后迟到的真实刷新路径不能重新写凭据。",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "public/resources-consumer-stop-aborts-source",
+      "kind": "public",
+      "group": "resources",
+      "summary": "真实watchdog包装器在提前break后取消源信号并归还迭代器。",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/state-save-in-flight-then-logout",
+      "kind": "hidden",
+      "group": "state",
+      "summary": "异步保存已开始时注销等待清理，不能随后复活凭据。",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/boundary-disposed-and-caller-cancel",
+      "kind": "hidden",
+      "group": "boundary",
+      "summary": "dispose后认证入口拒绝，上游取消映射ABORTED且释放源。",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/regression-refresh-failure-retries",
+      "kind": "hidden",
+      "group": "regression",
+      "summary": "真实认证失败不永久缓存rejected刷新，下一次可重试。",
+      "weight": 1,
+      "critical": true
+    }
+  ]
+}

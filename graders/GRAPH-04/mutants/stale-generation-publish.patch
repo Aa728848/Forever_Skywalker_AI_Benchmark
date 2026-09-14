@@ -1,0 +1,11 @@
+--- a/starter/src/workspace.ts
++++ b/starter/src/workspace.ts
+@@ -63,7 +63,7 @@
+ 
+   commit(ticket: Prepared): boolean {
+     const candidate = this.#tickets.get(ticket);
+-    if (!candidate || ticket.generation !== this.#generation || candidate.publication !== this.#publication) return false;
++    if (!candidate || candidate.publication !== this.#publication) return false;
+     this.#published = candidate.snapshot;
+     this.#publication++;
+     this.#pending = new Set();

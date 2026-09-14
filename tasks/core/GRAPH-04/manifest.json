@@ -1,8 +1,8 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "GRAPH-04",
-  "taskVersion": "0.1.0",
-  "title": "循环依赖图的增量失效与全量等价",
+  "taskVersion": "0.2.0",
+  "title": "依赖图批次更新与诊断快照原子发布",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
   "workspace": {
@@ -42,12 +42,15 @@
     "referencePatch": "graders/GRAPH-04/reference.patch",
     "alternative": "graders/GRAPH-04/alternative",
     "defectDetectors": [
-      "hidden/cycles-converge",
-      "hidden/direct-dependents",
-      "hidden/transitive-matches-naive-scan",
-      "public/cycles-converge",
       "public/direct-dependents",
-      "public/transitive-matches-naive-scan"
+      "public/transitive-matches-naive-scan",
+      "public/cycles-converge",
+      "hidden/resource-deep-cycle-terminates",
+      "hidden/replaced-edges-have-no-ghost-consumers",
+      "hidden/unpublished-batches-coalesce-with-tombstones",
+      "hidden/old-generation-cannot-publish-or-acknowledge",
+      "hidden/frozen-input-and-reader-snapshot-survive-reentrant-edit",
+      "hidden/seeded-churn-matches-independent-full-rebuild"
     ]
   },
   "limits": {
@@ -66,28 +69,12 @@
       "summary": "直接依赖者被失效。"
     },
     {
-      "id": "hidden/direct-dependents",
-      "kind": "hidden",
-      "group": "behavior",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本：直接依赖者被失效。"
-    },
-    {
       "id": "public/transitive-matches-naive-scan",
       "kind": "public",
       "group": "behavior",
       "weight": 1,
       "critical": true,
       "summary": "传递依赖与朴素全量扫描一致。"
-    },
-    {
-      "id": "hidden/transitive-matches-naive-scan",
-      "kind": "hidden",
-      "group": "behavior",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本：传递依赖与朴素全量扫描一致。"
     },
     {
       "id": "public/cycles-converge",
@@ -98,28 +85,12 @@
       "summary": "环内节点全部受影响且能收敛。"
     },
     {
-      "id": "hidden/cycles-converge",
-      "kind": "hidden",
-      "group": "state",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本：环内节点全部受影响且能收敛。"
-    },
-    {
       "id": "public/result-is-sorted-and-input-order-independent",
       "kind": "public",
       "group": "regression",
       "weight": 1,
       "critical": false,
       "summary": "结果排序且与输入顺序无关。"
-    },
-    {
-      "id": "hidden/result-is-sorted-and-input-order-independent",
-      "kind": "hidden",
-      "group": "regression",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本：结果排序且与输入顺序无关。"
     },
     {
       "id": "public/rejects-unknown-nodes",
@@ -130,12 +101,100 @@
       "summary": "未知节点抛 UnknownNodeError。"
     },
     {
-      "id": "hidden/rejects-unknown-nodes",
+      "id": "public/detached-diamond-publication",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "钻石传播与分离准备后整体发布"
+    },
+    {
+      "id": "public/delete-and-recreate-unresolved-reference",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "删除诊断清理及未解析引用恢复"
+    },
+    {
+      "id": "hidden/replaced-edges-have-no-ghost-consumers",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "替换边后旧索引不产生幽灵消费者"
+    },
+    {
+      "id": "hidden/unpublished-batches-coalesce-with-tombstones",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "未发布批次累计并保留删除墓碑"
+    },
+    {
+      "id": "hidden/old-generation-cannot-publish-or-acknowledge",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "延迟旧代完成不能发布或清除新代工作"
+    },
+    {
+      "id": "hidden/preparation-failure-rolls-back-only-derived-work",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "异步计算故障保持已接受编辑和已发布快照"
+    },
+    {
+      "id": "hidden/invalid-batch-is-atomic-and-empty-batch-preserves-ticket",
       "kind": "hidden",
       "group": "boundary",
       "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本：未知节点抛 UnknownNodeError。"
+      "critical": true,
+      "summary": "无效批次回滚；空批次不造成伪代际变化"
+    },
+    {
+      "id": "hidden/ticket-identity-and-late-sibling-are-enforced",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "伪造、跨实例、重复和同代晚完成票据失效"
+    },
+    {
+      "id": "hidden/frozen-input-and-reader-snapshot-survive-reentrant-edit",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": true,
+      "summary": "调用方改写与回调重入不撕裂捕获的读视图"
+    },
+    {
+      "id": "hidden/seeded-churn-matches-independent-full-rebuild",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": true,
+      "summary": "75轮有种子增删改与独立全量重建差分"
+    },
+    {
+      "id": "hidden/sparse-edits-do-not-reevaluate-unrelated-documents",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": true,
+      "summary": "真实回调计数验证稀疏更新工作量"
+    },
+    {
+      "id": "hidden/resource-deep-cycle-terminates",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": true,
+      "summary": "20000节点深环旧接口终止与调用隔离"
     }
   ]
 }

@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "CONC-02",
-  "taskVersion": "0.1.0",
+  "taskVersion": "0.1.1",
   "title": "并发令牌刷新与注销竞争",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -43,7 +43,11 @@
     "alternative": "graders/CONC-02/alternative",
     "defectDetectors": [
       "hidden/cancel-all-aborts-every-member",
-      "public/cancel-all-aborts-every-member"
+      "public/cancel-all-aborts-every-member",
+      "public/coalesces-token-refresh",
+      "public/logout-invalidates-inflight-refresh",
+      "hidden/coalesces-rejection-without-auto-retry",
+      "hidden/late-success-cannot-restore-credentials"
     ]
   },
   "limits": {
@@ -132,6 +136,54 @@
       "weight": 1,
       "critical": false,
       "summary": "隐藏样本下的失败隔离。"
+    },
+    {
+      "id": "public/coalesces-token-refresh",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "同会话并发刷新只发一次请求。"
+    },
+    {
+      "id": "public/logout-invalidates-inflight-refresh",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "注销使迟到刷新失效，不恢复凭据。"
+    },
+    {
+      "id": "public/refresh-preserves-unrotated-token",
+      "kind": "public",
+      "group": "regression",
+      "weight": 1,
+      "critical": true,
+      "summary": "轮换生效，未轮换时保留刷新令牌。"
+    },
+    {
+      "id": "hidden/coalesces-rejection-without-auto-retry",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "合并拒绝，无自动无限重试。"
+    },
+    {
+      "id": "hidden/late-success-cannot-restore-credentials",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "重复注销及迟到成功不恢复凭据。"
+    },
+    {
+      "id": "hidden/failed-refresh-can-be-explicitly-retried",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": true,
+      "summary": "失败清理在途状态，只在显式调用时重试。"
     }
   ]
 }

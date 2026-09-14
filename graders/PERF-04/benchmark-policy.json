@@ -1,0 +1,11 @@
+{
+  "version": "0.2.0",
+  "calibrated": false,
+  "warmupRounds": 2,
+  "minimumPairs": 7,
+  "command": ["node", "graders/PERF-04/benchmark.ts", "<frozen-workspace>"],
+  "metrics": [{ "id": "durationMs", "direction": "lower", "good": 1.25, "bad": 4, "weight": 1 }],
+  "measurement": "trusted-external-wall-clock",
+  "candidateReportedMetrics": "diagnostic-only",
+  "notes": "比值阈值是公开演练起点，须对固定容器与多种正确实现校准。峰值RSS及事件吞吐仅诊断，不与功能资源组重复扣分。"
+}

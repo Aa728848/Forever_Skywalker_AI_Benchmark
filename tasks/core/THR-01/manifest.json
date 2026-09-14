@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "THR-01",
-  "taskVersion": "0.1.0",
+  "taskVersion": "0.1.1",
   "title": "真实工作线程的分发与汇总",
   "runtime": "mixed",
   "runtimeRange": "node >=24.14.1 <25",
@@ -47,7 +47,8 @@
       "hidden/uses-real-worker-threads",
       "public/rejects-invalid-size",
       "public/reports-failed-jobs",
-      "public/uses-real-worker-threads"
+      "public/uses-real-worker-threads",
+      "hidden/observes-real-workers-and-exit"
     ]
   },
   "limits": {
@@ -136,6 +137,14 @@
       "weight": 1,
       "critical": false,
       "summary": "隐藏样本下的非法窗口。"
+    },
+    {
+      "id": "hidden/observes-real-workers-and-exit",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": true,
+      "summary": "由受信侧观测真实 worker、每项消息、总线程上限与退出。"
     }
   ]
 }

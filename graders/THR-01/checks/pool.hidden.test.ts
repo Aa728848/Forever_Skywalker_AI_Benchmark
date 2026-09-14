@@ -33,3 +33,33 @@ test('hidden/rejects-invalid-size', async () => {
   await assert.rejects(async () => runPool(jobs(2), { size: 0 }), RangeError);
   await assert.rejects(async () => runPool(jobs(2), { size: 1.5 }), RangeError);
 });
+
+// 从运行时观测 Worker 构造和消息，不能采信候选自报的 threadIds。
+import workerThreads from 'node:worker_threads';
+import { syncBuiltinESMExports } from 'node:module';
+test('hidden/observes-real-workers-and-exit', async () => {
+  const Original = workerThreads.Worker;
+  const created: InstanceType<typeof Original>[] = [];
+  const observed = new Map<string, number>();
+  const exited = new Set<InstanceType<typeof Original>>();
+  workerThreads.Worker = class ObservedWorker extends Original {
+    constructor(...args: ConstructorParameters<typeof Original>) {
+      super(...args);
+      created.push(this);
+      this.on('message', message => observed.set(message.id, this.threadId));
+      this.on('exit', () => exited.add(this));
+    }
+  };
+  syncBuiltinESMExports();
+  try {
+    const outcome = await runPool(jobs(9), {size: 2});
+    assert.equal(created.length, 2, '九项作业必须使用恰好两个真实线程，而非自报 id');
+    assert.equal(observed.size, 9, '每项结果须有真实 worker 消息');
+    assert.equal(exited.size, created.length, '返回前工作线程必须全部退出');
+    assert.deepEqual([...new Set(observed.values())].sort((a,b)=>a-b), [...outcome.threadIds].sort((a,b)=>a-b));
+  } finally {
+    workerThreads.Worker = Original;
+    syncBuiltinESMExports();
+    await Promise.all(created.map(worker => worker.terminate()));
+  }
+});

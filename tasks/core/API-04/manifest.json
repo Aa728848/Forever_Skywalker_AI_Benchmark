@@ -1,8 +1,8 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "API-04",
-  "taskVersion": "0.1.0",
-  "title": "重启后任务提交与事务一致性",
+  "taskVersion": "0.2.0",
+  "title": "持久任务队列：并发领取、租约隔离与崩溃恢复",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
   "workspace": {
@@ -25,14 +25,14 @@
     "public": [
       "node",
       "--test",
-      "--test-isolation=none",
+      "--test-isolation=process",
       "--test-reporter=tap",
       "public-tests/**/*.test.ts"
     ],
     "hidden": [
       "node",
       "--test",
-      "--test-isolation=none",
+      "--test-isolation=process",
       "--test-reporter=tap",
       "__checks__/**/*.test.ts"
     ]
@@ -42,12 +42,16 @@
     "referencePatch": "graders/API-04/reference.patch",
     "alternative": "graders/API-04/alternative",
     "defectDetectors": [
-      "hidden/failed-write-leaves-no-partial-record",
-      "hidden/repeated-key-returns-same-task-id",
-      "hidden/restart-reuses-existing-record",
-      "public/failed-write-leaves-no-partial-record",
-      "public/repeated-key-returns-same-task-id",
-      "public/restart-reuses-existing-record"
+      "public/durable-content-conflict",
+      "public/durable-expired-lease-fencing",
+      "public/durable-result-failure-is-atomic",
+      "hidden/durable-crash-submit",
+      "hidden/durable-crash-claim",
+      "hidden/durable-crash-result",
+      "hidden/durable-competing-claim",
+      "hidden/durable-same-worker-stale-completion",
+      "hidden/durable-worker-replay-boundary",
+      "hidden/durable-fixed-seed-state-machine"
     ]
   },
   "limits": {
@@ -60,7 +64,7 @@
     {
       "id": "public/submits-and-records-task-id",
       "kind": "public",
-      "group": "behavior",
+      "group": "regression",
       "weight": 1,
       "critical": false,
       "summary": "首次提交落盘并返回 taskId。"
@@ -68,7 +72,7 @@
     {
       "id": "hidden/submits-and-records-task-id",
       "kind": "hidden",
-      "group": "behavior",
+      "group": "regression",
       "weight": 1,
       "critical": false,
       "summary": "隐藏样本：首次提交落盘并返回 taskId。"
@@ -76,15 +80,15 @@
     {
       "id": "public/repeated-key-returns-same-task-id",
       "kind": "public",
-      "group": "state",
+      "group": "regression",
       "weight": 1,
-      "critical": true,
+      "critical": false,
       "summary": "同一提交键幂等返回同一 taskId。"
     },
     {
       "id": "hidden/repeated-key-returns-same-task-id",
       "kind": "hidden",
-      "group": "state",
+      "group": "regression",
       "weight": 1,
       "critical": false,
       "summary": "隐藏样本：同一提交键幂等返回同一 taskId。"
@@ -92,15 +96,15 @@
     {
       "id": "public/restart-reuses-existing-record",
       "kind": "public",
-      "group": "state",
+      "group": "regression",
       "weight": 1,
-      "critical": true,
+      "critical": false,
       "summary": "重启后复用已有记录，不产生第二条。"
     },
     {
       "id": "hidden/restart-reuses-existing-record",
       "kind": "hidden",
-      "group": "state",
+      "group": "regression",
       "weight": 1,
       "critical": false,
       "summary": "隐藏样本：重启后复用已有记录，不产生第二条。"
@@ -108,7 +112,7 @@
     {
       "id": "public/failed-write-leaves-no-partial-record",
       "kind": "public",
-      "group": "boundary",
+      "group": "regression",
       "weight": 1,
       "critical": false,
       "summary": "写失败不留半条记录且可重试。"
@@ -116,7 +120,7 @@
     {
       "id": "hidden/failed-write-leaves-no-partial-record",
       "kind": "hidden",
-      "group": "boundary",
+      "group": "regression",
       "weight": 1,
       "critical": false,
       "summary": "隐藏样本：写失败不留半条记录且可重试。"
@@ -136,6 +140,134 @@
       "weight": 1,
       "critical": false,
       "summary": "隐藏样本：不同键不同 id，空键被拒。"
+    },
+    {
+      "id": "hidden/restart-new-key-has-unique-id",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "重启后提交不同键不得复用旧 taskId。"
+    },
+    {
+      "id": "hidden/resource-retries-do-not-accumulate",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "hidden/resource-retries-do-not-accumulate"
+    },
+    {
+      "id": "public/durable-submit-flow",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 2,
+      "critical": false,
+      "summary": "真实 SQLite 提交、领取、执行与完成，空队列不会执行。"
+    },
+    {
+      "id": "public/durable-content-conflict",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 2,
+      "critical": true,
+      "summary": "同一请求键复用不同原始内容必须拒绝且不推进状态。"
+    },
+    {
+      "id": "public/durable-expired-lease-fencing",
+      "kind": "public",
+      "group": "state",
+      "weight": 2,
+      "critical": true,
+      "summary": "租约过期接管增加代际，同名旧 worker 不能提交结果。"
+    },
+    {
+      "id": "public/durable-result-failure-is-atomic",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 2,
+      "critical": true,
+      "summary": "结果阶段抛错时完成状态、结果和修订号同时回滚。"
+    },
+    {
+      "id": "hidden/durable-crash-submit",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 2,
+      "critical": true,
+      "summary": "子进程在提交暂存点真实退出，重新打开实际文件不出现半条任务。"
+    },
+    {
+      "id": "hidden/durable-crash-claim",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 2,
+      "critical": true,
+      "summary": "子进程领取暂存后退出，未确认领取不遗留租约。"
+    },
+    {
+      "id": "hidden/durable-crash-result",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 2,
+      "critical": true,
+      "summary": "子进程结果暂存后退出，结果与完成状态原子恢复。"
+    },
+    {
+      "id": "hidden/durable-lost-ack-replay",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 2,
+      "critical": true,
+      "summary": "已提交后进程退出造成确认丢失，提交与完成的重放稳定。"
+    },
+    {
+      "id": "hidden/durable-competing-claim",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 2,
+      "critical": true,
+      "summary": "真实子进程与另一连接通过管道屏障交错领取，至多一个确认成功。"
+    },
+    {
+      "id": "hidden/durable-same-worker-stale-completion",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 2,
+      "critical": true,
+      "summary": "同 worker 不同代际、篡改到期时间的 token 不能完成。"
+    },
+    {
+      "id": "hidden/durable-worker-replay-boundary",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 2,
+      "critical": true,
+      "summary": "真实异步执行跨租约重入，允许外部执行两次但只存有效代际结果。"
+    },
+    {
+      "id": "hidden/durable-idempotent-resource-bound",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 2,
+      "critical": true,
+      "summary": "重复提交与完成不扩大 SQLite 文件或修订历史。"
+    },
+    {
+      "id": "hidden/durable-boundaries-and-snapshot",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 2,
+      "critical": true,
+      "summary": "边界时间、特殊键、快照隔离、关闭后拒绝操作。"
+    },
+    {
+      "id": "hidden/durable-fixed-seed-state-machine",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 2,
+      "critical": true,
+      "summary": "固定种子状态机与独立预言机逐步比对，并穿插数据库关闭重开。"
     }
   ]
 }

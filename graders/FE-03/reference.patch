@@ -1,0 +1,17 @@
+diff --git a/starter/src/stream-view.ts b/starter/src/stream-view.ts
+index 010238f..5cd83cb 100644
+--- a/starter/src/stream-view.ts
++++ b/starter/src/stream-view.ts
+@@ -12,9 +12,9 @@ export function mount(root:HTMLElement,onRetry:()=>void):StreamView {
+   const check=(sequence:number)=>{if(!Number.isSafeInteger(sequence)||sequence<0)throw new RangeError('sequence');};
+   return {
+     snapshot(sequence,messages){if(disposed)return false;check(sequence);if(sequence<last)return false;if(new Set(messages.map(item=>item.id)).size!==messages.length)throw new RangeError('duplicate message');
+-      mutate(()=>{const retained=new Set<string>();for(const item of messages){let node:HTMLElement|undefined;if(!node){node=document.createElement('article');node.dataset['messageId']=item.id;nodes.set(item.id,node);}if(node.textContent!==item.text)node.textContent=item.text;log.append(node);retained.add(item.id);}for(const [id,node]of nodes)if(!retained.has(id)){node.remove();nodes.delete(id);}});last=sequence;return true;},
+-    append(sequence,id,chunk){if(disposed)return false;check(sequence);mutate(()=>{let node=nodes.get(id);if(!node){node=document.createElement('article');node.dataset['messageId']=id;nodes.set(id,node);log.append(node);}node.textContent=(node.textContent??'')+chunk;});last=sequence;return true;},
+-    fail(message){if(disposed)return;log.replaceChildren();error.textContent=message;retry.hidden=false;},
++      mutate(()=>{const retained=new Set<string>();for(const item of messages){let node=nodes.get(item.id);if(!node){node=document.createElement('article');node.dataset['messageId']=item.id;nodes.set(item.id,node);}if(node.textContent!==item.text)node.textContent=item.text;log.append(node);retained.add(item.id);}for(const [id,node]of nodes)if(!retained.has(id)){node.remove();nodes.delete(id);}});last=sequence;return true;},
++    append(sequence,id,chunk){if(disposed)return false;check(sequence);if(sequence<=last)return false;if(sequence!==last+1)throw new Error('sequence gap');mutate(()=>{let node=nodes.get(id);if(!node){node=document.createElement('article');node.dataset['messageId']=id;nodes.set(id,node);log.append(node);}node.textContent=(node.textContent??'')+chunk;});last=sequence;return true;},
++    fail(message){if(disposed)return;error.textContent=message;retry.hidden=false;},
+     dispose(){if(disposed)return;disposed=true;retry.removeEventListener('click',click);retry.removeEventListener('keydown',key);root.replaceChildren();nodes.clear();},
+     lastSequence(){return last;}
+   };

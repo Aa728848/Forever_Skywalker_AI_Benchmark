@@ -19,3 +19,29 @@ index 8770a95..471244f 100644
  }
  
  export function paginate<T>(items: readonly T[], request: PageRequest): Page<T> {
+
+diff --git a/starter/src/idempotent-writer.ts b/starter/src/idempotent-writer.ts
+index 551ad9c..b3487dd 100644
+--- a/starter/src/idempotent-writer.ts
++++ b/starter/src/idempotent-writer.ts
+@@ -1,10 +1,15 @@
+ export class IdempotencyConflictError extends Error { constructor() { super('同一幂等键对应不同请求'); } }
++interface Entry<T> { readonly request: string; readonly result: Promise<T> }
+ export class IdempotentWriter<T> {
+-  #completed = new Map<string, { request: string; result: T }>();
++  #entries = new Map<string, Entry<T>>();
+   write(key: string, request: string, commit: (body: string) => Promise<T>): Promise<T> {
+-    const known = this.#completed.get(key);
+-    // 缺陷：忽略请求冲突，而且在首次完成前没有保留在途请求。
+-    if (known !== undefined) return Promise.resolve(known.result);
+-    return Promise.resolve().then(() => commit(request)).then(result => { this.#completed.set(key, {request, result}); return result; });
++    const known = this.#entries.get(key);
++    if (known !== undefined) return known.request === request ? known.result : Promise.reject(new IdempotencyConflictError());
++    const result = Promise.resolve().then(() => commit(request)).catch(error => {
++      if (this.#entries.get(key)?.result === result) this.#entries.delete(key);
++      throw error;
++    });
++    this.#entries.set(key, { request, result });
++    return result;
+   }
+ }

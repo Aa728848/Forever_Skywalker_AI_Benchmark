@@ -1,6 +1,6 @@
 # THR-01 · 真实工作线程的分发与汇总
 
-- 难度：简单；题型：独立核心题；能力域：真实线程与并发。运行时：TypeScript on Node.js 24（类型剥离）。题目版本：0.1.0。
+- 难度：简单；题型：独立核心题；能力域：真实线程与并发。运行时：TypeScript on Node.js 24（类型剥离）。题目版本：0.1.1。
 
 ## 背景
 
@@ -24,8 +24,8 @@ export function runPool(jobs: readonly Job[], options?: PoolOptions): Promise<Po
 
 1. 每个 job 必须由 `node:worker_threads` 的**真实 worker 线程**处理（worker 入口为 `new URL('./worker.ts', import.meta.url)`），
    并把处理该 job 的 `threadId` 记入 `threadIds`；**主线程 id `0` 不得出现**。
-2. 多 job 时至少要出现两个不同的线程 id；并发窗口由 `size` 限制（缺省 4），
-   实际使用的线程数不得超过 `size`，也不得超过 job 数量。
+2. 多 job 且 `size ≥ 2` 时至少要出现两个不同的线程 id；并发窗口由 `size` 限制（缺省 4），
+   整个调用实际创建的线程总数不得超过 `size`，也不得超过 job 数量；返回前所有 worker 已退出。固定 workerData 接受单个 Job 或 Job 数组，可按批次分发。
 3. `results` 按 job `id` 汇总（顺序无关）；worker 判定失败的 job（`payload < 0`）进入 `failures`，
    既不出现在 `results` 里，也不得影响其它 job。
 4. 空输入立即返回 `{ results: {}, failures: [], threadIds: [] }`，不创建任何线程。

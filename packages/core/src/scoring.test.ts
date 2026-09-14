@@ -133,11 +133,11 @@ describe('正式评分桥：执行结果 → 可用验证分', () => {
     const score = scoreExecution(executionFixture({
       'public/behavior': 'passed', 'public/boundary': 'passed', 'public/state': 'passed', 'public/regression': 'passed', 'public/resources': 'passed',
     }, 'passed'), manifestFixture());
-    expect(score.mode).toBe('formal');
+    expect(score.mode).toBe('local');
     expect(score.functional).toBe(50);
     expect(score.quality).toBeNull();
     expect(score.total).toBeNull();
-    expect(score.readiness).toBe('complete');
+    expect(score.readiness).toBe('pending');
     expect(score.thresholdMet).toBeNull();
     expect(score.groups.map(group => group.score)).toEqual([100, 100, 100, 100, 100]);
     expect(score.reasons.join(' ')).toContain('代码质量维度仍缺证据');
@@ -163,7 +163,7 @@ describe('正式评分桥：执行结果 → 可用验证分', () => {
   it('超时把未取得的检查项按被测失败记 0', () => {
     const score = scoreExecution(executionFixture({ 'public/behavior': 'passed' }, 'timeout'), manifestFixture());
     expect(score.functional).toBe(20);
-    expect(score.readiness).toBe('complete');
+    expect(score.readiness).toBe('pending');
     expect(score.reasons.join(' ')).toContain('时间预算');
   });
 
@@ -174,6 +174,22 @@ describe('正式评分桥：执行结果 → 可用验证分', () => {
       expect(score.readiness).toBe(classification === 'infrastructure-error' ? 'infra-error' : 'pending');
     }
   });
+
+  it('基础设施失败前未执行的关键项保持待定', () => {
+    const result = scoreExecution(executionFixture({}, 'infrastructure-error'), manifestFixture());
+    expect(result.thresholdMet).toBeNull();
+    expect(result.reasons.join(' ')).toContain('尚未取得结论');
+  });
+
+  it('仅声明passed但没有实际检查结论时仍保持待定', () => {
+    expect(scoreExecution(executionFixture({}, 'passed'), manifestFixture())).toMatchObject({ functional: null, total: null, thresholdMet: null, readiness: 'pending' });
+  });
+
+  it('拒绝串题、错版本和重复检查结论', () => {
+    const execution = executionFixture({}, 'check-failed');
+    expect(() => scoreExecution({ ...execution, taskId: 'FE-01' }, manifestFixture())).toThrow(/版本/);
+    expect(() => scoreExecution({ ...execution, checks: [...execution.checks, execution.checks[0]!] }, manifestFixture())).toThrow(/重复/);
+  });
 });
 
 describe('质量维度合成与总分', () => {
@@ -183,6 +199,14 @@ describe('质量维度合成与总分', () => {
   };
   const objective = (kind: 'static' | 'benchmark', score: number) => ({ score, evidence: ['static-report'], kind });
   const review = (score: number) => ({ score, evidence: ['review-1'] });
+
+  it('检查全部打印通过但进程异常时仍不合格', () => {
+    const result = scoreExecution(executionFixture(allPassed, 'check-failed'), manifestFixture(), {
+      objective: { simplicity: objective('static', 100), maintainability: objective('static', 100), decoupling: objective('static', 100), performance: objective('benchmark', 100) },
+      review: { simplicity: review(100), maintainability: review(100), decoupling: review(100), performance: review(100) },
+    });
+    expect(result).toMatchObject({ total: 100, thresholdMet: false });
+  });
 
   it('客观分与评审分齐备时按权重合成维度分与总分', () => {
     const score = scoreExecution(executionFixture(allPassed, 'passed'), manifestFixture(), {
@@ -238,5 +262,28 @@ describe('质量维度合成与总分', () => {
     expect(score.quality).toBe(0);
     expect(score.total).toBe(20);
     expect(score.thresholdMet).toBe(false);
+  });
+
+  it.each([NaN, Infinity, -1, 101])('正式质量输入拒绝非法分数 %s', value => {
+    expect(() => scoreExecution(executionFixture(allPassed, 'passed'), manifestFixture(), {
+      objective: { simplicity: objective('static', value) }, review: { simplicity: review(80) },
+    })).toThrow(/有限数/);
+  });
+
+  it('以未舍入分数比较70分门槛，并保留质量证据引用', () => {
+    const score = scoreExecution(executionFixture(allPassed, 'passed'), manifestFixture(), {
+      objective: { simplicity: objective('static', 39.998), maintainability: objective('static', 39.998), decoupling: objective('static', 39.998), performance: objective('benchmark', 39.998) },
+      review: { simplicity: review(39.998), maintainability: review(39.998), decoupling: review(39.998), performance: review(39.998) },
+    });
+    expect(score).toMatchObject({ total: 70, thresholdMet: false });
+    expect(score.evidenceRefs).toEqual(['public.stdout', 'static-report', 'review-1']);
+  });
+
+  it('隔离运行仍须校准与发布证据才能标记正式模式', () => {
+    const execution = { ...executionFixture(allPassed, 'passed'), isolation: 'container' as const };
+    expect(scoreExecution(execution, manifestFixture()).mode).toBe('rehearsal');
+    const release = { taskReady: true, staticCalibrated: true, benchmarkCalibrated: true, independentReview: true };
+    expect(scoreExecution(execution, manifestFixture(), { release }).mode).toBe('formal');
+    expect(scoreExecution(execution, manifestFixture(), { release, mode: 'rehearsal' }).mode).toBe('rehearsal');
   });
 });

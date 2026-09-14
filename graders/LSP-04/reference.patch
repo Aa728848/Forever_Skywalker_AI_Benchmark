@@ -1,0 +1,21 @@
+diff --git a/starter/src/WorkspaceIndex.fsx b/starter/src/WorkspaceIndex.fsx
+index 5e6fdd5..02dd90c 100644
+--- a/starter/src/WorkspaceIndex.fsx
++++ b/starter/src/WorkspaceIndex.fsx
+@@ -26,15 +26,12 @@ type Index() =
+         match Map.tryFind ticket.Workspace pending with
+         | Some current when current.Ticket.Id = ticket.Id ->
+             if not (Set.contains path current.Expected) then invalidArg "path" "unexpected document"
+-            // 缺陷：分批构建直接改已发布索引，失败与取消前已泄漏半成品。
+-            let currentVisible = Map.tryFind ticket.Workspace visible |> Option.defaultValue Map.empty
+-            visible <- Map.add ticket.Workspace (match symbols with | Some value -> Map.add path value currentVisible | None -> Map.remove path currentVisible) visible
+             pending <- Map.add ticket.Workspace { current with Changes = Map.add path symbols current.Changes } pending
+             true
+         | _ -> false)
+     member _.Publish(ticket: Build) = lock gate (fun () ->
+         match Map.tryFind ticket.Workspace pending with
+-        | Some current when current.Ticket.Id = ticket.Id ->
++        | Some current when current.Ticket.Id = ticket.Id && current.Changes.Count = current.Expected.Count ->
+             let previous = Map.tryFind ticket.Workspace visible |> Option.defaultValue Map.empty
+             let result = Map.fold (fun index path symbols -> match symbols with | Some value -> Map.add path value index | None -> Map.remove path index) previous current.Changes
+             visible <- Map.add ticket.Workspace result visible

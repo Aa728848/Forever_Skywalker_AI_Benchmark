@@ -38,3 +38,36 @@ index b6034ee..3c51893 100644
    }
  
    get lastId(): number {
+
+diff --git a/starter/src/byte-stream.ts b/starter/src/byte-stream.ts
+index 71e51e4..360e994 100644
+--- a/starter/src/byte-stream.ts
++++ b/starter/src/byte-stream.ts
+@@ -14,7 +14,7 @@ export class ByteSseStream {
+   #closed = false;
+   constructor(options: StreamOptions) {
+     if (!Number.isSafeInteger(options.capacity) || options.capacity < 1 || !Number.isSafeInteger(options.maxBufferedBytes) || options.maxBufferedBytes < 1 || !Number.isSafeInteger(options.fromId) || options.fromId < 0) throw new RangeError('流配置非法');
+-    this.#options = options; this.#accepted = this.#options.fromId; this.#delivered = options.fromId;
++    this.#options = options; this.#accepted = options.fromId; this.#delivered = options.fromId;
+   }
+   get queued(): number { return this.#queue.length; }
+   get lastId(): number { return this.#delivered; }
+@@ -25,15 +25,15 @@ export class ByteSseStream {
+     const event = { id: Number(id[1]), data: data[1]! };
+     if (event.id <= this.#accepted) return;
+     if (event.id !== this.#accepted + 1) throw new SequenceGapError(this.#accepted + 1, event.id);
+-    // 缺陷：未限制消费者积压队列。
++    if (this.#queue.length >= this.#options.capacity) throw new BackpressureError();
+     this.#queue.push(event); this.#accepted = event.id;
+   }
+   push(chunk: Uint8Array): void {
+     this.#assertOpen();
+     try {
+-      // 缺陷：未限制未闭合帧字节数。
++      if (this.#bytes + chunk.byteLength > this.#options.maxBufferedBytes) throw new BackpressureError();
+       this.#bytes += chunk.byteLength;
+-      this.#buffer += new TextDecoder().decode(chunk);
++      this.#buffer += this.#decoder.decode(chunk, { stream: true });
+       let boundary = this.#buffer.indexOf('\n\n');
+       while (boundary >= 0) {
+         const frame = this.#buffer.slice(0, boundary); this.#buffer = this.#buffer.slice(boundary + 2);

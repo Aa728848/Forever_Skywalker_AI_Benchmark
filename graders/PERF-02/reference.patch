@@ -1,12 +1,8 @@
 diff --git a/starter/src/window.ts b/starter/src/window.ts
-index 12ba43f..8d5bf13 100644
+index 435d091..3444907 100644
 --- a/starter/src/window.ts
 +++ b/starter/src/window.ts
-@@ -14,12 +14,17 @@ export interface RenderedRange {
-   readonly items: readonly Row[];
- }
- 
-+/** 只读窗口内的行：访问次数与窗口大小成正比，与列表长度无关。 */
+@@ -17,11 +17,14 @@ export interface RenderedRange {
  export function updateRows(rows: readonly Row[], patch: Row, window: RenderWindow): RenderedRange {
    if (!Number.isInteger(window.offset) || window.offset < 0) throw new RangeError('offset 必须是非负整数');
    if (!Number.isInteger(window.size) || window.size < 1) throw new RangeError('size 必须是正整数');
@@ -15,14 +11,73 @@ index 12ba43f..8d5bf13 100644
 -  const start = Math.min(window.offset, patched.length);
 -  const end = Math.min(start + window.size, patched.length);
 -  return { start, end, items: patched.slice(start, end) };
-+  const total = rows.length;
-+  const start = Math.min(window.offset, total);
-+  const end = Math.min(start + window.size, total);
++  const start = Math.min(window.offset, rows.length);
++  const end = Math.min(start + window.size, rows.length);
 +  const items: Row[] = [];
 +  for (let index = start; index < end; index += 1) {
-+    const row = rows[index] as Row;
++    const row = rows[index]!;
 +    items.push(row.id === patch.id ? { id: row.id, value: patch.value } : row);
 +  }
 +  return { start, end, items };
  }
-\ No newline at end of file
+ 
+ export interface MountedList {
+@@ -36,21 +39,30 @@ export function mountList(container: HTMLElement, rows: readonly Row[], initialW
+   let window = initialWindow;
+   let visible: readonly Row[] = [];
+   const patches = new Map<string, Row>();
++  const nodes = new Map<string, HTMLElement>();
+   const render = () => {
+     if (source === null) throw new Error('list disposed');
+     visible = updateRows(source, source[window.offset] ?? { id: '', value: 0 }, window).items.map(row => patches.get(row.id) ?? row);
+-    // 缺陷：每次局部更新都重建整个可见DOM，破坏其他行的节点身份与焦点。
+-    container.replaceChildren(...visible.map(row => {
+-      const item = document.createElement('div');
+-      item.setAttribute('role', 'listitem');
+-      item.dataset.rowId = row.id;
+-      const button = document.createElement('button');
+-      button.type = 'button';
+-      button.dataset.rowId = row.id;
+-      button.textContent = row.id + ': ' + row.value;
+-      item.append(button);
+-      return item;
+-    }));
++    const wanted = new Set(visible.map(row => row.id));
++    for (const [id, node] of nodes) {
++      if (!wanted.has(id)) { node.remove(); nodes.delete(id); }
++    }
++    for (const [index, row] of visible.entries()) {
++      let item = nodes.get(row.id);
++      if (item === undefined) {
++        item = document.createElement('div');
++        item.setAttribute('role', 'listitem');
++        item.dataset.rowId = row.id;
++        const button = document.createElement('button');
++        button.type = 'button';
++        button.dataset.rowId = row.id;
++        item.append(button);
++        nodes.set(row.id, item);
++      }
++      const label = row.id + ': ' + row.value;
++      if (item.firstElementChild!.textContent !== label) item.firstElementChild!.textContent = label;
++      if (container.children[index] !== item) container.insertBefore(item, container.children[index] ?? null);
++    }
+   };
+   const api: MountedList = {
+     applyPatch(patch) {
+@@ -71,6 +83,7 @@ export function mountList(container: HTMLElement, rows: readonly Row[], initialW
+       source = null;
+       visible = [];
+       patches.clear();
++      nodes.clear();
+     },
+   };
+   const click = (event: Event) => {
+@@ -79,6 +92,7 @@ export function mountList(container: HTMLElement, rows: readonly Row[], initialW
+     const row = visible.find(item => item.id === (button as HTMLElement).dataset.rowId);
+     if (row !== undefined) api.applyPatch({ id: row.id, value: row.value + 1 });
+   };
++  container.replaceChildren();
+   container.setAttribute('role', 'list');
+   render();
+   container.addEventListener('click', click);

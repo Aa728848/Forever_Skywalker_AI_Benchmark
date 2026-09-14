@@ -1,0 +1,128 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "INT-PY",
+  "taskVersion": "0.1.0",
+  "title": "Python 裁判聚合与并发可复现性",
+  "runtime": "python",
+  "runtimeRange": "python >=3.11 <3.14",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "python",
+      "-B",
+      "public-tests/checks.py"
+    ],
+    "hidden": [
+      "python",
+      "-B",
+      "__checks__/checks.py"
+    ]
+  },
+  "grader": {
+    "checks": "graders/INT-PY/checks",
+    "referencePatch": "graders/INT-PY/reference.patch",
+    "alternative": "graders/INT-PY/alternative",
+    "defectDetectors": [
+      "public/scalar-alias-probability-dedup",
+      "public/odd-repetition-candidate-order",
+      "public/tournament-tie-lowest-index",
+      "hidden/scalar-alias-and-final-tag-semantics",
+      "hidden/source-pipeline-seeded-replay-and-cost"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/scalar-alias-probability-dedup",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "原概率提取按标量最大概率去重。"
+    },
+    {
+      "id": "public/odd-repetition-candidate-order",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "奇数重复恢复原候选顺序，奖励均值抵消槽位偏差。"
+    },
+    {
+      "id": "public/tournament-tie-lowest-index",
+      "kind": "public",
+      "group": "regression",
+      "weight": 1,
+      "critical": true,
+      "summary": "真实PPT并列选择最低下标并保持比较次数。"
+    },
+    {
+      "id": "public/transient-tie-does-not-poison-cache",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "失败tie仅本次有效，不写缓存且可重试。"
+    },
+    {
+      "id": "hidden/scalar-alias-and-final-tag-semantics",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "别名去重及最后评分tag黄金结果。"
+    },
+    {
+      "id": "hidden/directional-cache-hit-without-credentials",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "有向缓存不合并，缓存命中不创建需凭据的客户端。"
+    },
+    {
+      "id": "hidden/real-thread-pool-bound-and-overlap",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": true,
+      "summary": "真实线程屏障证明重叠和max_workers边界。"
+    },
+    {
+      "id": "hidden/source-pipeline-seeded-replay-and-cost",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": true,
+      "summary": "源评分/缓存/奖励/PPT联合重放可复现且成本有界。"
+    },
+    {
+      "id": "hidden/worker-error-and-corrupt-cache-policy",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "工作线程异常与损坏缓存保持原错误策略。"
+    }
+  ]
+}

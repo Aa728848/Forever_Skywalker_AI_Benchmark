@@ -171,6 +171,41 @@ describe('提交与冻结', () => {
 });
 
 describe('幂等提交记录', () => {
+  it('同键不能从本机结果切换为容器结果，也不能换提交者', () => {
+    const candidate = exportedCandidate();
+    withTemp(storeRoot => {
+      try {
+        const store = createRunStore(storeRoot);
+        const envelope = envelopeFor(candidate);
+        const request = { taskId, envelope, candidateDirectory: candidate, submittedBy: 'operator' };
+        store.submit(request);
+        expect(() => store.submit({ ...request, submittedBy: 'someone-else' })).toThrow(IdempotencyConflictError);
+        expect(() => store.submit({ ...request, profile: 'linux-container', image: 'node:24', imageDigest: 'sha256:' + 'a'.repeat(64) }))
+          .toThrow(IdempotencyConflictError);
+      } finally {
+        rmSync(candidate, { recursive: true, force: true });
+      }
+    });
+  });
+
+  it('冻结目录已提交但索引丢失时，重启恢复同一个 attempt', () => {
+    const candidate = exportedCandidate();
+    withTemp(storeRoot => {
+      try {
+        const store = createRunStore(storeRoot);
+        const envelope = envelopeFor(candidate);
+        const request = { taskId, envelope, candidateDirectory: candidate, submittedBy: 'operator' };
+        const first = store.submit(request);
+        rmSync(join(storeRoot, 'index.json'));
+        const recovered = createRunStore(storeRoot);
+        expect(recovered.list()).toHaveLength(1);
+        expect(recovered.submit(request)).toMatchObject({ outcome: 'reused', directory: first.directory });
+        expect(recovered.materialize(envelope.runId, envelope.attemptId, join(storeRoot, 'restored')).treeHash).toBe(envelope.candidateTreeHash);
+      } finally {
+        rmSync(candidate, { recursive: true, force: true });
+      }
+    });
+  });
   it('同键同快照复用同一次冻结，不重复冻结', () => {
     const candidate = exportedCandidate();
     withTemp(storeRoot => {

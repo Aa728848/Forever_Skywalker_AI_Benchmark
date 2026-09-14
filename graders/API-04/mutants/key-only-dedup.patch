@@ -1,0 +1,12 @@
+diff --git a/starter/src/queue.ts b/starter/src/queue.ts
+index f064dab..2ecb241 100644
+--- a/starter/src/queue.ts
++++ b/starter/src/queue.ts
+@@ -26,7 +26,6 @@ export class DurableQueue {
+     const id = this.#storage.write(() => {
+       const prior = this.#storage.db.prepare('SELECT taskId,payload FROM requests WHERE requestKey=?').get(key);
+       if (prior) {
+-        if (prior.payload !== payload) throw new QueueError('conflict', 'request key reused with different content');
+         return prior.taskId as string;
+       }
+       const taskId = randomUUID();

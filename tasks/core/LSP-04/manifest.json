@@ -1,0 +1,103 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "LSP-04",
+  "taskVersion": "0.1.1",
+  "title": "并行工作区增量索引与安全发布",
+  "runtime": "fsharp",
+  "runtimeRange": "dotnet >= 10.0",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "dotnet",
+      "fsi",
+      "public-tests/checks.fsx"
+    ],
+    "hidden": [
+      "dotnet",
+      "fsi",
+      "__checks__/checks.fsx"
+    ]
+  },
+  "grader": {
+    "checks": "graders/LSP-04/checks",
+    "referencePatch": "graders/LSP-04/reference.patch",
+    "alternative": "graders/LSP-04/alternative",
+    "defectDetectors": [
+      "public/state-staging-invisible",
+      "hidden/state-abort-preserves-snapshot",
+      "hidden/resource-parallel-staging",
+      "hidden/boundary-undeclared-and-stale"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/state-staging-invisible",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "public/state-staging-invisible"
+    },
+    {
+      "id": "public/state-generation-isolation",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "public/state-generation-isolation"
+    },
+    {
+      "id": "public/incremental-delete",
+      "kind": "public",
+      "group": "regression",
+      "weight": 1,
+      "critical": true,
+      "summary": "public/incremental-delete"
+    },
+    {
+      "id": "hidden/state-abort-preserves-snapshot",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "hidden/state-abort-preserves-snapshot"
+    },
+    {
+      "id": "hidden/resource-parallel-staging",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": true,
+      "summary": "hidden/resource-parallel-staging"
+    },
+    {
+      "id": "hidden/boundary-undeclared-and-stale",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "hidden/boundary-undeclared-and-stale"
+    }
+  ]
+}

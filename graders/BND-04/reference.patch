@@ -1,0 +1,36 @@
+diff --git a/starter/src/bounded.ts b/starter/src/bounded.ts
+index a6e70d7..81c165c 100644
+--- a/starter/src/bounded.ts
++++ b/starter/src/bounded.ts
+@@ -1,7 +1,29 @@
+ export interface Limits { readonly maxBytes: number; readonly maxDepth: number; readonly maxNodes: number }
+ export class ParseLimitError extends Error { readonly reason: 'bytes' | 'depth' | 'nodes'; readonly offset: number; constructor(reason: 'bytes' | 'depth' | 'nodes', offset: number) { super(reason + ' limit at ' + offset); this.reason=reason; this.offset=offset; } }
+ export function parseBounded(text: string, limits: Limits): unknown {
+-  // 缺陷：直接物化输入，所有空间和深度预算都没有检查。
+-  void limits;
++  for (const value of [limits.maxBytes, limits.maxDepth, limits.maxNodes]) if (!Number.isSafeInteger(value) || value < 0) throw new RangeError('limits must be nonnegative safe integers');
++  if (Buffer.byteLength(text, 'utf8') > limits.maxBytes) throw new ParseLimitError('bytes', 0);
++  let depth=0, nodes=0;
++  for (let index=0; index<text.length;) {
++    const ch=text[index];
++    if (/\s/.test(ch) || ch===',' || ch===':') {index++; continue;}
++    if (ch===']' || ch==='}') {depth--; index++; continue;}
++    if (++nodes > limits.maxNodes) throw new ParseLimitError('nodes',index);
++    if (ch==='[' || ch==='{') {
++      if (++depth > limits.maxDepth) throw new ParseLimitError('depth',index);
++      index++; continue;
++    }
++    if (ch==='"') {
++      index++;
++      let closed=false;
++      while(index<text.length) {
++        if(text[index]==='\\') {index+=2; continue;}
++        if(text[index++]==='"') {closed=true; break;}
++      }
++      if(!closed) throw new SyntaxError('unterminated string');
++      continue;
++    }
++    do {index++;} while(index<text.length && !/[\s,:{}\[\]"]/.test(text[index]));
++  }
+   return JSON.parse(text);
+ }

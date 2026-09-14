@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "PERF-02",
-  "taskVersion": "0.1.0",
+  "taskVersion": "0.2.0",
   "title": "长列表局部更新与渲染范围",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -43,12 +43,15 @@
     "alternative": "graders/PERF-02/alternative",
     "defectDetectors": [
       "hidden/accesses-do-not-grow-with-list-size",
-      "public/does-not-scan-whole-list"
+      "public/does-not-scan-whole-list",
+      "public/dom-preserves-nodes-and-focus",
+      "hidden/dom-reuses-overlapping-window-rows",
+      "hidden/dom-ignores-offscreen-and-unchanged-patches"
     ]
   },
   "limits": {
     "timeoutMs": 60000,
-    "memoryMb": 512,
+    "memoryMb": 1024,
     "cpus": 1,
     "network": false
   },
@@ -132,6 +135,70 @@
       "weight": 1,
       "critical": false,
       "summary": "隐藏样本下的越界窗口。"
+    },
+    {
+      "id": "public/browser-renders-only-visible-rows",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "真实浏览器只挂载可见行。"
+    },
+    {
+      "id": "public/dom-preserves-nodes-and-focus",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "局部更新保留节点身份与未更新行焦点。"
+    },
+    {
+      "id": "public/browser-click-and-window-change",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "真实按钮点击更新及窗口切换。"
+    },
+    {
+      "id": "public/browser-dispose-is-idempotent",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "销毁可重复，销毁后调用拒绝。"
+    },
+    {
+      "id": "hidden/dom-reuses-overlapping-window-rows",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "窗口移动时重用重叠行的DOM节点。"
+    },
+    {
+      "id": "hidden/dom-ignores-offscreen-and-unchanged-patches",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "无变化或窗口外补丁不产生DOM变更。"
+    },
+    {
+      "id": "hidden/browser-text-is-literal-and-updates-persist",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "ID作为纯文本，窗口切换保留已更新值。"
+    },
+    {
+      "id": "hidden/browser-invalid-window-and-listener-cleanup",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "错误窗口不破坏当前状态，销毁移除监听。"
     }
   ]
 }

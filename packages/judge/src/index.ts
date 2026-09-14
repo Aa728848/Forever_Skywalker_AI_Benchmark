@@ -1,4 +1,9 @@
 import { judgeConfigValidator, reviewVerdictValidator, type JudgeConfig, type ReviewVerdict } from '@fsa/contracts';
+import { createHash } from 'node:crypto';
+export { createEnvironmentJudge, createOpenAICompatibleCompletion } from './http.ts';
+export { compareReviews } from './comparison.ts';
+import { resolveJudgeConfiguration, type JudgeConfiguration } from './configuration.ts';
+export { resolveJudgeConfiguration, type JudgeConfiguration } from './configuration.ts';
 
 /**
  * 独立评审适配器：只使用平台配置的模型端点与预算，令牌从环境读取且不落盘。
@@ -13,6 +18,8 @@ export interface ReviewRequest {
   readonly taskId: string;
   readonly promptVersion: string;
   readonly materials: readonly ReviewMaterial[];
+  /** 独立评审轮次；同轮、同材料复用结果，不重复消耗调用预算。 */
+  readonly roundId?: string;
 }
 
 export interface ReviewMaterial {
@@ -26,11 +33,16 @@ export interface ReviewOutcome {
   readonly calls: number;
   readonly inputTokens: number;
   readonly outputTokens: number;
+  readonly source: 'model' | 'scripted';
+  readonly configuration?: JudgeConfiguration;
+  readonly usageDetails?: Readonly<Record<string, number>>;
+  readonly responseModel?: string;
 }
 
 export interface JudgeAdapter {
   readonly model: string;
   readonly promptVersion: string;
+  readonly configuration?: JudgeConfiguration;
   review(request: ReviewRequest): Promise<ReviewOutcome>;
 }
 
@@ -41,10 +53,10 @@ export function judgeConfigFromEnvironment(env: NodeJS.ProcessEnv = process.env)
   const endpoint = env.BENCH_JUDGE_ENDPOINT;
   const model = env.BENCH_JUDGE_MODEL;
   const token = env[judgeTokenEnvironmentVariable];
-  if (endpoint === undefined || model === undefined || token === undefined || token === '') {
+  if (endpoint === undefined || model === undefined || token === undefined || [endpoint, model, token].some(value => value.trim() === '')) {
     throw new JudgeUnavailableError('评审未配置：需要 BENCH_JUDGE_ENDPOINT、BENCH_JUDGE_MODEL 与 ' + judgeTokenEnvironmentVariable + '。');
   }
-  const candidate = {
+  const candidate: Record<string, unknown> = {
     provider: env.BENCH_JUDGE_PROVIDER ?? 'openai-compatible',
     model,
     endpoint,
@@ -53,11 +65,28 @@ export function judgeConfigFromEnvironment(env: NodeJS.ProcessEnv = process.env)
     maxInputTokens: Number(env.BENCH_JUDGE_MAX_INPUT_TOKENS ?? 60000),
     maxOutputTokens: Number(env.BENCH_JUDGE_MAX_OUTPUT_TOKENS ?? 4000),
   };
+  const fields = { API: 'api', REASONING_EFFORT: 'reasoningEffort', REASONING_MODE: 'reasoningMode', THINKING: 'thinking',
+    THINKING_BUDGET: 'thinkingBudget', TEMPERATURE: 'temperature', TOP_P: 'topP', TOP_K: 'topK', SEED: 'seed',
+    VERBOSITY: 'verbosity', MAX_TOKENS_PER_CALL: 'maxTokensPerCall', OUTPUT_FORMAT: 'outputFormat', STREAM: 'stream' } as const;
+  const allowedEnvironment = new Set(['PROVIDER', 'ENDPOINT', 'MODEL', 'TOKEN', 'PROMPT_VERSION', 'MAX_CALLS', 'MAX_INPUT_TOKENS', 'MAX_OUTPUT_TOKENS', 'TIMEOUT_MS', ...Object.keys(fields)].map(name => 'BENCH_JUDGE_' + name));
+  if (Object.keys(env).some(name => name.startsWith('BENCH_JUDGE_') && !allowedEnvironment.has(name))) throw new JudgeUnavailableError('存在未知 BENCH_JUDGE_* 配置项；请检查拼写，不支持任意参数透传。');
+  for (const [name, field] of Object.entries(fields)) {
+    const value = env['BENCH_JUDGE_' + name];
+    if (value === undefined || value.trim() === '') continue;
+    if (field === 'stream') {
+      if (!['true', 'false'].includes(value)) throw new JudgeUnavailableError('BENCH_JUDGE_STREAM 必须为 true/false。');
+      candidate[field] = value === 'true';
+    } else candidate[field] = ['thinkingBudget', 'temperature', 'topP', 'topK', 'seed', 'maxTokensPerCall'].includes(field) ? Number(value) : value;
+  }
   if (!judgeConfigValidator.Check(candidate)) throw new JudgeUnavailableError('评审配置不合法（预算必须是正整数）。');
+  resolveJudgeConfiguration(candidate);
   return { config: candidate, token };
 }
 
-export type ReviewCompletion = (request: ReviewRequest, config: JudgeConfig, token: string) => Promise<{ text: string; inputTokens: number; outputTokens: number }>;
+export type ReviewCompletion = (request: ReviewRequest, config: JudgeConfig, token: string) => Promise<{
+  text: string; inputTokens: number; outputTokens: number; configuration?: JudgeConfiguration;
+  usageDetails?: Readonly<Record<string, number>>; responseModel?: string;
+}>;
 
 function assertBudget(config: JudgeConfig, calls: number, inputTokens: number, outputTokens: number): void {
   if (calls >= config.maxCalls) throw new JudgeBudgetExceededError('评审调用次数超过预算 ' + config.maxCalls);
@@ -71,25 +100,89 @@ function verifyVerdict(parsed: unknown, request: ReviewRequest, config: JudgeCon
     throw new JudgeUnavailableError('评审判决的 run/attempt 与请求不一致。');
   }
   if (parsed.promptVersion !== config.promptVersion) throw new JudgeUnavailableError('评审判决的提示版本与配置不一致。');
+  if (parsed.taskId !== request.taskId || parsed.model !== config.model || parsed.rubricVersion !== '0.1.0') {
+    throw new JudgeUnavailableError('评审判决的题目、模型或评分规则版本与请求不一致。');
+  }
+  const ids = new Set(request.materials.map(material => material.id));
+  for (const dimension of Object.values(parsed.dimensions)) {
+    if (dimension.evidence.some(id => !ids.has(id))) throw new JudgeUnavailableError('评审判决引用了未提供的证据。');
+  }
   return parsed;
+}
+
+function verifyRequest(request: ReviewRequest, config: Pick<JudgeConfig, 'promptVersion'>): void {
+  if (request.promptVersion !== config.promptVersion) throw new JudgeUnavailableError('评审请求的提示版本与配置不一致。');
+  if (request.materials.length === 0 || new Set(request.materials.map(material => material.id)).size !== request.materials.length
+    || request.materials.some(material => material.id.trim() === '' || material.text.trim() === '')) {
+    throw new JudgeUnavailableError('评审材料不能为空，且材料 ID 不得重复。');
+  }
 }
 
 /** 由调用方注入真正的模型调用；适配器只负责预算、提示版本与判决校验。 */
 export function createJudge(config: JudgeConfig, token: string, complete: ReviewCompletion): JudgeAdapter {
+  if (!judgeConfigValidator.Check(config) || token.trim() === '') throw new JudgeUnavailableError('评审配置或令牌不合法。');
+  config = structuredClone(config);
+  // 每轮上限在首次调用前固定，不能因剩余额度而改变第二轮生成配置。
+  if (config.provider !== 'scripted') config.maxTokensPerCall ??= Math.floor(config.maxOutputTokens / config.maxCalls);
+  const configuration = config.provider === 'scripted' ? undefined : resolveJudgeConfiguration(config);
   let calls = 0;
   let inputTokens = 0;
   let outputTokens = 0;
+  let queue: Promise<unknown> = Promise.resolve();
+  const cache = new Map<string, ReviewOutcome>();
   return {
     model: config.model,
     promptVersion: config.promptVersion,
-    async review(request: ReviewRequest): Promise<ReviewOutcome> {
-      assertBudget(config, calls, inputTokens, outputTokens);
-      const completion = await complete(request, config, token);
-      calls += 1;
-      inputTokens += completion.inputTokens;
-      outputTokens += completion.outputTokens;
-      const parsed: unknown = JSON.parse(completion.text);
-      return { verdict: verifyVerdict(parsed, request, config), calls, inputTokens, outputTokens };
+    ...(configuration === undefined ? {} : { get configuration() { return structuredClone(configuration); } }),
+    review(request: ReviewRequest): Promise<ReviewOutcome> {
+      const frozen = structuredClone(request);
+      const pending = queue.then(async (): Promise<ReviewOutcome> => {
+        verifyRequest(frozen, config);
+        const key = createHash('sha256').update(JSON.stringify([config, frozen])).digest('hex');
+        const cached = cache.get(key);
+        if (cached !== undefined) return structuredClone(cached);
+        assertBudget(config, calls, inputTokens, outputTokens);
+        if (config.maxTokensPerCall !== undefined && config.maxOutputTokens - outputTokens < config.maxTokensPerCall) {
+          throw new JudgeBudgetExceededError('剩余输出预算不足以保持相同的每轮参数，停止后续评审。');
+        }
+        calls += 1;
+        let completion: Awaited<ReturnType<ReviewCompletion>>;
+        try {
+          completion = await complete(frozen, { ...config, maxCalls: config.maxCalls - calls + 1,
+            maxInputTokens: config.maxInputTokens - inputTokens, maxOutputTokens: config.maxOutputTokens - outputTokens }, token);
+        } catch (error) {
+          // 失败的远端调用可能已经计费；用尽该适配器余量，禁止凭未知用量继续重试。
+          inputTokens = config.maxInputTokens;
+          outputTokens = config.maxOutputTokens;
+          throw error;
+        }
+        if (![completion.inputTokens, completion.outputTokens].every(value => Number.isSafeInteger(value) && value >= 0)) {
+          inputTokens = config.maxInputTokens;
+          outputTokens = config.maxOutputTokens;
+          throw new JudgeUnavailableError('模型没有返回有效的实际 token 用量，停止后续调用。');
+        }
+        inputTokens += completion.inputTokens;
+        outputTokens += completion.outputTokens;
+        if (configuration && completion.configuration && configuration.parametersFingerprint !== completion.configuration.parametersFingerprint) {
+          throw new JudgeUnavailableError('实际请求参数与冻结的评审配置不一致。');
+        }
+        if (inputTokens > config.maxInputTokens || outputTokens > config.maxOutputTokens) throw new JudgeBudgetExceededError('模型实际 token 用量超过剩余预算，本轮不产生判决。');
+        let parsed: unknown;
+        try { parsed = JSON.parse(completion.text); }
+        catch { throw new JudgeUnavailableError('评审响应不是合法 JSON。'); }
+        const verdict = verifyVerdict(parsed, frozen, config);
+        // 成本与时间来自平台，不能采信模型在 JSON 中声明的计费数字。
+        const outcome: ReviewOutcome = { verdict: { ...verdict, cost: { calls: 1, inputTokens: completion.inputTokens,
+          outputTokens: completion.outputTokens }, reviewedAt: new Date().toISOString() }, calls, inputTokens, outputTokens, source: 'model',
+          ...(configuration === undefined ? {} : { configuration }),
+          ...(completion.usageDetails === undefined ? {} : { usageDetails: completion.usageDetails }),
+          ...(completion.responseModel === undefined ? {} : { responseModel: completion.responseModel }),
+        };
+        cache.set(key, structuredClone(outcome));
+        return outcome;
+      });
+      queue = pending.catch(() => undefined);
+      return pending;
     },
   };
 }
@@ -104,6 +197,7 @@ export function createScriptedJudge(script: readonly string[], model = 'scripted
     model,
     promptVersion,
     async review(request: ReviewRequest): Promise<ReviewOutcome> {
+      verifyRequest(request, { promptVersion });
       const text = script[index];
       index += 1;
       calls += 1;
@@ -111,7 +205,7 @@ export function createScriptedJudge(script: readonly string[], model = 'scripted
       inputTokens += 100;
       outputTokens += 50;
       const parsed: unknown = JSON.parse(text);
-      return { verdict: verifyVerdict(parsed, request, { provider: 'scripted', model, endpoint: 'memory', promptVersion, maxCalls: 100, maxInputTokens: 1000000, maxOutputTokens: 1000000 }), calls, inputTokens, outputTokens };
+      return { verdict: verifyVerdict(parsed, request, { provider: 'scripted', model, endpoint: 'memory', promptVersion, maxCalls: 100, maxInputTokens: 1000000, maxOutputTokens: 1000000 }), calls, inputTokens, outputTokens, source: 'scripted' };
     },
   };
 }

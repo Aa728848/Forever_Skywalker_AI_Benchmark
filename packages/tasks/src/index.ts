@@ -65,6 +65,9 @@ export function readManifest(taskId: string): TaskManifest {
   const ids = manifest.checks.map(check => check.id);
   if (new Set(ids).size !== ids.length) throw new Error('检查 ID 重复。');
   if (!manifest.checks.some(check => check.critical)) throw new Error('题目包必须声明至少一个关键验收项。');
+  for (const group of ['behavior', 'boundary', 'state', 'regression', 'resources']) {
+    if (!manifest.checks.some(check => check.group === group)) throw new Error(`题目包缺少 ${group} 评分组的真实检查，无法生成完整的可用验证分。`);
+  }
   for (const detector of manifest.grader.defectDetectors) {
     if (!ids.includes(detector)) throw new Error(`缺陷检出项不在检查清单中：${detector}`);
   }
@@ -131,9 +134,27 @@ export function listFiles(directory: string): string[] {
 export function installHiddenChecks(manifest: TaskManifest, workspace: string): string[] {
   const files: string[] = [];
   const target = join(workspace, hiddenDirectoryName);
+  rmSync(target, { recursive: true, force: true });
   copyTree(join(repositoryRoot, manifest.grader.checks), target, workspace, files);
   files.sort();
   return files;
+}
+
+/** 公开检查也由平台恢复：候选自行修改或追加的检查不参与评分。 */
+export function installPublicChecks(manifest: TaskManifest, workspace: string): string[] {
+  const entry = manifest.workspace.entries.find(item => item.to === 'public-tests');
+  if (entry === undefined) throw new Error('题目包必须声明 public-tests 导出目录。');
+  const target = join(workspace, 'public-tests');
+  rmSync(target, { recursive: true, force: true });
+  const files: string[] = [];
+  copyTree(join(taskPackageDir(manifest.taskId), entry.from), target, workspace, files);
+  return files.sort();
+}
+
+/** Node 测试进程隔离让候选 stdout 成为 TAP 注释，不能作为顶层验收行。 */
+export function controlledTestCommand(command: readonly string[]): string[] {
+  if (command[0] !== 'node' || !command.includes('--test')) return [...command];
+  return ['node', '--test-isolation=process', ...command.slice(1).filter(argument => !argument.startsWith('--test-isolation='))];
 }
 
 /** 用替代实现覆盖工作区，用于证明检查未绑定某一种代码结构。 */
@@ -162,7 +183,8 @@ function runCommand(command: readonly string[], cwd: string, artifactDir: string
   let result;
   try {
     // 使用文件描述符而不是管道：受限沙盒会拒绝命名管道，且原始输出需要留存为证据。
-    result = spawnSync(resolved, args, { cwd, stdio: ['ignore', stdoutFd, stderrFd], timeout: timeoutMs, windowsHide: true });
+    const controlled = controlledTestCommand([executable, ...args]);
+    result = spawnSync(resolved, controlled.slice(1), { cwd, stdio: ['ignore', stdoutFd, stderrFd], timeout: timeoutMs, windowsHide: true });
   } finally {
     closeSync(stdoutFd);
     closeSync(stderrFd);
@@ -215,6 +237,9 @@ export function parseTap(output: string): CheckOutcome[] {
       durationMs,
     });
   }
+  const counts = new Map<string, number>();
+  for (const outcome of outcomes) counts.set(outcome.id, (counts.get(outcome.id) ?? 0) + 1);
+  for (const outcome of outcomes) if ((counts.get(outcome.id) ?? 0) > 1) outcome.ok = false;
   return outcomes;
 }
 
@@ -350,7 +375,8 @@ export function verifyTaskPackage(options: VerifyOptions): VerificationReport {
       expectedFailed,
       actualFailed,
       missing,
-      ok: !run.timedOut && missing.length === 0 && sameSet(actualFailed, expectedFailed),
+      ok: !run.timedOut && run.exitCode === (expectedFailed.length === 0 ? 0 : 1)
+        && missing.length === 0 && sameSet(actualFailed, expectedFailed),
     });
   };
 

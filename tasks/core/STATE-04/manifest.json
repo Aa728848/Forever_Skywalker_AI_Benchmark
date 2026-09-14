@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "STATE-04",
-  "taskVersion": "0.1.0",
+  "taskVersion": "0.1.1",
   "title": "UI、服务、缓存的故障后一致性",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -45,7 +45,11 @@
       "hidden/layers-stay-consistent-after-failure",
       "hidden/rolls-back-every-applied-layer",
       "public/layers-stay-consistent-after-failure",
-      "public/rolls-back-every-applied-layer"
+      "public/rolls-back-every-applied-layer",
+      "public/restart-rebuilds-projections-after-commit",
+      "public/stale-notification-cannot-roll-back-ui",
+      "hidden/process-exit-after-durable-commit-recovers",
+      "hidden/cache-ui-interruption-and-duplicate-notifications-converge"
     ]
   },
   "limits": {
@@ -134,6 +138,46 @@
       "weight": 1,
       "critical": false,
       "summary": "隐藏样本：重复提交同一个值是幂等的。"
+    },
+    {
+      "id": "public/restart-rebuilds-projections-after-commit",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "已持久化事务在服务重启后恢复缓存和界面，重试不重复交易。"
+    },
+    {
+      "id": "public/stale-notification-cannot-roll-back-ui",
+      "kind": "public",
+      "group": "regression",
+      "weight": 1,
+      "critical": true,
+      "summary": "乱序重复通知不得发布旧状态或重复交易。"
+    },
+    {
+      "id": "public/precommit-failure-has-no-transaction",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "提交前崩溃无半成品，重试正常。"
+    },
+    {
+      "id": "hidden/process-exit-after-durable-commit-recovers",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "真实进程在持久提交后退出，新进程语义恢复三层一致。"
+    },
+    {
+      "id": "hidden/cache-ui-interruption-and-duplicate-notifications-converge",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": true,
+      "summary": "缓存/通知中断后收敛，重复恢复不增加交易。"
     }
   ]
 }

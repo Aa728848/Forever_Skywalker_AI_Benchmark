@@ -1,0 +1,99 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "FE-03",
+  "taskVersion": "0.1.1",
+  "title": "长会话流式渲染与重连",
+  "runtime": "typescript",
+  "runtimeRange": "node >=24.14.1 <25",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "node",
+      "--test",
+      "--test-isolation=process",
+      "--test-reporter=tap",
+      "public-tests/**/*.test.ts"
+    ],
+    "hidden": [
+      "node",
+      "--test",
+      "--test-isolation=process",
+      "--test-reporter=tap",
+      "__checks__/**/*.test.ts"
+    ]
+  },
+  "grader": {
+    "checks": "graders/FE-03/checks",
+    "referencePatch": "graders/FE-03/reference.patch",
+    "alternative": "graders/FE-03/alternative",
+    "defectDetectors": [
+      "public/reconnect-and-dom-identity",
+      "public/error-and-keyboard-retry",
+      "hidden/state-gap-and-atomic-snapshot",
+      "hidden/reordered-snapshot-preserves-nodes"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/reconnect-and-dom-identity",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "public/reconnect-and-dom-identity"
+    },
+    {
+      "id": "public/error-and-keyboard-retry",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "public/error-and-keyboard-retry"
+    },
+    {
+      "id": "hidden/state-gap-and-atomic-snapshot",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "hidden/state-gap-and-atomic-snapshot"
+    },
+    {
+      "id": "hidden/resource-scroll-and-disposal",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": true,
+      "summary": "hidden/resource-scroll-and-disposal"
+    },
+    {
+      "id": "hidden/reordered-snapshot-preserves-nodes",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": true,
+      "summary": "hidden/reordered-snapshot-preserves-nodes"
+    }
+  ]
+}

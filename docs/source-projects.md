@@ -1,6 +1,6 @@
 # 来源项目与版本
 
-调研日期：2026-09-14。以下是本机实际读取的提交与源码定位。已检查七个项目的受跟踪文件均无改动；未对未跟踪文件作完整性声明。**本次没有执行七个原仓库的完整测试，也没有修改它们。** 当前记录是出题来源，不代表基线已经通过正式评测环境验证。
+初次调研日期：2026-09-14。以下保留初始化时读取的提交与定位；初次检查七个项目受跟踪文件无改动，未对未跟踪文件作完整性声明。本轮已制作并验证七个固定来源模块副本，**没有修改来源工作区，也没有执行七个原产品的完整测试**。Python来源的本地目录已不存在，按下述固定公开commit恢复，不能把初始化目录记录解释为当前仍存在。
 
 ## 冻结来源
 
@@ -77,6 +77,20 @@
 
 发布题目时记录上游 commit、submodule commits、锁文件哈希、夹具来源、环境 image digest、操作系统档案、参考补丁摘要和目标缺陷。原仓库集成题使用独立副本，不在上述七个工作区原地执行改写任务。
 
-当前平台与独立核心题代码采用独立实现。后续复制源码、保留 license headers 或分发集成快照时逐项记录来源与许可；尤其不能把不同许可的仓库统一标成 MIT。外部账号、真实凭据、真实订单和实时行情不作为可复现验收依赖，使用合成数据和本地服务替身。
+平台与独立核心题采用独立实现；七个集成题已保留固定源模块、许可及哈希，不能统一标成 MIT。外部账号、真实凭据、真实订单和实时行情不作为可复现验收依赖，使用明确说明的合成数据与本地服务替身。
 
-部分 CodeGraph 索引未覆盖新文件；这些位置已回到当前磁盘文件读取。来源版本已冻结，但环境和基线执行仍需要在 M1–M3 验证。
+部分 CodeGraph 索引未覆盖相应文件，先尝试索引后通过 git show 读取固定commit。模块基线与三向验证已在Windows执行；Linux和发布校准仍待验证。
+
+## 集成副本与许可位置
+
+| 集成题 | 来源/依赖清单 | 许可 |
+| --- | --- | --- |
+| INT-CWT | tasks/integration/INT-CWT/PROVENANCE.json | cwtools MIT；固定 FSharp.Data 3.3.1 依赖 Apache-2.0 |
+| INT-HARNESS | tasks/integration/INT-HARNESS/starter/SOURCE.json | MIT |
+| INT-SUB | tasks/integration/INT-SUB/starter/SOURCE.json | subscription 与 vendored harness 各自 MIT |
+| INT-VERIFIER | tasks/integration/INT-VERIFIER/source-provenance.json | MIT |
+| INT-TRADING | tasks/integration/INT-TRADING/starter/SOURCE.json | 保留原 PolyForm Noncommercial 1.0.0 |
+| INT-WEB | tasks/integration/INT-WEB/source-provenance.json | 根/SSH Apache-2.0；plugin-manager 单包 BSD-3-Clause；yaml 2.9.0 ISC |
+| INT-PY | tasks/integration/INT-PY/starter/SOURCE.json | MIT；从公开仓库固定 8db8a114355a9d7fdf9a8d1d5c87f6aeebd18770 恢复 |
+
+缺陷注入文件会与原源码哈希不同，这种差异在各题清单、参考补丁及题面中明确记录。INT-TRADING/SUB 也保留了上游已有缺陷，未经修复的原基线会如实失败，不能为了显示绿色而改写历史。

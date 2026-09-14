@@ -1,0 +1,32 @@
+diff --git a/starter/Pipeline.fs b/starter/Pipeline.fs
+index 7e23de2..f0e64d5 100644
+--- a/starter/Pipeline.fs
++++ b/starter/Pipeline.fs
+@@ -75,8 +75,11 @@ type Pipeline(onPublished: string -> unit) =
+ 
+     member _.Publish(plan: Plan) =
+         let published = write (fun () ->
+-            // 缺陷：忽略文档版本、关闭/配置代际和失效准入，允许迟到发布。
+-            let current = true
++            // 只允许当前文档与当前配置代际下的精确准入发布。
++            let current =
++                plan.Generation = generation
++                && documents.GetVersionByPath(plan.Path) = Some plan.Version
++                && sameAdmission plan.Admission (tracker.TryAdmit(Domain.NonLocalisation, plan.Path))
+             if current then
+                 symbols <- Map.add plan.Path plan.Symbols symbols
+                 diagnostics <- Map.add plan.Path plan.Errors diagnostics
+
+diff --git a/starter/upstream/src/LSP/DocumentStore.fs b/starter/upstream/src/LSP/DocumentStore.fs
+index 19ff6e4..e78b7be 100644
+--- a/starter/upstream/src/LSP/DocumentStore.fs
++++ b/starter/upstream/src/LSP/DocumentStore.fs
+@@ -110,7 +110,7 @@ type DocumentStore() =
+ 
+     /// Get or create a text cache (the same version only creates a string once)
+     let getCachedText (v: Version) =
+-        if true then
++        if v.cachedVersion = v.version then
+             v.cachedText
+         else
+             let text = v.text.ToString()

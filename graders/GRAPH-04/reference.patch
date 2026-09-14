@@ -1,28 +1,56 @@
-diff --git a/starter/src/invalidation.ts b/starter/src/invalidation.ts
-index dab8f20..7aeca08 100644
+--- a/starter/src/graph.ts
++++ b/starter/src/graph.ts
+@@ -62,7 +62,7 @@
+       return reverse.get(id) as Set<string>;
+     };
+     for (const id of changed) {
+-      for (const dependency of this.documents.get(id)?.deps ?? []) mutable(dependency);
++      for (const dependency of this.documents.get(id)?.deps ?? []) mutable(dependency).delete(id);
+       if (records.has(id)) mutable(id);
+     }
+     for (const id of changed) for (const dependency of records.get(id)?.deps ?? []) mutable(dependency).add(id);
+@@ -72,4 +72,3 @@
+     return { graph, affected };
+   }
+ }
+-
 --- a/starter/src/invalidation.ts
 +++ b/starter/src/invalidation.ts
-@@ -31,11 +31,21 @@ export class Invalidator {
+@@ -31,10 +31,15 @@
  
    invalidate(changed: readonly string[]): readonly string[] {
      const affected = new Set<string>();
 +    const queue: string[] = [];
      for (const id of changed) {
        if (!this.#consumers.has(id)) throw new UnknownNodeError(id);
-+      if (affected.has(id)) continue;
-       affected.add(id);
--      // 缺陷：只失效直接依赖者，间接依赖与环内其它节点被漏掉。
+-      affected.add(id);
 -      for (const consumer of this.#consumers.get(id) as string[]) affected.add(consumer);
-+      queue.push(id);
++      if (!affected.has(id)) { affected.add(id); queue.push(id); }
 +    }
-+    // 一旦节点被标记就不再入队，环因此自然终止。
-+    while (queue.length > 0) {
-+      const current = queue.shift() as string;
-+      for (const consumer of this.#consumers.get(current) as string[]) {
-+        if (affected.has(consumer)) continue;
-+        affected.add(consumer);
-+        queue.push(consumer);
++    for (let cursor = 0; cursor < queue.length; cursor++) {
++      for (const consumer of this.#consumers.get(queue[cursor]!)!) {
++        if (!affected.has(consumer)) { affected.add(consumer); queue.push(consumer); }
 +      }
      }
      return [...affected].sort();
    }
+--- a/starter/src/workspace.ts
++++ b/starter/src/workspace.ts
+@@ -37,7 +37,7 @@
+     if (changes.length === 0) return this.#generation;
+     const next = this.#graph.update(changes);
+     this.#graph = next.graph;
+-    this.#pending = next.affected;
++    this.#pending = new Set([...this.#pending, ...next.affected]);
+     this.#generation++;
+     return this.#generation;
+   }
+@@ -63,7 +63,7 @@
+ 
+   commit(ticket: Prepared): boolean {
+     const candidate = this.#tickets.get(ticket);
+-    if (!candidate || candidate.publication !== this.#publication) return false;
++    if (!candidate || ticket.generation !== this.#generation || candidate.publication !== this.#publication) return false;
+     this.#published = candidate.snapshot;
+     this.#publication++;
+     this.#pending = new Set();

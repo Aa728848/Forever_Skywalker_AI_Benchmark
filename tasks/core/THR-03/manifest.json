@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "THR-03",
-  "taskVersion": "0.2.0",
+  "taskVersion": "0.2.1",
   "title": "读写锁、锁外回调和异常释放",
   "runtime": "fsharp",
   "runtimeRange": "dotnet >= 10.0",
@@ -41,7 +41,10 @@
       "public/readers-run-concurrently",
       "public/releases-after-exception",
       "hidden/concurrent-readers-meet",
-      "hidden/exception-in-read-section-releases"
+      "hidden/exception-in-read-section-releases",
+      "public/notification-runs-after-write-release",
+      "hidden/notification-exception-keeps-gate-usable",
+      "hidden/queued-writer-precedes-new-reader"
     ]
   },
   "limits": {
@@ -138,6 +141,30 @@
       "weight": 1,
       "critical": false,
       "summary": "200 轮顺序读写后计数回到 0 且返回值正确。"
+    },
+    {
+      "id": "public/notification-runs-after-write-release",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "慢通知期间其它真实线程可取得读锁，通知值原样传播。"
+    },
+    {
+      "id": "hidden/notification-exception-keeps-gate-usable",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "通知抛异常后其它线程仍可取得写锁。"
+    },
+    {
+      "id": "hidden/queued-writer-precedes-new-reader",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "读者持锁时写者排队，随后到达的新读者不得越过等待写者。"
     }
   ]
 }

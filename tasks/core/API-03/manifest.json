@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "API-03",
-  "taskVersion": "0.1.0",
+  "taskVersion": "0.1.1",
   "title": "SSE 序列恢复与背压",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -45,7 +45,11 @@
       "hidden/ignores-replayed-events",
       "hidden/rejects-sequence-gap",
       "public/ignores-replayed-events",
-      "public/rejects-sequence-gap"
+      "public/rejects-sequence-gap",
+      "public/utf8-split-at-every-byte",
+      "public/slow-consumer-queue-is-bounded",
+      "hidden/every-utf8-split-position-preserves-data",
+      "hidden/incomplete-frame-budget-is-enforced"
     ]
   },
   "limits": {
@@ -134,6 +138,54 @@
       "weight": 1,
       "critical": false,
       "summary": "隐藏样本下的结束语义。"
+    },
+    {
+      "id": "public/utf8-split-at-every-byte",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "真实UTF-8字节逐字节拆分后保持中文和emoji。"
+    },
+    {
+      "id": "public/slow-consumer-queue-is-bounded",
+      "kind": "public",
+      "group": "resources",
+      "weight": 1,
+      "critical": true,
+      "summary": "慢消费者积压到预算时明确失败，队列不会增长。"
+    },
+    {
+      "id": "public/reconnect-uses-delivered-cursor",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "重连从已交付游标恢复，未消费事件不会丢失或重复。"
+    },
+    {
+      "id": "hidden/every-utf8-split-position-preserves-data",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "每个UTF-8拆分边界保持原数据。"
+    },
+    {
+      "id": "hidden/incomplete-frame-budget-is-enforced",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": true,
+      "summary": "无限未闭合帧受字节预算限制，失败可见。"
+    },
+    {
+      "id": "hidden/draining-permits-progress-without-duplicate-delivery",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": true,
+      "summary": "排空后继续，重放不重复，缺帧不推进游标。"
     }
   ]
 }

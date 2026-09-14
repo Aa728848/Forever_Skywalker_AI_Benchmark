@@ -75,6 +75,10 @@ describe('候选工作区导出', () => {
 });
 
 describe('TAP 解析', () => {
+  it('同一个检查 ID 出现多次时不采信抢先打印的通过行', () => {
+    const outcomes = parseTap('ok 1 - hidden/check\nnot ok 2 - hidden/check\n');
+    expect(outcomes.map(outcome => outcome.ok)).toEqual([false, false]);
+  });
   it('区分为通过、失败与跳过', () => {
     const output = [
       'TAP version 13',
@@ -138,14 +142,17 @@ describe('题目状态与题目包资产一致', () => {
   it('非 designed 的题目必须有可校验的题目包，designed 的题目不得有 manifest', () => {
     // 状态必须与磁盘上的题目包一一对应，避免“加了夹具没更新状态”或反之。
     const ready = tasks.filter(task => task.status !== 'designed');
-    const packaged = readdirSync(join(repositoryRoot, 'tasks', 'core'))
-      .filter(name => existsSync(join(repositoryRoot, 'tasks', 'core', name, 'manifest.json')));
+    const packaged = ['core', 'integration'].flatMap(track => {
+      const directory = join(repositoryRoot, 'tasks', track);
+      return existsSync(directory) ? readdirSync(directory).filter(name => existsSync(join(directory, name, 'manifest.json'))) : [];
+    });
     expect(ready.map(task => task.id).sort()).toEqual(packaged.sort());
     for (const task of ready) {
       const manifest = readManifest(task.id);
       expect(manifest.taskId).toBe(task.id);
       expect(manifest.taskVersion).toBe(task.version);
       expect(manifest.runtime).toBe(task.runtime);
+      expect([...new Set(manifest.checks.map(check => check.group))].sort(), `${task.id} 必须可计算完整功能分`).toEqual(['behavior', 'boundary', 'regression', 'resources', 'state']);
     }
     for (const task of tasks.filter(item => item.status === 'designed')) {
       expect(existsSync(join(taskPackageDir(task.id), 'manifest.json'))).toBe(false);

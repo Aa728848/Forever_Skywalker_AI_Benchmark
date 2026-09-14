@@ -9,3 +9,5 @@
 | `alternative/starter/src/sse.ts` | 替代实现：先切分全部完整帧再逐帧处理 |
 
 验证：`pnpm task:verify API-03`。
+
+0.1.1 增加 starter/src/byte-stream.ts 的 UTF-8 真实字节边界、有界队列/帧预算与已交付游标重连检查。

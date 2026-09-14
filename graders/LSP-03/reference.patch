@@ -1,0 +1,22 @@
+diff --git a/starter/src/Diagnostics.fsx b/starter/src/Diagnostics.fsx
+index 291e883..8b862fb 100644
+--- a/starter/src/Diagnostics.fsx
++++ b/starter/src/Diagnostics.fsx
+@@ -14,7 +14,7 @@ type Coordinator() =
+     member _.Start(uri, version) = lock gate (fun () ->
+         if versions.ContainsKey(uri) && version <= versions.[uri] then invalidArg "version" "stale version"
+         match active.TryGetValue(uri) with
+-        | true, (_, source) -> source.Dispose()
++        | true, (_, source) -> source.Cancel(); source.Dispose()
+         | _ -> ()
+         sequence <- sequence + 1
+         let source = new CancellationTokenSource()
+@@ -24,7 +24,7 @@ type Coordinator() =
+         request)
+     member _.Complete(request: Request, diagnostics: string list) = lock gate (fun () ->
+         match active.TryGetValue(request.Uri) with
+-        | true, (_, source) ->
++        | true, (current, source) when current.Id = request.Id ->
+             published.[request.Uri] <- diagnostics
+             active.Remove(request.Uri) |> ignore
+             source.Dispose()

@@ -9,3 +9,5 @@
 | `alternative/starter/src/page.ts` | 替代实现：按前缀切分后逐字符校验数字 |
 
 验证：`pnpm task:verify API-02`。
+
+0.1.1 增加 starter/src/idempotent-writer.ts 的在途幂等、冲突与失败重试检查。

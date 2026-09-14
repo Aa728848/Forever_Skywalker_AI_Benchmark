@@ -1,0 +1,29 @@
+{
+  "repository": "cwtools-vscode",
+  "commit": "753a0d7c2df1f4285911febf2d10a949887f4499",
+  "relationship": "mechanism-derived-independent-task",
+  "sourceLicense": "MIT",
+  "copiedSource": false,
+  "files": [
+    {
+      "path": "src/Main/RefreshCoordinator.fs",
+      "sha256": "2c1b81335426e92f100c7234236b5ce26f71e3ae7a8d429f0973faa76c5f66c1"
+    },
+    {
+      "path": "src/Main/DiagnosticInvalidation.fs",
+      "sha256": "c697d2cf3abb3b46c582e34eb6cda6e363b163e221ff9b1fff12658011b6dac4"
+    },
+    {
+      "path": "src/Main/DiagnosticInvalidation.Tests.fsx",
+      "sha256": "17dd745caf7e35c0f5cb0d7e0867d0741c03a0a095268dd15b954316c82c25bd"
+    },
+    {
+      "path": "src/Main/Program.fs",
+      "sha256": "0dda6b1599be7ae820dc0102691ec1a04b693f1928a0fbef61e874e94574ea39"
+    },
+    {
+      "path": "src/Main/WorkspacePublication.Tests.fsx",
+      "sha256": "7357eaed129595d04d8c012ee47098d1f3a8d323484efa42840fe08491cb72b2"
+    }
+  ]
+}

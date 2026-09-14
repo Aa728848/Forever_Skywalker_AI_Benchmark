@@ -1,0 +1,134 @@
+{
+  "repository": "dsh-llm-verifier",
+  "commit": "1a6b4151b8036203749e1b202b01395319a1578a",
+  "license": "MIT",
+  "licenseSha256": "7b8a02301acb6e2397f8d4d093be8f189b7d0e92ec990c684395c50c51560951",
+  "files": [
+    {
+      "path": "src/auto.ts",
+      "target": "starter/upstream/src/auto.ts",
+      "sha256": "dd0cb430953bb5504c56bb5a6f6b099bfea81d1e3bb66a0e42190b14291e9bfc",
+      "bytes": 26546
+    },
+    {
+      "path": "src/router.ts",
+      "target": "starter/upstream/src/router.ts",
+      "sha256": "69fbc7c8b7dc76a4c24cd258a0a9d199841dcd95701a1c50f34a1843e6947cb0",
+      "bytes": 94327
+    },
+    {
+      "path": "src/cache.ts",
+      "target": "starter/upstream/src/cache.ts",
+      "sha256": "2d2eef2092051f98207b1feb0221c3aecd79d67a58291536a791db20ce09d2d9",
+      "bytes": 6190
+    },
+    {
+      "path": "src/core.ts",
+      "target": "starter/upstream/src/core.ts",
+      "sha256": "c4d6fd93b91c6a2b27bac36f9aac10130b55ec1988e923428fdca77d166ccf55",
+      "bytes": 43233
+    },
+    {
+      "path": "src/session.ts",
+      "target": "starter/upstream/src/session.ts",
+      "sha256": "56908f122b6f762dea0d91281e84853cd75500e1e28a57245cc598ea1428589c",
+      "bytes": 8847
+    },
+    {
+      "path": "src/replay.ts",
+      "target": "starter/upstream/src/replay.ts",
+      "sha256": "5eb17745117c000dcd0ecfb74277dc0b1ce98e5009fdc65de3f37db4b09aa892",
+      "bytes": 25892
+    },
+    {
+      "path": "src/cache.test.ts",
+      "target": "upstream-tests/src/cache.test.ts.txt",
+      "sha256": "1d928ea578d151581e505446a16f838dc32ba8754d7acfd249efe5890bc010f0",
+      "bytes": 4325,
+      "kind": "original-regression-source"
+    },
+    {
+      "path": "src/auto.test.ts",
+      "target": "upstream-tests/src/auto.test.ts.txt",
+      "sha256": "de7080b84d3ca09a9159a1245a5c2f6cc1915c004f8d3dda0ba8670eca9155ea",
+      "bytes": 23606,
+      "kind": "original-regression-source"
+    },
+    {
+      "path": "src/router.test.ts",
+      "target": "upstream-tests/src/router.test.ts.txt",
+      "sha256": "32ffc03d642aabed8bee001afa5087c0ef78ebe8aef0b57146bbce0048e92d9b",
+      "bytes": 97812,
+      "kind": "original-regression-source"
+    },
+    {
+      "path": "src/session.test.ts",
+      "target": "upstream-tests/src/session.test.ts.txt",
+      "sha256": "1499e2c502cee6f55bd8da1c3ae98b9c5d64e152aec10eab83dacd0a67c5fc9c",
+      "bytes": 10725,
+      "kind": "original-regression-source"
+    },
+    {
+      "path": "src/parity.test.ts",
+      "target": "upstream-tests/src/parity.test.ts.txt",
+      "sha256": "f4de6c2193731ec56f889ae16c9cfdf2cc0b768fd29b63c1e9784c16ca340fb3",
+      "bytes": 8769,
+      "kind": "original-regression-source"
+    },
+    {
+      "path": "src/engine.ts",
+      "target": "starter/upstream/src/engine.ts",
+      "bytes": 52793,
+      "sha256": "6ecdee5ab7cc74a33586cb536793f3784b325d8a351aa37797afe70218e922db"
+    },
+    {
+      "path": "src/caller.ts",
+      "target": "starter/upstream/src/caller.ts",
+      "bytes": 27075,
+      "sha256": "f9ea2d39c8796b4c10cc97a81c09760827a0c6d5481103b14afca88dc6e5176c"
+    },
+    {
+      "path": "src/top-logprobs.ts",
+      "target": "starter/upstream/src/top-logprobs.ts",
+      "bytes": 13581,
+      "sha256": "aa4ab2d7321bfc9148d753f5654d02de12f90b81ae244553fadfb353cf16080e"
+    },
+    {
+      "path": "src/engine.test.ts",
+      "target": "upstream-tests/src/engine.test.ts.txt",
+      "bytes": 54808,
+      "sha256": "7077d4e58ed841f747104567e7d943dfb3923561f02603560d3438250f7181a6",
+      "kind": "original-regression-source"
+    }
+  ],
+  "externalRuntimeImports": [
+    "node:crypto",
+    "node:fs/promises",
+    "node:path"
+  ],
+  "notes": [
+    "通过 git show 固定提交只读复制。原工作区未修改。",
+    "保留上游完整运行模块闭包、许可证、原始回归源与逐文件哈希；变更只限明示缺陷注入和参考/替代补丁。"
+  ],
+  "runtimeBoundary": {
+    "replacedModule": "src/caller.ts",
+    "reason": "真实模型、宿主LlmRuntime与调用成本均由显式受信本地传输替身提供；完整engine/cache/core/auto/router/session/replay运行原代码。原caller/top-logprobs保留供接口检查，不发起网络。"
+  },
+  "injectedDefects": [
+    {
+      "path": "starter/upstream/src/auto.ts",
+      "originalSha256": "dd0cb430953bb5504c56bb5a6f6b099bfea81d1e3bb66a0e42190b14291e9bfc",
+      "starterSha256": "b5b242e19a864cbbcbb5e0e88abb7f2a00642e5d0a3298ea640ef725d9dc5a94"
+    },
+    {
+      "path": "starter/upstream/src/engine.ts",
+      "originalSha256": "6ecdee5ab7cc74a33586cb536793f3784b325d8a351aa37797afe70218e922db",
+      "starterSha256": "c47f56058c7533ad656869bb38ac6b78f5bb24022c88847fbfd479fd611d4d81"
+    },
+    {
+      "path": "starter/upstream/src/cache.ts",
+      "originalSha256": "2d2eef2092051f98207b1feb0221c3aecd79d67a58291536a791db20ce09d2d9",
+      "starterSha256": "322548f8b1acc035904a6aec8479cb70969d5e40d8d1bc057bcb8b8413f6aee8"
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -80,7 +80,7 @@ describe('正式运行入口', () => {
       expect(created.statusCode).toBe(201);
       const status = created.json();
       expect(status).toMatchObject({ taskId: 'CACHE-02', phase: 'verified', classification: 'check-failed' });
-      expect(status.scoring).toMatchObject({ mode: 'formal', quality: null, total: null });
+      expect(status.scoring).toMatchObject({ mode: 'local', quality: null, total: null });
       expect(status.scoring.functional).toBeGreaterThan(0);
       expect(status.knownFailures.map((item: { id: string }) => item.id).sort()).toEqual([
         'public/retry-after-failure', 'public/sync-throw-becomes-rejection',
@@ -100,7 +100,25 @@ describe('正式运行入口', () => {
       expect(report.body).toContain('`public.stdout`');
       expect((await app.inject('/api/runs/run-missing/attempt-missing/report')).statusCode).toBe(404);
       expect(queried.json()).toEqual(status);
+      const detail = await app.inject(`/api/runs/${status.runId}/${status.attemptId}/detail`);
+      expect(detail.statusCode).toBe(200);
+      expect(detail.json().execution).toMatchObject({ isolation: 'none', environment: { profile: 'local', network: true } });
+      expect(detail.json().events.some((event: { type: string }) => event.type === 'score.finalized')).toBe(true);
+      expect((await app.inject(`/api/runs/${status.runId}/${status.attemptId}/artifacts/public.stdout`)).statusCode).toBe(200);
+      expect((await app.inject(`/api/runs/${status.runId}/${status.attemptId}/artifacts/unknown`)).statusCode).toBe(404);
+      expect((await app.inject({ method: 'POST', url: `/api/runs/${status.runId}/${status.attemptId}/review` })).statusCode).toBe(401);
       expect((await app.inject('/api/runs')).json()).toHaveLength(1);
+
+      const sourcePath = join(candidate, 'starter', 'src', 'keyed-loader.ts');
+      const source = readFileSync(sourcePath, 'utf8');
+      writeFileSync(sourcePath, source + '\n// changed after first submission\n');
+      expect((await app.inject({ method: 'POST', url: '/api/runs', headers: { 'x-bench-token': 'secret-token' }, payload: body })).statusCode).toBe(409);
+      writeFileSync(sourcePath, source);
+
+      const outside = join(directory, 'outside');
+      exportWorkspace('CACHE-02', outside);
+      symlinkSync(outside, join(submissions, 'escape'), process.platform === 'win32' ? 'junction' : 'dir');
+      expect((await app.inject({ method: 'POST', url: '/api/runs', headers: { 'x-bench-token': 'secret-token' }, payload: submission('escape') })).statusCode).toBe(400);
       expect((await app.inject('/api/runs/run-missing/attempt-missing')).statusCode).toBe(404);
 
       // 重复完成事件：同键同快照复用同一次冻结，不产生第二条记录

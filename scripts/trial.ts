@@ -1,17 +1,22 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
+import { parseArgs } from 'node:util';
 import type { ExecutionResult } from '../packages/contracts/src/index.ts';
-import { requireTask } from '../packages/catalog/src/index.ts';
-import { applyReferencePatch, exportWorkspace, readManifest, repositoryRoot } from '../packages/tasks/src/index.ts';
+import { requireTask, tasks } from '../packages/catalog/src/index.ts';
+import { applyReferencePatch, exportWorkspace, installAlternative, readManifest, repositoryRoot } from '../packages/tasks/src/index.ts';
 import { createEnvelope, createRunStore } from '../packages/runs/src/index.ts';
 import { readExecutionScore, verifySubmission } from '../packages/executor/src/index.ts';
 
-/** M1-06 试点试跑：8 道题各自跑一次缺陷候选与一次参考补丁候选，记录可执行状态与原始证据。 */
-const pilots = ['FE-01', 'LSP-01', 'CACHE-02', 'BND-02', 'THR-03', 'GRAPH-03', 'CONC-04', 'PERF-04'];
+/** 受控试跑：默认8道试点，可显式选择或覆盖全题库；同时验收缺陷、参考和完整功能分。 */
+const args = parseArgs({ options: { all: { type: 'boolean' }, alternatives: { type: 'boolean' }, task: { type: 'string', multiple: true } } });
+if (args.values.all && args.values.task?.length) throw new Error('--all 与 --task 不能同时指定。');
+const pilots = args.values.all ? tasks.filter(task => task.status !== 'designed').map(task => task.id)
+  : args.values.task ?? ['FE-01', 'LSP-01', 'CACHE-02', 'BND-02', 'THR-03', 'GRAPH-03', 'CONC-04', 'PERF-04'];
+if (pilots.length === 0 || new Set(pilots).size !== pilots.length) throw new Error('试跑题目不能为空或重复。');
 
 interface VariantReport {
-  variant: 'defect' | 'reference';
+  variant: 'defect' | 'reference' | 'alternative';
   classification: string;
   functional: number | null;
   quality: number | null;
@@ -27,10 +32,15 @@ interface VariantReport {
   reusedExecution: boolean;
   referencePatchApplied: boolean;
   error: string | null;
+  isolation?: string;
+  runId?: string;
+  attemptId?: string;
+  candidateTreeHash?: string;
 }
 
 interface TaskReport {
   taskId: string;
+  taskVersion: string;
   title: string;
   difficulty: string;
   runtime: string;
@@ -39,17 +49,16 @@ interface TaskReport {
   note: string;
 }
 
-function taskIdOf(result: ExecutionResult): string {
-  return result.taskId;
-}
-
-function summarize(variant: VariantReport['variant'], expected: string[], result: ExecutionResult, reused: boolean, patchApplied: boolean): VariantReport {
+function summarize(variant: VariantReport['variant'], expected: string[], result: ExecutionResult, reused: boolean, patchApplied: boolean, attemptDirectory: string): VariantReport {
   const failed = result.checks.filter(check => check.status === 'failed').map(check => check.id).sort();
   const missing = result.checks.filter(check => check.status === 'not-run').map(check => check.id).sort();
   const declared = [...expected].sort();
-  const score = readExecutionScore(join(artifactRoot, 'runs', taskIdOf(result), result.runId, result.attemptId));
+  const score = readExecutionScore(attemptDirectory);
   return {
     variant,
+    runId: result.runId,
+    attemptId: result.attemptId,
+    candidateTreeHash: result.candidateTreeHash,
     classification: result.classification,
     functional: score?.functional ?? null,
     quality: score?.quality ?? null,
@@ -65,6 +74,7 @@ function summarize(variant: VariantReport['variant'], expected: string[], result
     reusedExecution: reused,
     referencePatchApplied: patchApplied,
     error: null,
+    isolation: result.isolation,
   };
 }
 
@@ -85,14 +95,16 @@ for (const taskId of pilots) {
   const manifest = readManifest(taskId);
   const catalogTask = requireTask(taskId);
   const report: TaskReport = {
-    taskId, title: manifest.title, difficulty: catalogTask.difficulty, runtime: manifest.runtime,
+    taskId, taskVersion: manifest.taskVersion, title: manifest.title, difficulty: catalogTask.difficulty, runtime: manifest.runtime,
     phases: [], ok: false, note: '',
   };
   const scratch = mkdtempSync(join(tmpdir(), `fsa-trial-${taskId.toLowerCase()}-`));
   try {
-    for (const variant of ['defect', 'reference'] as const) {
+    const variants: VariantReport['variant'][] = args.values.alternatives ? ['defect', 'reference', 'alternative'] : ['defect', 'reference'];
+    for (const variant of variants) {
       const candidate = join(scratch, variant);
       exportWorkspace(taskId, candidate);
+      if (variant === 'alternative') installAlternative(manifest, candidate);
       let patchApplied = false;
       if (variant === 'reference') {
         const applied = applyReferencePatch(manifest, candidate, join(artifactRoot, 'raw'));
@@ -111,29 +123,36 @@ for (const taskId of pilots) {
       const outcome = await verifySubmission({
         store, taskId, envelope, candidateDirectory: candidate, submittedBy: 'trial', profile, image, imageDigest,
       });
-      report.phases.push(summarize(variant, manifest.grader.defectDetectors, outcome.execution, outcome.reusedExecution, patchApplied));
+      report.phases.push(summarize(variant, manifest.grader.defectDetectors, outcome.execution, outcome.reusedExecution, patchApplied, outcome.submission.directory));
     }
     const defect = report.phases.find(phase => phase.variant === 'defect');
     const reference = report.phases.find(phase => phase.variant === 'reference');
-    const referencePassed = reference?.classification === 'passed';
-    const defectBlocked = defect !== undefined && defect.classification !== 'passed';
-    report.ok = referencePassed && defectBlocked && (defect?.matchesDeclaredDetectors ?? false);
+    const alternative = report.phases.find(phase => phase.variant === 'alternative');
+    const referencePassed = reference?.classification === 'passed' && reference.functional === 50 && reference.criticalPassed === true;
+    const alternativePassed = !args.values.alternatives || (alternative?.classification === 'passed' && alternative.functional === 50 && alternative.criticalPassed === true);
+    const defectBlocked = defect !== undefined && defect.classification === 'check-failed' && defect.functional !== null;
+    report.ok = referencePassed && alternativePassed && defectBlocked && (defect?.matchesDeclaredDetectors ?? false);
     report.note = [
-      referencePassed ? '' : '参考补丁未全部通过',
+      referencePassed ? '' : '参考补丁未全部通过或缺少完整的 50/50 可用验证分',
+      alternativePassed ? '' : '替代实现未全部通过或缺少完整的 50/50 可用验证分',
       defectBlocked ? '' : '缺陷候选未被拦住',
       defect?.matchesDeclaredDetectors ? '' : '缺陷失败项与声明的检出项不一致',
     ].filter(Boolean).join('；');
   } catch (error) {
     report.note = error instanceof Error ? error.message : String(error);
   } finally {
-    rmSync(scratch, { recursive: true, force: true });
+    const target = resolve(scratch);
+    if (dirname(target) !== resolve(tmpdir()) || !basename(target).startsWith('fsa-trial-')) throw new Error('试跑临时目录越界。');
+    rmSync(target, { recursive: true, force: true });
   }
   reports.push(report);
   const defectPhase = report.phases.find(phase => phase.variant === 'defect');
   const referencePhase = report.phases.find(phase => phase.variant === 'reference');
   const defect = defectPhase?.classification ?? '-';
   const reference = referencePhase?.classification ?? '-';
-  console.log(`${report.ok ? '通过' : '不通过'} ${taskId}：缺陷=${defect}（可用验证 ${defectPhase?.functional ?? '未取得'}/50），参考=${reference}（可用验证 ${referencePhase?.functional ?? '未取得'}/50）${report.note === '' ? '' : `（${report.note}）`}`);
+  const alternativePhase = report.phases.find(phase => phase.variant === 'alternative');
+  const alternativeText = args.values.alternatives ? `，替代=${alternativePhase?.classification ?? '-'}（可用验证 ${alternativePhase?.functional ?? '未取得'}/50）` : '';
+  console.log(`${report.ok ? '通过' : '不通过'} ${taskId}：缺陷=${defect}（可用验证 ${defectPhase?.functional ?? '未取得'}/50），参考=${reference}（可用验证 ${referencePhase?.functional ?? '未取得'}/50）${alternativeText}${report.note === '' ? '' : `（${report.note}）`}`);
 }
 
 const okCount = reports.filter(report => report.ok).length;
@@ -141,7 +160,8 @@ writeFileSync(join(artifactRoot, 'report.json'), `${JSON.stringify({
   schemaVersion: '0.1.0',
   generatedAt: new Date().toISOString(),
   profile,
-  isolation: profile === 'linux-container' ? 'container' : 'none',
+  isolation: reports.flatMap(report => report.phases).length === 0 ? 'not-run'
+    : [...new Set(reports.flatMap(report => report.phases.map(phase => phase.isolation ?? 'not-run')))].join(','),
   image,
   imageDigest,
   tasks: reports,

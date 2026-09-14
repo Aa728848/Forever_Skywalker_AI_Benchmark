@@ -1,0 +1,17 @@
+{
+  "name": "@fsa/evaluation",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "dependencies": {
+    "@fsa/catalog": "workspace:*",
+    "@fsa/contracts": "workspace:*",
+    "@fsa/core": "workspace:*",
+    "@fsa/executor": "workspace:*",
+    "@fsa/judge": "workspace:*",
+    "@fsa/runs": "workspace:*",
+    "@fsa/static": "workspace:*",
+    "@fsa/tasks": "workspace:*"
+  }
+}

@@ -1,0 +1,97 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "THR-04",
+  "taskVersion": "0.1.1",
+  "title": "多线程代际发布与中断恢复",
+  "runtime": "mixed",
+  "runtimeRange": "node >=24.14.1 <25",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "node",
+      "--test",
+      "--test-isolation=process",
+      "--test-reporter=tap",
+      "public-tests/**/*.test.ts"
+    ],
+    "hidden": [
+      "node",
+      "--test",
+      "--test-isolation=process",
+      "--test-reporter=tap",
+      "__checks__/**/*.test.ts"
+    ]
+  },
+  "grader": {
+    "checks": "graders/THR-04/checks",
+    "referencePatch": "graders/THR-04/reference.patch",
+    "alternative": "graders/THR-04/alternative",
+    "defectDetectors": [
+      "public/state-old-generation-finishes-late",
+      "hidden/state-three-generations-and-copy"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/state-old-generation-finishes-late",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "public/state-old-generation-finishes-late"
+    },
+    {
+      "id": "public/state-cancel-preserves-confirmed",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "public/state-cancel-preserves-confirmed"
+    },
+    {
+      "id": "public/boundary-duplicate",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "public/boundary-duplicate"
+    },
+    {
+      "id": "hidden/resource-failure-cleans-peers",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": true,
+      "summary": "hidden/resource-failure-cleans-peers"
+    },
+    {
+      "id": "hidden/state-three-generations-and-copy",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": true,
+      "summary": "hidden/state-three-generations-and-copy"
+    }
+  ]
+}

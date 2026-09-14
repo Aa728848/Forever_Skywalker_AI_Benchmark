@@ -1,0 +1,7 @@
+# INT-CWT 受信资产
+
+固定来源、许可与原文件 SHA-256 见题目包 PROVENANCE.json。baseline 中的 DocumentStore.fs 保留固定提交原字节，Pipeline.fs 为正确的组合适配；它们不导出给候选。
+
+参考补丁恢复上游缓存版本判断并核对发布代际、文档版本及 admission。替代实现使用模式匹配完成发布准入。隐藏检查直接运行原协议、文档、锁与失效跟踪模块，没有调用来源工作区服务或修改来源仓库。
+
+`node scripts/task.ts verify INT-CWT` 验证起始缺陷、参考与替代的公开/隐藏阶段。原 DocumentStore 回归断言包含在公开检查中，加载指令和报告包装是唯一适配。整个 VSCode 扩展构建和完整游戏分析器不在本题验收范围。

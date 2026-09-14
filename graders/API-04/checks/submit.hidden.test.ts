@@ -71,3 +71,23 @@ test('hidden/distinct-keys-get-distinct-ids-and-empty-key-is-rejected', async ()
   await assert.rejects(async () => submitter.submit('', 'c'), SubmitError);
   assert.equal(memory.entries.size, 2);
 });
+
+test('hidden/restart-new-key-has-unique-id', async () => {
+  const memory = memoryStore();
+  const first = await new TaskSubmitter(memory.store).submit('before-restart', 'a');
+  const restarted = new TaskSubmitter(memory.store);
+  const second = await restarted.submit('after-restart', 'b');
+  assert.notEqual(first, second, '不同键跨进程实例仍必须得到不同 taskId');
+  assert.equal(await restarted.submit('before-restart', 'a'), first);
+  assert.equal(memory.entries.size, 2);
+});
+
+test('hidden/resource-retries-do-not-accumulate', async () => {
+  const memory = memoryStore();
+  const submitter = new TaskSubmitter(memory.store);
+  const id = await submitter.submit('retried', 'payload');
+  for (let index = 0; index < 2000; index += 1) await submitter.submit('retried', 'payload');
+  assert.equal(memory.writes.length, 1, '重复提交不得累积写入或提交记录');
+  assert.deepEqual(submitter.committed, [id]);
+  assert.equal(memory.entries.size, 1);
+});

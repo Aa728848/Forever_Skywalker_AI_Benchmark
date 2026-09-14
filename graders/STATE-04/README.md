@@ -9,3 +9,5 @@
 | `alternative/starter/src/consistency.ts` | 替代实现：先收集撤销闭包再统一执行 |
 
 验证：`pnpm task:verify STATE-04`。
+
+0.1.1 增加 starter/src/durable-coordinator.ts 的真实文件、进程提交后退出、重启投影重建与旧通知隔离；参考原子 JSON 与替代 JSONL 均通过。

@@ -1,32 +1,16 @@
 diff --git a/starter/src/pool.ts b/starter/src/pool.ts
-index 0af866b..af26c34 100644
+index 90dff7e..d2d4130 100644
 --- a/starter/src/pool.ts
 +++ b/starter/src/pool.ts
-@@ -9,16 +9,45 @@ export interface PoolOutcome {
+@@ -9,16 +9,25 @@ export interface PoolOutcome {
  
  export interface PoolOptions { readonly size?: number }
  
-+interface WorkerMessage {
-+  readonly id: string;
-+  readonly threadId: number;
-+  readonly value: number | null;
-+  readonly error: string | null;
-+}
-+
 +import { Worker } from 'node:worker_threads';
-+
-+function runOne(job: Job): Promise<WorkerMessage> {
-+  return new Promise<WorkerMessage>((resolve, reject) => {
-+    const worker = new Worker(new URL('./worker.ts', import.meta.url), { workerData: { id: job.id, payload: job.payload } });
-+    worker.once('message', (message: WorkerMessage) => {
-+      resolve(message);
-+      void worker.terminate();
-+    });
-+    worker.once('error', error => reject(error instanceof Error ? error : new Error(String(error))));
-+  });
-+}
-+
++interface WorkerMessage { id: string; threadId: number; value: number | null; error: string | null }
  export async function runPool(jobs: readonly Job[], options: PoolOptions = {}): Promise<PoolOutcome> {
++  const size = options.size ?? 4;
++  if (!Number.isInteger(size) || size < 1) throw new RangeError('size 必须是正整数');
    const results: Record<string, number> = {};
    const failures: string[] = [];
 -  const threadIds: number[] = [];
@@ -39,22 +23,17 @@ index 0af866b..af26c34 100644
 -  }));
 -  return { results, failures, threadIds };
 +  const threadIds = new Set<number>();
-+  if (jobs.length === 0) return { results, failures, threadIds: [] };
-+  const requested = options.size ?? 4;
-+  if (!Number.isInteger(requested) || requested < 1) throw new RangeError('size 必须是大于等于 1 的整数');
-+  const size = Math.min(requested, jobs.length);
-+  let cursor = 0;
-+  const runners = Array.from({ length: size }, async () => {
-+    while (cursor < jobs.length) {
-+      const job = jobs[cursor] as Job;
-+      cursor += 1;
-+      const message = await runOne(job);
++  const batches: Job[][] = Array.from({ length: Math.min(size, jobs.length) }, () => []);
++  jobs.forEach((job, index) => batches[index % batches.length].push(job));
++  await Promise.all(batches.map(batch => new Promise<void>((resolve, reject) => {
++    const worker = new Worker(new URL('./worker.ts', import.meta.url), { workerData: batch });
++    worker.on('message', (message: WorkerMessage) => {
 +      threadIds.add(message.threadId);
-+      if (message.error !== null) failures.push(message.id);
-+      else results[message.id] = message.value as number;
-+    }
-+  });
-+  await Promise.all(runners);
-+  return { results, failures, threadIds: [...threadIds].sort((left, right) => left - right) };
++      if (message.error === null) Object.defineProperty(results, message.id, { value: message.value, enumerable: true });
++      else failures.push(message.id);
++    });
++    worker.once('error', reject);
++    worker.once('exit', code => code === 0 ? resolve() : reject(new Error('worker exit ' + code)));
++  })));
++  return { results, failures, threadIds: [...threadIds].sort((a, b) => a - b) };
  }
-\ No newline at end of file

@@ -9,3 +9,5 @@
 | `alternative/starter/src/acceptance.ts` | 替代实现：用当前句柄而非布尔标记表示占用 |
 
 验证：`pnpm task:verify LIFE-04`。
+
+0.1.1 增加 starter/src/process-acceptance.ts 的真实子进程、超时后代回收、裁判自触发阻断与快照代际检查；Linux 孤儿组路径需容器实跑。

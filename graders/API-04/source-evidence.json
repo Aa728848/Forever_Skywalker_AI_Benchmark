@@ -1,0 +1,92 @@
+{
+  "taskId": "API-04",
+  "taskVersion": "0.2.0",
+  "kind": "independent-scenario-adaptation",
+  "copiesOriginalSource": false,
+  "sourceFiles": [
+    {
+      "repository": "deepseek-harness",
+      "commit": "2377c272a8e839e0a84c9f0e623b867a1dce2014",
+      "path": "packages/session/session-persistence-jsonl/src/lease.ts",
+      "sha256": "377f24b1446382d703d5f1346f44e15a25368a0e7967e5bd41db700a919d7ad8",
+      "gitBlob": "59dfe27fcacc9943ae0eda8fe7bde4d136c86afb",
+      "anchors": [
+        {
+          "symbol": "SessionWriteLease",
+          "line": 55
+        },
+        {
+          "symbol": "static async acquire",
+          "line": 70
+        },
+        {
+          "symbol": "async release",
+          "line": 124
+        }
+      ]
+    },
+    {
+      "repository": "deepseek-harness",
+      "commit": "2377c272a8e839e0a84c9f0e623b867a1dce2014",
+      "path": "packages/session/session-persistence-jsonl/src/generation.ts",
+      "sha256": "f58df1ea4eed28fd17bfcba7c219ac0b724ddfda36d9737a0f9a1f047098744c",
+      "gitBlob": "1e1fd9aa0fed80dbc63cb40c4d49e31307a32fec",
+      "anchors": [
+        {
+          "symbol": "async function publishPreparedMigration",
+          "line": 879
+        },
+        {
+          "symbol": "async function writeSyncedTemp",
+          "line": 710
+        },
+        {
+          "symbol": "async function publishCurrentExclusive",
+          "line": 812
+        }
+      ]
+    },
+    {
+      "repository": "deepseek-harness",
+      "commit": "2377c272a8e839e0a84c9f0e623b867a1dce2014",
+      "path": "packages/util/atomic-write/src/index.ts",
+      "sha256": "d03a02761e9987bc9cfbf2b2b4697992af8d873ca7175bd09db980d59206642e",
+      "gitBlob": "467c3c29b50220fbe9fb585dfae95544a3ee9ac9",
+      "anchors": [
+        {
+          "symbol": "export async function writeFileAtomic",
+          "line": 78
+        },
+        {
+          "symbol": "export async function withFileLock",
+          "line": 157
+        }
+      ]
+    },
+    {
+      "repository": "dsh-trading",
+      "commit": "b6cf5535093cdc43fc61a7037d997bace7fb0e6d",
+      "path": "packages/client-ui-trading/src/tasks/ledger.ts",
+      "sha256": "7cb0c9de4fea45ac64c2f738128ed3a6ee4e1852391aecbc2a56da68632e75d1",
+      "gitBlob": "940b9cf84556d2641198f5464a77ae72ee39ce96",
+      "anchors": [
+        {
+          "symbol": "private commit",
+          "line": 366
+        },
+        {
+          "symbol": "apply(envelope",
+          "line": 408
+        },
+        {
+          "symbol": "openRun(taskId",
+          "line": 492
+        },
+        {
+          "symbol": "reconcileStartup()",
+          "line": 586
+        }
+      ]
+    }
+  ]
+}

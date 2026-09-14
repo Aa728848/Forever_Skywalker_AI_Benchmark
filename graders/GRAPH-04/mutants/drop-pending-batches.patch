@@ -1,0 +1,11 @@
+--- a/starter/src/workspace.ts
++++ b/starter/src/workspace.ts
+@@ -37,7 +37,7 @@
+     if (changes.length === 0) return this.#generation;
+     const next = this.#graph.update(changes);
+     this.#graph = next.graph;
+-    this.#pending = new Set([...this.#pending, ...next.affected]);
++    this.#pending = next.affected;
+     this.#generation++;
+     return this.#generation;
+   }

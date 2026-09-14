@@ -1,0 +1,162 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "INT-VERIFIER",
+  "taskVersion": "0.1.0",
+  "title": "自动验收证据时效与重入控制",
+  "runtime": "typescript",
+  "runtimeRange": "node >=24.14.1 <25 (--experimental-transform-types)",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      },
+      {
+        "from": "upstream-tests",
+        "to": "upstream-tests"
+      },
+      {
+        "from": "LICENSE",
+        "to": "LICENSE"
+      },
+      {
+        "from": "source-provenance.json",
+        "to": "source-provenance.json"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "node",
+      "--experimental-transform-types",
+      "--test",
+      "--test-reporter=tap",
+      "public-tests/**/*.test.mjs"
+    ],
+    "hidden": [
+      "node",
+      "--experimental-transform-types",
+      "--test",
+      "--test-reporter=tap",
+      "__checks__/**/*.test.mjs"
+    ]
+  },
+  "grader": {
+    "checks": "graders/INT-VERIFIER/checks",
+    "referencePatch": "graders/INT-VERIFIER/reference.patch",
+    "alternative": "graders/INT-VERIFIER/alternative",
+    "defectDetectors": [
+      "public/changed-evidence-invalidates-prior-acceptance",
+      "public/missing-criteria-never-pass-the-gate",
+      "public/engine-cache-isolates-judge-model",
+      "hidden/failed-write-and-wrong-session-do-not-reuse-verdict",
+      "hidden/criteria-loss-cannot-be-hidden-by-perfect-mean",
+      "hidden/cache-identity-covers-prompt-and-rule-version",
+      "hidden/concurrent-engines-share-one-flight-and-one-cost"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/current-review-closes-gate-without-reentry",
+      "kind": "public",
+      "group": "behavior",
+      "critical": true,
+      "weight": 1,
+      "summary": "完整当前验收关闭自动门禁，裁判自身不计为业务工具。"
+    },
+    {
+      "id": "public/changed-evidence-invalidates-prior-acceptance",
+      "kind": "public",
+      "group": "state",
+      "critical": true,
+      "weight": 1,
+      "summary": "后续编辑使既有验收失效。"
+    },
+    {
+      "id": "public/missing-criteria-never-pass-the-gate",
+      "kind": "public",
+      "group": "boundary",
+      "critical": true,
+      "weight": 1,
+      "summary": "缺失验收条目不视为通过。"
+    },
+    {
+      "id": "public/engine-cache-isolates-judge-model",
+      "kind": "public",
+      "group": "state",
+      "critical": true,
+      "weight": 1,
+      "summary": "真实engine缓存按模型隔离。"
+    },
+    {
+      "id": "public/malformed-judge-fails-and-keeps-billed-usage",
+      "kind": "public",
+      "group": "boundary",
+      "critical": false,
+      "weight": 1,
+      "summary": "不可解析判决失败且保留已消耗用量。"
+    },
+    {
+      "id": "public/replay-uses-the-live-per-criterion-gate",
+      "kind": "public",
+      "group": "regression",
+      "critical": false,
+      "weight": 1,
+      "summary": "真实replay与当前门槛共享每项判定。"
+    },
+    {
+      "id": "hidden/failed-write-and-wrong-session-do-not-reuse-verdict",
+      "kind": "hidden",
+      "group": "state",
+      "critical": true,
+      "weight": 1,
+      "summary": "失败写入和跨会话验收均不能复用。"
+    },
+    {
+      "id": "hidden/criteria-loss-cannot-be-hidden-by-perfect-mean",
+      "kind": "hidden",
+      "group": "boundary",
+      "critical": true,
+      "weight": 1,
+      "summary": "缺项和失败条目不能被高均分隐藏。"
+    },
+    {
+      "id": "hidden/cache-identity-covers-prompt-and-rule-version",
+      "kind": "hidden",
+      "group": "regression",
+      "critical": true,
+      "weight": 1,
+      "summary": "prompt和规则变化必须更新缓存身份。"
+    },
+    {
+      "id": "hidden/concurrent-engines-share-one-flight-and-one-cost",
+      "kind": "hidden",
+      "group": "resources",
+      "critical": true,
+      "weight": 1,
+      "summary": "并发冷缓存engine共享一次模型调用及成本。"
+    },
+    {
+      "id": "hidden/failed-flight-can-retry-and-disk-cache-stays-bounded",
+      "kind": "hidden",
+      "group": "resources",
+      "critical": false,
+      "weight": 1,
+      "summary": "失败flight可重试且落盘缓存保持容量上限。"
+    }
+  ]
+}

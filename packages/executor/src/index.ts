@@ -1,26 +1,26 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, closeSync, copyFileSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, truncateSync, writeFileSync } from 'node:fs';
 import { availableParallelism, arch, platform, totalmem } from 'node:os';
-import { basename, join, relative, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { scoreExecution, type QualityEvidence } from '@fsa/core';
 import { analyzeWorkspace, type StaticPolicy, type StaticReport } from '@fsa/static';
 import {
-  executionResultValidator, executionScoreValidator, explainExecutionResult, runStatusValidator,
+  executionResultValidator, executionScoreValidator, explainExecutionResult, reviewVerdictValidator, runStatusValidator,
   type ExecutionArtifact, type ExecutionCheck, type ExecutionClassification,
   type ExecutionManifest, type ExecutionResult, type ExecutionScore, type ReviewVerdict, type RunStatus, type TaskManifest,
 } from '@fsa/contracts';
-import { appendRunEvent, type RunStore, type SubmissionOutcome } from '@fsa/runs';
-import { installHiddenChecks, parseTap, type CheckOutcome } from '@fsa/tasks';
+import { appendRunEvent, digestTree, type RunStore, type SubmissionOutcome } from '@fsa/runs';
+import { controlledTestCommand, installHiddenChecks, installPublicChecks, parseTap, taskPackageDir, type CheckOutcome } from '@fsa/tasks';
 import {
-  InfrastructureUnavailableError, buildContainerArgv, buildContainerInvocation,
+  InfrastructureUnavailableError, buildContainerArgv, buildContainerInvocation, captureCommand,
   defaultPidsLimit, hiddenChecksMount, isContainerRuntimeFailure, probeContainerRuntime, requirePinnedImage,
   type ContainerRuntime,
 } from './container.ts';
 
-export { InfrastructureUnavailableError } from './container.ts';
+export { InfrastructureUnavailableError, probeContainerRuntime, requirePinnedImage } from './container.ts';
 
 /**
  * 最小独立执行器：只从冻结快照物化被测对象，只运行平台白名单里的固定命令，
@@ -29,6 +29,7 @@ export { InfrastructureUnavailableError } from './container.ts';
  */
 const samplerUrl = new URL('./resource-sampler.mjs', import.meta.url).href;
 const samplerHostPath = fileURLToPath(new URL('./resource-sampler.mjs', import.meta.url));
+export const maximumPhaseOutputBytes = 8 * 1024 * 1024;
 /** 仓库根目录：受信侧的 graders/ 隐藏资产从仓库读取，绝不从候选工作区读取。 */
 const repositoryRoot = resolve(fileURLToPath(new URL('../../../', import.meta.url)));
 
@@ -45,6 +46,8 @@ export interface PhaseTransport {
   cwd: string;
   env: NodeJS.ProcessEnv;
   reportHostPath: string;
+  stop?: () => void;
+  finish?: (exitCode: number | null) => { oomKilled: boolean; error: string | null };
 }
 
 export interface PhaseExecution {
@@ -59,6 +62,8 @@ export interface PhaseExecution {
   timedOut: boolean;
   cancelled: boolean;
   spawnError: string | null;
+  oomKilled?: boolean;
+  outputLimitExceeded?: boolean;
   durationMs: number;
   stdout: string;
   stderr: string;
@@ -95,7 +100,7 @@ function childEnvironment(reportPath: string): NodeJS.ProcessEnv {
 
 /** 命令必须来自平台白名单；node 命令追加堆上限与受信采样器，其余命令按声明原样执行。 */
 function buildArgv(declared: readonly string[], memoryMb: number): string[] {
-  const [executable = '', ...rest] = declared;
+  const [executable = '', ...rest] = controlledTestCommand(declared);
   if (executable !== 'node') return [...declared];
   return [process.execPath, `--import=${samplerUrl}`, `--max-old-space-size=${memoryMb}`, ...rest];
 }
@@ -148,6 +153,7 @@ export async function runPhase(options: RunPhaseOptions): Promise<PhaseExecution
   const startedAt = process.hrtime.bigint();
   let timedOut = false;
   let cancelled = false;
+  let outputLimitExceeded = false;
   let spawnError: string | null = null;
 
   let child;
@@ -165,14 +171,21 @@ export async function runPhase(options: RunPhaseOptions): Promise<PhaseExecution
     throw new InfrastructureUnavailableError(error instanceof Error ? error.message : String(error));
   }
 
-  const stop = (reason: 'timeout' | 'cancel'): void => {
+  const stop = (reason: 'timeout' | 'cancel' | 'output'): void => {
+    if (timedOut || cancelled || outputLimitExceeded) return;
     if (reason === 'timeout') timedOut = true;
-    else cancelled = true;
+    else if (reason === 'cancel') cancelled = true;
+    else outputLimitExceeded = true;
+    options.transport?.stop?.();
     if (child.pid !== undefined) terminateTree(child.pid);
   };
   const timer = setTimeout(() => stop('timeout'), options.timeoutMs);
+  const outputWatcher = setInterval(() => {
+    if (fstatSync(stdoutFd).size > maximumPhaseOutputBytes || fstatSync(stderrFd).size > maximumPhaseOutputBytes) stop('output');
+  }, 50);
   const onAbort = (): void => stop('cancel');
   options.signal?.addEventListener('abort', onAbort, { once: true });
+  if (options.signal?.aborted) onAbort();
 
   const closed = await new Promise<{ code: number | null; signal: string | null }>(resolvePromise => {
     child.on('error', error => {
@@ -183,10 +196,20 @@ export async function runPhase(options: RunPhaseOptions): Promise<PhaseExecution
   });
 
   clearTimeout(timer);
+  clearInterval(outputWatcher);
   options.signal?.removeEventListener('abort', onAbort);
   closeSync(stdoutFd);
   closeSync(stderrFd);
+  const transportState = options.transport?.finish?.(closed.code);
+  if (transportState?.error) spawnError = transportState.error;
   const durationMs = Math.round(Number(process.hrtime.bigint() - startedAt) / 1e6);
+  for (const path of [stdoutPath, stderrPath, reportPath]) {
+    if (existsSync(path) && statSync(path).size > maximumPhaseOutputBytes) {
+      outputLimitExceeded = true;
+      truncateSync(path, maximumPhaseOutputBytes);
+      appendFileSync(path, '\n# FSA: output truncated after exceeding the 8 MiB limit\n');
+    }
+  }
   const stdout = readFileSync(stdoutPath, 'utf8');
   const stderr = readFileSync(stderrPath, 'utf8');
 
@@ -202,6 +225,8 @@ export async function runPhase(options: RunPhaseOptions): Promise<PhaseExecution
     timedOut,
     cancelled,
     spawnError,
+    oomKilled: transportState?.oomKilled ?? false,
+    outputLimitExceeded,
     durationMs,
     stdout,
     stderr,
@@ -218,11 +243,14 @@ const memorySignatures = /heap out of memory|Allocation failed|Reached heap limi
 /** 结论优先级：取消 > 基础设施故障 > 超时 > 内存耗尽 > 检查失败/通过。 */
 export function classifyExecution(phases: readonly PhaseExecution[], checks: readonly ExecutionCheck[]): ExecutionClassification {
   if (phases.some(phase => phase.cancelled)) return 'cancelled';
+  if (phases.some(phase => phase.outputLimitExceeded)) return 'check-failed';
   if (phases.some(phase => phase.spawnError !== null)) return 'infrastructure-error';
   // 容器档案下 125/126/127 是 docker 自身的失败码（参数、守护进程或固定命令无法启动），属于基础设施故障。
   if (phases.some(phase => phase.isolation === 'container' && !phase.timedOut && isContainerRuntimeFailure(phase.exitCode))) return 'infrastructure-error';
   if (phases.some(phase => phase.timedOut)) return 'timeout';
+  if (phases.some(phase => phase.oomKilled)) return 'memory-exceeded';
   if (phases.some(phase => memorySignatures.test(phase.stderr))) return 'memory-exceeded';
+  if (phases.some(phase => phase.exitCode !== 0 || phase.signal !== null)) return 'check-failed';
   if (checks.some(check => check.status !== 'passed')) return 'check-failed';
   return 'passed';
 }
@@ -237,11 +265,21 @@ function artifactOf(id: string, path: string, root: string): ExecutionArtifact {
   };
 }
 
+export type QualityProvider = (context: {
+  frozenDirectory: string;
+  execution: ExecutionResult;
+  manifest: ExecutionManifest;
+  artifactDirectory: string;
+  signal?: AbortSignal;
+}) => Promise<QualityEvidence & { artifacts?: ExecutionArtifact[]; notes?: string[] }>;
+
 export interface ExecuteOptions {
   store: RunStore;
   runId: string;
   attemptId: string;
   artifactDirectory?: string;
+  /** 平台分配的短临时路径，避免 Windows 嵌套性能采样的工作目录超过进程启动限制。 */
+  workspaceDirectory?: string;
   signal?: AbortSignal;
   /** 静态客观分规则；给出时对冻结后的工作区做一次测量。 */
   staticPolicy?: StaticPolicy;
@@ -249,6 +287,7 @@ export interface ExecuteOptions {
   review?: ReviewVerdict;
   /** 额外的质量证据（例如性能维度必须提供的 benchmark 客观分）。 */
   quality?: QualityEvidence;
+  qualityProvider?: QualityProvider;
 }
 
 function checkRows(manifest: TaskManifest, phases: readonly PhaseExecution[]): ExecutionCheck[] {
@@ -280,13 +319,15 @@ export function staticObjectiveFor(task: TaskManifest, report: StaticReport): Qu
 }
 
 /** 组装容器阶段：docker 调用替换本地直接命令，采样报告写到容器内 /work 再由宿主读取。 */
-function containerTransport(input: {
+export function containerTransport(input: {
   kind: 'public' | 'hidden';
   task: TaskManifest;
-  manifest: ExecutionManifest;
+  manifest: Pick<ExecutionManifest, 'environment'>;
   runtime: ContainerRuntime;
   hiddenChecksDirectory: string;
   workspace: string;
+  artifactDirectory: string;
+  pidsLimit?: number;
 }): PhaseTransport {
   const invocation = buildContainerInvocation({
     runtime: input.runtime,
@@ -294,9 +335,10 @@ function containerTransport(input: {
     imageDigest: input.manifest.environment.imageDigest as string,
     workspace: input.workspace,
     hiddenChecksDirectory: input.hiddenChecksDirectory,
+    publicChecksDirectory: join(taskPackageDir(input.task.taskId), 'public-tests'),
     samplerHostPath,
     argv: buildContainerArgv(input.task.commands[input.kind], input.task.limits.memoryMb),
-    limits: { cpus: input.task.limits.cpus, memoryMb: input.task.limits.memoryMb, pidsLimit: defaultPidsLimit },
+    limits: { cpus: input.task.limits.cpus, memoryMb: input.task.limits.memoryMb, pidsLimit: input.pidsLimit ?? defaultPidsLimit },
     resourceReportContainerPath: '/work/' + input.kind + '.resources.json',
   });
   return {
@@ -304,7 +346,62 @@ function containerTransport(input: {
     cwd: invocation.cwd,
     env: invocation.environment,
     reportHostPath: join(input.workspace, input.kind + '.resources.json'),
+    stop: () => {
+      captureCommand([input.runtime.command, 'kill', invocation.name], {
+        timeoutMs: 10_000, captureDir: input.artifactDirectory, label: input.kind + '.container-kill',
+      });
+    },
+    finish: exitCode => {
+      const state = captureCommand([input.runtime.command, 'inspect', '--format', '{{json .State}}', invocation.name], {
+        timeoutMs: 10_000, captureDir: input.artifactDirectory, label: input.kind + '.container-state',
+      });
+      const removed = captureCommand([input.runtime.command, 'rm', '--force', invocation.name], {
+        timeoutMs: 10_000, captureDir: input.artifactDirectory, label: input.kind + '.container-remove',
+      });
+      if (isContainerRuntimeFailure(exitCode)) return { oomKilled: false, error: null };
+      if (state.exitCode !== 0 || removed.exitCode !== 0) {
+        return { oomKilled: false, error: '容器状态读取或容器回收失败；原始命令输出已保留。' };
+      }
+      try {
+        const parsed = JSON.parse(state.stdout) as { OOMKilled?: boolean };
+        return { oomKilled: parsed.OOMKilled === true, error: null };
+      } catch {
+        return { oomKilled: false, error: '容器状态不是有效 JSON。' };
+      }
+    },
   };
+}
+
+/** 专用性能负载复用候选快照、环境与回收逻辑；命令只来自受信 grader。 */
+export async function executeBenchmarkWorkload(options: Pick<ExecuteOptions, 'store' | 'runId' | 'attemptId' | 'signal'> & { artifactDirectory: string; workspace: string }) {
+  const outcome = options.store.readAttempt(options.runId, options.attemptId);
+  if (!outcome) throw new Error('性能作答快照不存在。');
+  const manifest = outcome.manifest;
+  const task = manifest.task;
+  const grader = join(repositoryRoot, 'graders', task.taskId);
+  if (!existsSync(join(grader, 'benchmark.ts'))) throw new Error('题目没有受信性能负载。');
+  const workspace = options.workspace;
+  options.store.materialize(options.runId, options.attemptId, workspace);
+  const declaredCommand = ['node', '__checks__/benchmark.ts', '.'];
+  let transport: PhaseTransport | undefined;
+  if (manifest.environment.profile === 'linux-container') {
+    if (platform() !== 'win32') chmodSync(workspace, 0o777);
+    if (!manifest.environment.image || !manifest.environment.imageDigest) throw new InfrastructureUnavailableError('性能环境缺少固定镜像。');
+    const runtime = probeContainerRuntime({ captureDir: options.artifactDirectory });
+    requirePinnedImage(runtime, manifest.environment.image, manifest.environment.imageDigest, { captureDir: options.artifactDirectory });
+    transport = containerTransport({ kind: 'hidden', task: { ...task, commands: { ...task.commands, hidden: declaredCommand } }, manifest, runtime,
+      hiddenChecksDirectory: grader, workspace, artifactDirectory: options.artifactDirectory });
+  } else {
+    mkdirSync(join(workspace, '__checks__'), { recursive: true });
+    copyFileSync(join(grader, 'benchmark.ts'), join(workspace, '__checks__', 'benchmark.ts'));
+  }
+  const phase = await runPhase({ kind: 'hidden', declaredCommand, workspace, artifactDir: options.artifactDirectory,
+    timeoutMs: task.limits.timeoutMs, memoryMb: task.limits.memoryMb,
+    ...(options.signal ? { signal: options.signal } : {}), ...(transport ? { transport } : {}) });
+  if (phase.exitCode !== 0 || phase.timedOut || phase.cancelled || phase.spawnError || phase.oomKilled || phase.outputLimitExceeded) throw new Error('性能负载失败，原始进程输出已保留：' + (phase.spawnError ?? phase.stderr.slice(0, 1500)));
+  const diagnostic: unknown = JSON.parse(phase.stdout);
+  if (!diagnostic || typeof diagnostic !== 'object' || !('correctnessPassed' in diagnostic) || diagnostic.correctnessPassed !== true) throw new Error('性能负载未给出完整语义检查结论。');
+  return { durationMs: phase.durationMs, diagnostic, resource: phase.resource };
 }
 
 export async function executeAttempt(options: ExecuteOptions): Promise<ExecutionResult> {
@@ -312,6 +409,11 @@ export async function executeAttempt(options: ExecuteOptions): Promise<Execution
   if (outcome === null) throw new Error(`未找到已冻结的 attempt：${options.runId}/${options.attemptId}`);
   const manifest = outcome.manifest;
   const task = manifest.task;
+  if (options.review !== undefined && (!reviewVerdictValidator.Check(options.review)
+    || options.review.runId !== options.runId || options.review.attemptId !== options.attemptId
+    || options.review.taskId !== task.taskId || options.review.rubricVersion !== manifest.ruleVersion)) {
+    throw new Error('独立评审不符合当前 attempt 或评分版本，拒绝复用。');
+  }
   const containerProfile = manifest.environment.profile === 'linux-container';
 
   const artifactDirectory = options.artifactDirectory ?? join(outcome.directory, 'execution');
@@ -319,7 +421,7 @@ export async function executeAttempt(options: ExecuteOptions): Promise<Execution
     // 同一 attempt 的既有产物必须保留：重新执行是显式动作，不能覆盖上一次的证据。
     throw new Error(`该 attempt 已有执行产物：${artifactDirectory}；如需重新执行，请显式指定新的产物目录。`);
   }
-  const workspace = join(artifactDirectory, 'workspace');
+  const workspace = options.workspaceDirectory ?? join(artifactDirectory, 'workspace');
   const notes: string[] = [];
   // 执行事件写在 attempt 目录里：同一 attempt 的重复执行会带上产物目录名，不会覆盖上一次记录。
   const executionTag = basename(artifactDirectory);
@@ -330,12 +432,15 @@ export async function executeAttempt(options: ExecuteOptions): Promise<Execution
 
   // 物化会重算冻结快照摘要：存储被改写时这里就会失败，而不是把被篡改的内容当成被测对象。
   const materialized = options.store.materialize(options.runId, options.attemptId, workspace);
+  installPublicChecks(task, workspace);
+  notes.push('公开检查由平台题目包恢复，候选修改的检查文件不参与验收；Node 检查在独立测试进程执行，stdout 不能作为顶层 TAP 验收行。');
 
   // 容器档案：必须有可用运行时与按 digest 固定的本地镜像，否则直接拒绝执行。
   let runtime: ContainerRuntime | null = null;
   let imageReference: string | null = null;
   let hiddenChecksDirectory: string | null = null;
   if (containerProfile) {
+    if (platform() !== 'win32') chmodSync(workspace, 0o777);
     const image = manifest.environment.image;
     const digest = manifest.environment.imageDigest;
     if (image === null || digest === null) {
@@ -369,6 +474,7 @@ export async function executeAttempt(options: ExecuteOptions): Promise<Execution
       notes.push(`${kind} 阶段未运行：${halted}`);
       continue;
     }
+    if (kind === 'hidden' && !containerProfile) installHiddenChecks(task, workspace);
     const phase = await runPhase({
       kind,
       declaredCommand: task.commands[kind],
@@ -381,7 +487,7 @@ export async function executeAttempt(options: ExecuteOptions): Promise<Execution
         ? {}
         : {
             transport: containerTransport({
-              kind, task, manifest, runtime, hiddenChecksDirectory, workspace,
+              kind, task, manifest, runtime, hiddenChecksDirectory, workspace, artifactDirectory,
             }),
           }),
     });
@@ -389,7 +495,7 @@ export async function executeAttempt(options: ExecuteOptions): Promise<Execution
     if (phase.cancelled) halted = '已被取消';
     else if (phase.spawnError !== null) halted = `命令启动失败：${phase.spawnError}`;
     else if (phase.timedOut) halted = `超出 ${phase.timeoutMs}ms 预算`;
-    else if (memorySignatures.test(phase.stderr)) halted = '进程因内存耗尽终止';
+    else if (phase.oomKilled || memorySignatures.test(phase.stderr)) halted = '进程因内存耗尽终止';
   }
 
   const checks = checkRows(task, phases);
@@ -418,7 +524,11 @@ export async function executeAttempt(options: ExecuteOptions): Promise<Execution
   for (const phase of phases) {
     artifacts.push(artifactOf(`${phase.kind}.stdout`, phase.stdoutPath, artifactDirectory));
     artifacts.push(artifactOf(`${phase.kind}.stderr`, phase.stderrPath, artifactDirectory));
-    if (existsSync(phase.reportPath)) artifacts.push(artifactOf(`${phase.kind}.resources`, phase.reportPath, artifactDirectory));
+    if (existsSync(phase.reportPath)) {
+      const persisted = join(artifactDirectory, `${phase.kind}.resources.json`);
+      if (resolve(phase.reportPath) !== resolve(persisted)) copyFileSync(phase.reportPath, persisted);
+      artifacts.push(artifactOf(`${phase.kind}.resources`, persisted, artifactDirectory));
+    }
   }
 
   const attemptRows = phases.map(phase => {
@@ -433,6 +543,7 @@ export async function executeAttempt(options: ExecuteOptions): Promise<Execution
       signal: phase.signal,
       timedOut: phase.timedOut,
       cancelled: phase.cancelled,
+      outputLimitExceeded: phase.outputLimitExceeded ?? false,
       durationMs: phase.durationMs,
       resource: phase.resource,
       missing: declaredChecks.filter(id => !phase.outcomes.some(item => item.id === id)),
@@ -451,6 +562,7 @@ export async function executeAttempt(options: ExecuteOptions): Promise<Execution
       signal: null,
       timedOut: false,
       cancelled: false,
+      outputLimitExceeded: false,
       durationMs: 0,
       resource: { peakRssBytes: null, userCpuMs: null, systemCpuMs: null, sampler: 'unavailable' },
       missing: task.checks.filter(check => check.kind === kind).map(check => check.id),
@@ -471,16 +583,16 @@ export async function executeAttempt(options: ExecuteOptions): Promise<Execution
     finishedAt: new Date().toISOString(),
     durationMs: Math.round(Number(process.hrtime.bigint() - startedHr) / 1e6),
     environment: {
-      profile: 'local',
+      profile: manifest.environment.profile,
       imageDigest: manifest.environment.imageDigest,
-      platform: `${platform()} ${arch()}`,
-      platformVersion: process.version,
+      platform: containerProfile ? 'linux (fixed image)' : `${platform()} ${arch()}`,
+      platformVersion: containerProfile ? imageReference as string : process.version,
       candidateRuntimes: [...new Set([task.commands.public, task.commands.hidden].map(command => command[0] ?? '').filter(name => name.length > 0))],
       containerRuntime: runtime === null ? null : runtime.command + ' ' + runtime.serverVersion,
       image: imageReference,
-      cpus: availableParallelism(),
-      totalMemoryMb: Math.round(totalmem() / (1024 * 1024)),
-      network: false,
+      cpus: containerProfile ? task.limits.cpus : availableParallelism(),
+      totalMemoryMb: containerProfile ? task.limits.memoryMb : Math.round(totalmem() / (1024 * 1024)),
+      network: !containerProfile,
     },
     phases: attemptRows,
     checks,
@@ -494,12 +606,88 @@ export async function executeAttempt(options: ExecuteOptions): Promise<Execution
 
   mkdirSync(artifactDirectory, { recursive: true });
 
+  const score = await scoreAttemptExecution(options, outcome, result, artifactDirectory, eventId);
+  result.notes = result.notes.slice(-32);
+  if (!executionResultValidator.Check(result)) throw new Error('最终执行证据不符合协议。');
+
+  const resultPath = join(artifactDirectory, 'execution.json');
+  writeFileSync(resultPath + '.tmp', `${JSON.stringify(result, null, 2)}\n`);
+  renameSync(resultPath + '.tmp', resultPath);
+  appendRunEvent(outcome.directory, {
+    type: 'score.finalized',
+    actor: 'executor',
+    candidateHash: result.candidateTreeHash,
+    payload: {
+      mode: score.mode,
+      functional: score.functional,
+      quality: score.quality,
+      total: score.total,
+      readiness: score.readiness,
+      criticalPassed: score.criticalPassed,
+    },
+    evidenceRefs: ['score.json'],
+    id: eventId('score.finalized'),
+    at: score.scoredAt,
+  });
+  appendRunEvent(outcome.directory, {
+    type: 'execution.finished',
+    actor: 'executor',
+    candidateHash: result.candidateTreeHash,
+    payload: {
+      classification: result.classification,
+      isolation: result.isolation,
+      durationMs: result.durationMs,
+      failed: checks.filter(check => check.status === 'failed').map(check => check.id),
+      notRun: checks.filter(check => check.status === 'not-run').map(check => check.id),
+    },
+    evidenceRefs: result.evidenceRefs,
+    id: eventId('execution.finished'),
+    at: result.finishedAt,
+  });
+  return result;
+}
+
+async function scoreAttemptExecution(
+  options: ExecuteOptions, outcome: SubmissionOutcome, result: ExecutionResult, artifactDirectory: string,
+  eventId: (type: string, extra?: string) => string,
+): Promise<ExecutionScore> {
+  const task = outcome.manifest.task;
+  const notes = result.notes;
   // 正式评分：可用验证分项由受控执行结果换算；质量证据缺失时保持 null（总分待定）。
   // 质量证据：静态客观分（可选规则）+ 评审判决（可选）+ 调用方补充（例如 benchmark）。
   let objective: QualityEvidence['objective'] = { ...(options.quality?.objective ?? {}) };
   let review: QualityEvidence['review'] = { ...(options.quality?.review ?? {}) };
+  let qualityContext: QualityEvidence = options.quality ?? {};
+  if (options.qualityProvider !== undefined) {
+    try {
+      const provided = await options.qualityProvider({
+        frozenDirectory: join(outcome.directory, 'candidate'), execution: result,
+        manifest: outcome.manifest, artifactDirectory,
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+      });
+      scoreExecution(result, task, provided);
+      objective = { ...objective, ...provided.objective };
+      review = { ...review, ...provided.review };
+      qualityContext = { ...qualityContext, ...provided };
+      for (const artifact of provided.artifacts ?? []) {
+        const path = resolve(artifactDirectory, artifact.path);
+        const scope = relative(artifactDirectory, path);
+        if (isAbsolute(scope) || scope.startsWith('..') || artifactOf(artifact.id, path, artifactDirectory).sha256 !== artifact.sha256) {
+          throw new Error('质量证据路径或摘要不一致。');
+        }
+        result.artifacts.push(artifact);
+        result.evidenceRefs.push(artifact.id);
+      }
+      notes.push(...(provided.notes ?? []));
+    } catch (error) {
+      objective = { ...(options.quality?.objective ?? {}) };
+      review = { ...(options.quality?.review ?? {}) };
+      qualityContext = options.quality ?? {};
+      notes.push('质量评估未完成：' + (error instanceof Error ? error.message : String(error)));
+    }
+  }
   if (options.staticPolicy !== undefined) {
-    const report = analyzeWorkspace(workspace, options.staticPolicy);
+    const report = analyzeWorkspace(join(outcome.directory, 'candidate'), options.staticPolicy);
     const staticPath = join(artifactDirectory, 'static.json');
     writeFileSync(staticPath, JSON.stringify(report, null, 2) + '\n');
     result.artifacts.push(artifactOf('static.json', staticPath, artifactDirectory));
@@ -545,46 +733,14 @@ export async function executeAttempt(options: ExecuteOptions): Promise<Execution
     });
     notes.push('独立评审来自 ' + options.review.model + '（提示版本 ' + options.review.promptVersion + '），成本记录在 review.json。');
   }
-  const score = scoreExecution(result, task, { objective, review });
+  const score = scoreExecution(result, task, { ...qualityContext, objective, review });
   if (!executionScoreValidator.Check(score)) throw new Error('执行评分不符合 0.1.0 协议。');
   const scorePath = join(artifactDirectory, 'score.json');
   writeFileSync(scorePath, `${JSON.stringify(score, null, 2)}\n`);
   result.artifacts.push(artifactOf('score.json', scorePath, artifactDirectory));
   result.evidenceRefs = [...result.evidenceRefs, 'score.json'];
 
-  writeFileSync(join(artifactDirectory, 'execution.json'), `${JSON.stringify(result, null, 2)}\n`);
-  appendRunEvent(outcome.directory, {
-    type: 'score.finalized',
-    actor: 'executor',
-    candidateHash: result.candidateTreeHash,
-    payload: {
-      mode: score.mode,
-      functional: score.functional,
-      quality: score.quality,
-      total: score.total,
-      readiness: score.readiness,
-      criticalPassed: score.criticalPassed,
-    },
-    evidenceRefs: ['score.json'],
-    id: eventId('score.finalized'),
-    at: score.scoredAt,
-  });
-  appendRunEvent(outcome.directory, {
-    type: 'execution.finished',
-    actor: 'executor',
-    candidateHash: result.candidateTreeHash,
-    payload: {
-      classification: result.classification,
-      isolation: result.isolation,
-      durationMs: result.durationMs,
-      failed: checks.filter(check => check.status === 'failed').map(check => check.id),
-      notRun: checks.filter(check => check.status === 'not-run').map(check => check.id),
-    },
-    evidenceRefs: result.evidenceRefs,
-    id: eventId('execution.finished'),
-    at: result.finishedAt,
-  });
-  return result;
+  return score;
 }
 
 function nextArtifactDirectory(attemptDirectory: string): string {
@@ -598,9 +754,23 @@ function nextArtifactDirectory(attemptDirectory: string): string {
 }
 
 /** 读取已记录的执行结果；没有则返回 null。用于重复完成事件与进程重启后的复用。 */
+export function completedExecutionDirectory(attemptDirectory: string): string | null {
+  if (!existsSync(attemptDirectory)) return null;
+  const directories = readdirSync(attemptDirectory, { withFileTypes: true })
+    .filter(entry => entry.isDirectory() && /^execution(?:-[1-9][0-9]*)?$/.test(entry.name))
+    .map(entry => entry.name)
+    .sort((left, right) => Number(right.split('-')[1] ?? 1) - Number(left.split('-')[1] ?? 1));
+  for (const directory of directories) {
+    const path = join(attemptDirectory, directory);
+    if (existsSync(join(path, 'execution.json'))) return path;
+  }
+  return null;
+}
+
 export function readExecutionResult(attemptDirectory: string): ExecutionResult | null {
-  const path = join(attemptDirectory, 'execution', 'execution.json');
-  if (!existsSync(path)) return null;
+  const directory = completedExecutionDirectory(attemptDirectory);
+  if (directory === null) return null;
+  const path = join(directory, 'execution.json');
   const input: unknown = JSON.parse(readFileSync(path, 'utf8'));
   if (!executionResultValidator.Check(input)) throw new Error('已记录的执行结果不符合 0.1.0 协议。');
   return input;
@@ -608,11 +778,75 @@ export function readExecutionResult(attemptDirectory: string): ExecutionResult |
 
 /** 读取正式评分文档；没有执行结论时为 null。 */
 export function readExecutionScore(attemptDirectory: string): ExecutionScore | null {
-  const path = join(attemptDirectory, 'execution', 'score.json');
+  const directory = completedExecutionDirectory(attemptDirectory);
+  if (directory === null) return null;
+  const path = join(directory, 'score.json');
   if (!existsSync(path)) return null;
   const input: unknown = JSON.parse(readFileSync(path, 'utf8'));
   if (!executionScoreValidator.Check(input)) throw new Error('已记录的执行评分不符合 0.1.0 协议。');
   return input;
+}
+
+/** 显式补评：复用原始执行证据，在新目录保存分数修订，不重跑候选或覆盖原分数。 */
+export async function reviewCompletedAttempt(options: ExecuteOptions): Promise<ExecutionScore> {
+  const outcome = options.store.readAttempt(options.runId, options.attemptId);
+  if (outcome === null) throw new Error('未找到已冻结的 attempt。');
+  if (activeVerifications.has(outcome.directory)) throw new Error('该 attempt 正在执行或补评。');
+  const previousDirectory = completedExecutionDirectory(outcome.directory);
+  const recorded = readExecutionResult(outcome.directory);
+  if (previousDirectory === null || recorded === null) throw new Error('尚无执行结论，不能补评。');
+  const frozenDirectory = join(outcome.directory, 'candidate');
+  if (recorded.candidateTreeHash !== outcome.attempt.treeHash
+    || digestTree(frozenDirectory, { excluded: outcome.attempt.excluded }).treeHash !== recorded.candidateTreeHash) {
+    throw new Error('冻结快照或已记录的执行结果摘要不一致。');
+  }
+  if (options.review !== undefined && (!reviewVerdictValidator.Check(options.review)
+    || options.review.runId !== options.runId || options.review.attemptId !== options.attemptId
+    || options.review.taskId !== recorded.taskId || options.review.rubricVersion !== outcome.manifest.ruleVersion)) {
+    throw new Error('独立评审不符合当前 attempt 或评分版本，拒绝复用。');
+  }
+  const artifactDirectory = nextArtifactDirectory(outcome.directory);
+  mkdirSync(artifactDirectory);
+  const result = structuredClone(recorded);
+  const originalPhaseArtifacts = new Set(result.phases.flatMap(phase => phase.artifacts));
+  result.artifacts = result.artifacts.filter(artifact => originalPhaseArtifacts.has(artifact.id));
+  result.evidenceRefs = result.artifacts.map(artifact => artifact.id);
+  for (const artifact of result.artifacts) {
+    const source = resolve(previousDirectory, artifact.path);
+    const scope = relative(previousDirectory, source);
+    if (isAbsolute(scope) || scope.startsWith('..') || artifactOf(artifact.id, source, previousDirectory).sha256 !== artifact.sha256) {
+      throw new Error('原始执行证据路径或摘要不一致，拒绝补评。');
+    }
+    const destination = join(artifactDirectory, artifact.path);
+    mkdirSync(dirname(destination), { recursive: true });
+    copyFileSync(source, destination);
+  }
+  result.notes.push('本记录为显式补评修订，复用 ' + basename(previousDirectory) + ' 的执行结论，未重新运行候选；原分数保留。');
+  const tag = basename(artifactDirectory);
+  const eventId = (type: string): string => [type, options.runId, options.attemptId, tag].join(':');
+  const running = (async () => {
+    const score = await scoreAttemptExecution(options, outcome, result, artifactDirectory, eventId);
+    result.notes = result.notes.slice(-32);
+    if (!executionResultValidator.Check(result)) throw new Error('补评执行证据不符合协议。');
+    const resultPath = join(artifactDirectory, 'execution.json');
+    writeFileSync(resultPath + '.tmp', JSON.stringify(result, null, 2) + '\n');
+    renameSync(resultPath + '.tmp', resultPath);
+    appendRunEvent(outcome.directory, {
+      type: 'score.finalized', actor: 'executor', candidateHash: result.candidateTreeHash,
+      payload: { mode: score.mode, total: score.total, revision: tag, previous: basename(previousDirectory) },
+      evidenceRefs: result.evidenceRefs, id: eventId('score.finalized'), at: score.scoredAt,
+    });
+    return result;
+  })();
+  activeVerifications.set(outcome.directory, running);
+  try {
+    await running;
+    const score = readExecutionScore(outcome.directory);
+    if (score === null) throw new Error('补评结果未保存。');
+    return score;
+  } finally {
+    activeVerifications.delete(outcome.directory);
+  }
 }
 
 export interface VerifySubmissionRequest {
@@ -625,10 +859,12 @@ export interface VerifySubmissionRequest {
   image?: string | null;
   imageDigest?: string | null;
   signal?: AbortSignal;
+  workspaceDirectory?: string;
   /** 透传给执行器的质量证据：静态规则、评审判决与调用方补充（例如 benchmark 客观分）。 */
   staticPolicy?: StaticPolicy;
   review?: ReviewVerdict;
   quality?: QualityEvidence;
+  qualityProvider?: QualityProvider;
 }
 
 export interface VerificationOutcome {
@@ -636,6 +872,8 @@ export interface VerificationOutcome {
   execution: ExecutionResult;
   reusedExecution: boolean;
 }
+
+const activeVerifications = new Map<string, Promise<ExecutionResult>>();
 
 /**
  * 显式提交入口：冻结候选并自动触发验证。
@@ -663,17 +901,40 @@ export async function verifySubmission(request: VerifySubmissionRequest): Promis
     });
     return { submission, execution: recorded, reusedExecution: true };
   }
-  const execution = await executeAttempt({
+  const active = activeVerifications.get(submission.directory);
+  if (active !== undefined) return { submission, execution: await active, reusedExecution: true };
+  const running = executeAttempt({
     store: request.store,
     runId: submission.attempt.runId,
     attemptId: submission.attempt.attemptId,
     artifactDirectory: nextArtifactDirectory(submission.directory),
+    ...(request.workspaceDirectory === undefined ? {} : { workspaceDirectory: request.workspaceDirectory }),
     ...(request.signal === undefined ? {} : { signal: request.signal }),
     ...(request.staticPolicy === undefined ? {} : { staticPolicy: request.staticPolicy }),
     ...(request.review === undefined ? {} : { review: request.review }),
     ...(request.quality === undefined ? {} : { quality: request.quality }),
+    ...(request.qualityProvider === undefined ? {} : { qualityProvider: request.qualityProvider }),
   });
-  return { submission, execution, reusedExecution: false };
+  activeVerifications.set(submission.directory, running);
+  try {
+    return { submission, execution: await running, reusedExecution: false };
+  } finally {
+    activeVerifications.delete(submission.directory);
+  }
+}
+
+/** 显式同快照重试，仅接受尚未取得结果、基础设施失败或取消的 attempt。 */
+export async function retryCompletedAttempt(options: ExecuteOptions): Promise<ExecutionResult> {
+  const outcome = options.store.readAttempt(options.runId, options.attemptId);
+  if (!outcome) throw new Error('未找到已冻结的 attempt。');
+  const active = activeVerifications.get(outcome.directory);
+  if (active) return active;
+  const previous = readExecutionResult(outcome.directory);
+  if (previous && !['infrastructure-error', 'cancelled'].includes(previous.classification)) throw new Error('只有基础设施失败或取消允许同快照重试。');
+  const running = executeAttempt({ ...options, artifactDirectory: nextArtifactDirectory(outcome.directory) });
+  activeVerifications.set(outcome.directory, running);
+  try { return await running; }
+  finally { activeVerifications.delete(outcome.directory); }
 }
 
 /** 查询输出：当前阶段、已知失败、可重试原因、证据引用；评审未接入时总分待定。 */
@@ -681,10 +942,13 @@ export function readRunStatus(store: RunStore, runId: string, attemptId: string)
   const outcome = store.readAttempt(runId, attemptId);
   if (outcome === null) throw new Error(`未找到已冻结的 attempt：${runId}/${attemptId}`);
   const execution = readExecutionResult(outcome.directory);
+  if (execution !== null && (execution.candidateTreeHash !== outcome.attempt.treeHash || execution.runId !== runId || execution.attemptId !== attemptId)) {
+    throw new Error('执行结果与冻结 attempt 不一致，拒绝复用。');
+  }
   const score = readExecutionScore(outcome.directory);
   const checks = execution?.checks ?? [];
   const classification = execution?.classification ?? null;
-  const retryable = classification === 'infrastructure-error' || classification === 'cancelled';
+  const retryable = execution === null || classification === 'infrastructure-error' || classification === 'cancelled';
   const status: RunStatus = {
     schemaVersion: '0.1.0',
     runId,
@@ -702,7 +966,7 @@ export function readRunStatus(store: RunStore, runId: string, attemptId: string)
     scoring: score === null
       ? { mode: 'pending', functional: null, quality: null, total: null, reason: '尚未取得受控执行结论，总分待定。' }
       : {
-          mode: 'formal',
+          mode: score.mode === 'formal' && execution?.isolation !== 'container' ? 'local' : score.mode,
           functional: score.functional,
           quality: score.quality,
           total: score.total,
@@ -728,6 +992,7 @@ export function listRunStatuses(store: RunStore): RunStatus[] {
 export function renderRunReport(store: RunStore, runId: string, attemptId: string): string {
   const status = readRunStatus(store, runId, attemptId);
   const score = readExecutionScore(store.readAttempt(runId, attemptId)?.directory ?? '');
+  const execution = readExecutionResult(store.readAttempt(runId, attemptId)?.directory ?? '');
   const lines: string[] = [];
   lines.push('# 运行报告 ' + status.taskId + ' ' + status.taskVersion);
   lines.push('');
@@ -741,7 +1006,7 @@ export function renderRunReport(store: RunStore, runId: string, attemptId: strin
   lines.push('| 检查 | 分组 | 关键项 | 状态 |');
   lines.push('| --- | --- | --- | --- |');
   for (const check of score?.groups.flatMap(group => group.passed.map(id => ({ id, group: group.group, status: 'passed' })).concat(group.failed.map(id => ({ id, group: group.group, status: 'failed' }))).concat(group.notRun.map(id => ({ id, group: group.group, status: 'not-run' })))) ?? []) {
-    const critical = status.knownFailures.some(failure => failure.id === check.id && failure.critical);
+    const critical = execution?.checks.some(item => item.id === check.id && item.critical) ?? false;
     lines.push('| `' + check.id + '` | ' + check.group + ' | ' + (critical ? '是' : '') + ' | ' + check.status + ' |');
   }
   if (status.knownFailures.length === 0) lines.push('');

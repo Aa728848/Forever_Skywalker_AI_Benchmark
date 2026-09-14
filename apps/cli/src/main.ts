@@ -1,21 +1,25 @@
 import { readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { tasks, requireTask } from '@fsa/catalog';
-import { difficultyLabels, type RunStatus } from '@fsa/contracts';
+import { difficultyLabels, humanReviewValidator, type RunStatus } from '@fsa/contracts';
 import { parseAssessment, scoreAssessment } from '@fsa/core';
 import { createEnvelope, createRunStore, defaultRunRoot } from '@fsa/runs';
-import { listRunStatuses, readRunStatus, verifySubmission } from '@fsa/executor';
-import { defaultTypeScriptPolicy } from '@fsa/static';
-import { judgeConfigFromEnvironment, JudgeUnavailableError } from '@fsa/judge';
+import { listRunStatuses, readExecutionScore, readRunStatus, renderRunReport, reviewCompletedAttempt, verifySubmission } from '@fsa/executor';
+import { createEnvironmentJudge, judgeConfigFromEnvironment, JudgeUnavailableError } from '@fsa/judge';
+import { createQualityProvider, summarizeRuns } from '@fsa/evaluation';
 
 const usage = [
   '用法：',
   '  bench list | show <题目 ID> | score <证据 JSON> [--format json|markdown]   # 预览语义，不执行候选代码',
   '  bench submit <题目 ID> <候选目录> --key <幂等键> [--by <提交者>] [--reason agent-completed|operator-submit|patch-import]',
   '              [--root <运行存储目录>] [--format json] [--profile local|linux-container] [--image <镜像引用>] [--image-digest sha256:...] [--static]',
-  '  --static 启用未校准的 TypeScript 静态客观分（只覆盖 simplicity/maintainability/decoupling）。',
+  '  静态客观分自动采集；--measure 追加真实参考/候选性能采样。独立评审从 BENCH_JUDGE_* 配置读取。',
   '  bench status <runId> <attemptId> [--root <运行存储目录>] [--format json]',
   '  bench runs [--root <运行存储目录>] [--format json]',
+  '  bench review <runId> <attemptId> [--human <复核JSON>] [--measure] [--root <运行存储目录>]',
+  '  bench report <runId> <attemptId> [--format json|markdown] [--root <运行存储目录>]',
+  '  bench summary <作答选择JSON> [--root <运行存储目录>]   # [{runId, attemptId}]，每题显式选择一次',
+  '  bench judge-config   # 本地检查裁判有效参数与配置指纹，不发起模型请求，不输出密钥',
   '',
   'submit 是正式提交入口：冻结候选快照并自动触发受控验证，输出不含调用方自报分数。',
 ].join('\n');
@@ -47,11 +51,13 @@ try {
       key: { type: 'string' },
       by: { type: 'string', default: 'operator' },
       reason: { type: 'string', default: 'operator-submit' },
-      root: { type: 'string', default: defaultRunRoot },
-      profile: { type: 'string', default: 'local' },
-      image: { type: 'string' },
-      'image-digest': { type: 'string' },
+      root: { type: 'string', default: process.env.BENCH_RUN_DIR || defaultRunRoot },
+      profile: { type: 'string', default: process.env.BENCH_PROFILE ?? 'local' },
+      image: { type: 'string', ...(process.env.BENCH_IMAGE ? { default: process.env.BENCH_IMAGE } : {}) },
+      'image-digest': { type: 'string', ...(process.env.BENCH_IMAGE_DIGEST ? { default: process.env.BENCH_IMAGE_DIGEST } : {}) },
       static: { type: 'boolean', default: false },
+      measure: { type: 'boolean' },
+      human: { type: 'string' },
     },
     allowPositionals: true,
   });
@@ -59,9 +65,11 @@ try {
   const asJson = values.format === 'json';
   if (!['text', 'json', 'markdown'].includes(values.format)) throw new Error('--format 必须为 text、json 或 markdown。');
   if (positionals.length > 3) throw new Error('位置参数过多。');
+  const arity: Record<string, number> = { list: 1, show: 2, score: 2, submit: 3, status: 3, runs: 1, review: 3, report: 3, summary: 2, 'judge-config': 1 };
+  if (command && arity[command] !== undefined && positionals.length !== arity[command]) throw new Error('位置参数数量不正确。\n' + usage);
 
   if (command === 'list' && first === undefined) {
-    console.log(tasks.map(task => `${task.id.padEnd(12)} ${difficultyLabels[task.difficulty].padEnd(6)} ${task.title} [设计目录]`).join('\n'));
+    console.log(tasks.map(task => `${task.id.padEnd(12)} ${difficultyLabels[task.difficulty].padEnd(6)} ${task.title} [${task.status}]`).join('\n'));
   } else if (command === 'show' && first !== undefined) {
     console.log(JSON.stringify(requireTask(first), null, 2));
   } else if (command === 'score' && first !== undefined) {
@@ -84,17 +92,21 @@ try {
     let judgeSummary = '评审：未配置（需要 BENCH_JUDGE_ENDPOINT / BENCH_JUDGE_MODEL / BENCH_JUDGE_TOKEN），代码质量保持待定。';
     try {
       const { config } = judgeConfigFromEnvironment();
-      judgeSummary = '评审已配置：' + config.provider + ' ' + config.model + '（提示版本 ' + config.promptVersion + '，预算 ' + config.maxCalls + ' 次）。注意：CLI 尚不自动调用评审，判决需由调度器注入。';
+      judgeSummary = '自动评审已配置：' + config.provider + ' ' + config.model + '（提示版本 ' + config.promptVersion + '，本次预算 ' + config.maxCalls + ' 次）。';
     } catch (error) {
       if (!(error instanceof JudgeUnavailableError)) throw error;
     }
-    console.log(judgeSummary);
+    console.error(judgeSummary);
+    const controller = new AbortController();
+    process.once('SIGINT', () => controller.abort(new Error('操作者取消。')));
+    process.once('SIGTERM', () => controller.abort(new Error('进程终止。')));
     const outcome = await verifySubmission({
       store, taskId: first, envelope, candidateDirectory: second, submittedBy: values.by,
+      signal: controller.signal,
+      qualityProvider: createQualityProvider({ ...(values.measure === undefined ? {} : { measurePerformance: values.measure }) }),
       profile: values.profile === 'linux-container' ? 'linux-container' : 'local',
       ...(values.image === undefined ? {} : { image: values.image }),
       ...(values['image-digest'] === undefined ? {} : { imageDigest: values['image-digest'] }),
-      ...(values.static !== true ? {} : { staticPolicy: defaultTypeScriptPolicy() }),
     });
     const status = readRunStatus(store, outcome.submission.attempt.runId, outcome.submission.attempt.attemptId);
     if (asJson) console.log(JSON.stringify({ ...status, submission: outcome.submission.outcome, reusedExecution: outcome.reusedExecution }, null, 2));
@@ -103,6 +115,28 @@ try {
   } else if (command === 'status' && first !== undefined && second !== undefined) {
     const status = readRunStatus(createRunStore(values.root), first, second);
     console.log(asJson ? JSON.stringify(status, null, 2) : renderStatus(status, false, false));
+  } else if (command === 'review' && first !== undefined && second !== undefined) {
+    const input: unknown = values.human === undefined ? undefined : JSON.parse(readFileSync(values.human, 'utf8'));
+    if (input !== undefined && !humanReviewValidator.Check(input)) throw new Error('人工复核 JSON 不符合协议。');
+    const controller = new AbortController();
+    process.once('SIGINT', () => controller.abort(new Error('操作者取消评审。')));
+    process.once('SIGTERM', () => controller.abort(new Error('评审进程终止。')));
+    const score = await reviewCompletedAttempt({ store: createRunStore(values.root), runId: first, attemptId: second,
+      signal: controller.signal,
+      qualityProvider: createQualityProvider({ ...(input === undefined ? {} : { humanReview: input }), ...(values.measure === undefined ? {} : { measurePerformance: values.measure }) }) });
+    console.log(JSON.stringify(score, null, 2));
+  } else if (command === 'report' && first !== undefined && second !== undefined) {
+    const store = createRunStore(values.root);
+    if (asJson) {
+      const outcome = store.readAttempt(first, second);
+      if (!outcome) throw new Error('未找到运行记录。');
+      console.log(JSON.stringify({ status: readRunStatus(store, first, second), score: readExecutionScore(outcome.directory) }, null, 2));
+    } else console.log(renderRunReport(store, first, second));
+  } else if (command === 'summary' && first !== undefined) {
+    console.log(JSON.stringify(summarizeRuns(createRunStore(values.root), JSON.parse(readFileSync(first, 'utf8'))), null, 2));
+  } else if (command === 'judge-config') {
+    const judge = createEnvironmentJudge();
+    console.log(JSON.stringify({ configuration: judge.configuration, networkCall: false }, null, 2));
   } else if (command === 'runs') {
     const statuses = listRunStatuses(createRunStore(values.root));
     if (asJson) console.log(JSON.stringify(statuses, null, 2));

@@ -1,0 +1,46 @@
+diff --git a/starter/upstream/src/auto.ts b/starter/upstream/src/auto.ts
+index 8541266..063f528 100644
+--- a/starter/upstream/src/auto.ts
++++ b/starter/upstream/src/auto.ts
+@@ -207,13 +207,13 @@ export function analyzeAutoTask(events: readonly SessionEvent[], policy: AutoVer
+   // different session must never disarm the gate.
+   const manualVerificationAccepted = manualVerdicts.some(verdict => {
+     if (verdict === undefined) return false
+-    if (verdict.criteria.length !== verdict.criteriaCount) return false
++    if (verdict.criteriaCount === 0 || verdict.criteria.length !== verdict.criteriaCount) return false
+     if (typeof verdict.fromSeq !== 'number' || !Number.isSafeInteger(verdict.fromSeq)) return false
+     if (typeof verdict.toSeq !== 'number' || !Number.isSafeInteger(verdict.toSeq)) return false
+     if (verdict.fromSeq > taskStartSeq) return false
+     if (sessionId !== undefined && verdict.sessionId !== sessionId) return false
+     if (verdict.winner !== 'A' || typeof verdict.score !== 'number' || !Number.isFinite(verdict.score)) return false
+-    return sessionAccepted({ score: verdict.score, winner: 'A', criteria: verdict.criteria }, policy.threshold)
++    return sessionAccepted({ score: verdict.score, winner: 'A', criteria: verdict.criteria }, policy.threshold) && !stale(verdict.toSeq)
+   })
+ 
+   if (policy.mode === 'manual') return { taskStartSeq, toolCalls, completedToolResults, consequentialToolCalls, hasManualSessionVerification, manualVerificationAccepted, eligible: false, reason: 'manual-mode' }
+diff --git a/starter/upstream/src/engine.ts b/starter/upstream/src/engine.ts
+index 36a9f74..afa9a56 100644
+--- a/starter/upstream/src/engine.ts
++++ b/starter/upstream/src/engine.ts
+@@ -366,7 +366,7 @@ export class VerifierEngine {
+     // completion mode, so a first-call downgrade lands under explicit-tag keys and is
+     // found by later explicit-tag calls instead of being misread as a top-logprobs
+     // expectation. The channel stays OUT of the in-flight dedup key below.
+-    const identity = { version: 6, provider: client.provider, model: "shared", effort: client.reasoningEffort, maxTokens: client.maxTokens, temperature: client.temperature, repeat, promptHash: stableHash(options.problem), imageKey }
++    const identity = { version: 6, provider: client.provider, model: client.model, effort: client.reasoningEffort, maxTokens: client.maxTokens, temperature: client.temperature, repeat, promptHash: stableHash(prompt), imageKey }
+     const keyForMode = (scoringMode: ScoringMode) => stableHash({ ...identity, scoringMode })
+     // Captured out of band: a fallback describes the REQUEST, not the score, so it must not
+     // enter the cached value (a cache hit later must not claim a downgrade that never happened).
+diff --git a/starter/upstream/src/cache.ts b/starter/upstream/src/cache.ts
+index 93066db..f8f2f6c 100644
+--- a/starter/upstream/src/cache.ts
++++ b/starter/upstream/src/cache.ts
+@@ -50,7 +50,7 @@ function validEntry(value: unknown): value is CachedPairScore {
+ export class SingleFlight<T> {
+   private readonly flights = new Map<string, Promise<T>>()
+   async run(key: string, task: () => Promise<T>): Promise<{ value: T; joined: boolean }> {
+-    const existing: Promise<T> | undefined = undefined
++    const existing = this.flights.get(key)
+     if (existing !== undefined) return { value: await existing, joined: true }
+     // task() starts synchronously so the flight is registered before its first await.
+     const flight = task().finally(() => { if (this.flights.get(key) === flight) this.flights.delete(key) })

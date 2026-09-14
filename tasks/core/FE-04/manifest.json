@@ -1,0 +1,107 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "FE-04",
+  "taskVersion": "0.1.1",
+  "title": "多工作区实时视图一致性与资源预算",
+  "runtime": "typescript",
+  "runtimeRange": "node >=24.14.1 <25",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "node",
+      "--test",
+      "--test-isolation=process",
+      "--test-reporter=tap",
+      "public-tests/**/*.test.ts"
+    ],
+    "hidden": [
+      "node",
+      "--test",
+      "--test-isolation=process",
+      "--test-reporter=tap",
+      "__checks__/**/*.test.ts"
+    ]
+  },
+  "grader": {
+    "checks": "graders/FE-04/checks",
+    "referencePatch": "graders/FE-04/reference.patch",
+    "alternative": "graders/FE-04/alternative",
+    "defectDetectors": [
+      "public/state-switch-resume-stale-events",
+      "public/resource-bounded-visible-rows",
+      "hidden/state-workspace-eviction",
+      "hidden/resource-100000-events-retained-heap"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/state-switch-resume-stale-events",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "public/state-switch-resume-stale-events"
+    },
+    {
+      "id": "public/resource-bounded-visible-rows",
+      "kind": "public",
+      "group": "resources",
+      "weight": 1,
+      "critical": true,
+      "summary": "public/resource-bounded-visible-rows"
+    },
+    {
+      "id": "hidden/state-workspace-eviction",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "hidden/state-workspace-eviction"
+    },
+    {
+      "id": "hidden/state-snapshot-gap-and-dispose",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": true,
+      "summary": "hidden/state-snapshot-gap-and-dispose"
+    },
+    {
+      "id": "hidden/resource-100000-events-retained-heap",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": true,
+      "summary": "hidden/resource-100000-events-retained-heap"
+    },
+    {
+      "id": "public/boundary-invalid-limits",
+      "kind": "public",
+      "group": "boundary",
+      "summary": "拒绝零值/非整数行数与工作区预算，无DOM副作用。",
+      "weight": 1,
+      "critical": true
+    }
+  ]
+}

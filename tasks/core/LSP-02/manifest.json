@@ -1,0 +1,113 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "LSP-02",
+  "taskVersion": "0.1.1",
+  "title": "UTF-16 增量编辑与版本",
+  "runtime": "fsharp",
+  "runtimeRange": "dotnet >= 10.0",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "dotnet",
+      "fsi",
+      "public-tests/checks.fsx"
+    ],
+    "hidden": [
+      "dotnet",
+      "fsi",
+      "__checks__/checks.fsx"
+    ]
+  },
+  "grader": {
+    "checks": "graders/LSP-02/checks",
+    "referencePatch": "graders/LSP-02/reference.patch",
+    "alternative": "graders/LSP-02/alternative",
+    "defectDetectors": [
+      "public/utf16-multiline",
+      "public/state-version",
+      "hidden/boundary-crlf",
+      "hidden/state-atomic-batch",
+      "hidden/boundary-reversed-empty",
+      "public/resource-large-document"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/utf16-multiline",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "public/utf16-multiline"
+    },
+    {
+      "id": "public/state-version",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "public/state-version"
+    },
+    {
+      "id": "public/sequential-edits",
+      "kind": "public",
+      "group": "regression",
+      "weight": 1,
+      "critical": true,
+      "summary": "public/sequential-edits"
+    },
+    {
+      "id": "hidden/boundary-crlf",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "hidden/boundary-crlf"
+    },
+    {
+      "id": "hidden/state-atomic-batch",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "hidden/state-atomic-batch"
+    },
+    {
+      "id": "hidden/boundary-reversed-empty",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "hidden/boundary-reversed-empty"
+    },
+    {
+      "id": "public/resource-large-document",
+      "kind": "public",
+      "group": "resources",
+      "summary": "50000行编辑满足5秒与64MiB当前线程分配预算。",
+      "weight": 1,
+      "critical": true
+    }
+  ]
+}

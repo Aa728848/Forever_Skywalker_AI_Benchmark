@@ -279,6 +279,46 @@ export function createRunStore(root: string = defaultRunRoot, options: { exclude
   const attemptDirectory = (taskId: string, runId: string, attemptId: string): string => join(storeRoot, taskId, runId, attemptId);
   const relativePathOf = (absolute: string): string => relative(storeRoot, absolute).split(sep).join('/');
 
+  // 目录重命名已经提交但索引尚未提交时崩溃：从完整冻结记录恢复索引。
+  if (existsSync(storeRoot)) {
+    const recovered = readIndex();
+    let changed = false;
+    for (const taskEntry of readdirSync(storeRoot, { withFileTypes: true })) {
+      if (!taskEntry.isDirectory()) continue;
+      const taskPath = join(storeRoot, taskEntry.name);
+      for (const runEntry of readdirSync(taskPath, { withFileTypes: true })) {
+        if (!runEntry.isDirectory()) continue;
+        const runPath = join(taskPath, runEntry.name);
+        for (const attemptEntry of readdirSync(runPath, { withFileTypes: true })) {
+          if (!attemptEntry.isDirectory() || attemptEntry.name.endsWith('.partial')) continue;
+          const directory = join(runPath, attemptEntry.name);
+          if (!existsSync(join(directory, 'freeze.json')) || !existsSync(join(directory, 'manifest.json'))) continue;
+          const frozen = readJson<FrozenAttempt>(join(directory, 'freeze.json'), frozenAttemptValidator, '冻结记录');
+          if (frozen.taskId !== taskEntry.name || frozen.runId !== runEntry.name || frozen.attemptId !== attemptEntry.name) {
+            throw new FrozenSnapshotTamperedError('冻结记录与存储目录不一致。');
+          }
+          const known = recovered.entries.find(entry => entry.idempotencyKey === frozen.idempotencyKey);
+          if (known !== undefined) {
+            if (known.runId !== frozen.runId || known.attemptId !== frozen.attemptId || known.treeHash !== frozen.treeHash) {
+              throw new IdempotencyConflictError('恢复时发现相同幂等键对应多个冻结记录。');
+            }
+            continue;
+          }
+          const manifest = readJson<ExecutionManifest>(join(directory, 'manifest.json'), executionManifestValidator, '执行 manifest');
+          if (manifest.candidate.treeHash !== frozen.treeHash || digestTree(join(directory, 'candidate'), { excluded: frozen.excluded }).treeHash !== frozen.treeHash) {
+            throw new FrozenSnapshotTamperedError('待恢复快照与冻结记录不一致。');
+          }
+          recovered.entries.push({
+            idempotencyKey: frozen.idempotencyKey, taskId: frozen.taskId, runId: frozen.runId,
+            attemptId: frozen.attemptId, treeHash: frozen.treeHash, frozenAt: frozen.frozenAt,
+          });
+          changed = true;
+        }
+      }
+    }
+    if (changed) writeIndex(recovered);
+  }
+
   /** 崩溃只会在 <attemptId>.partial 留下半成品；这里按年龄回收，不碰正在进行的提交。 */
   const pruneStalePartials = (options: { olderThanMs?: number } = {}): string[] => {
     const threshold = Date.now() - (options.olderThanMs ?? 10 * 60 * 1000);
@@ -379,7 +419,17 @@ export function createRunStore(root: string = defaultRunRoot, options: { exclude
         if (known.treeHash !== digest.treeHash) {
           throw new IdempotencyConflictError(`同一幂等键收到不同快照：已冻结 ${known.treeHash}，本次 ${digest.treeHash}`);
         }
-        return outcomeOf(known);
+        const prior = outcomeOf(known);
+        if (prior.attempt.submittedBy !== request.submittedBy || prior.attempt.taskVersion !== envelope.taskVersion
+          || prior.manifest.environment.profile !== profile || prior.manifest.environment.image !== image
+          || prior.manifest.environment.imageDigest !== imageDigest) {
+          throw new IdempotencyConflictError('同一幂等键的提交者、题目版本或执行环境发生变化。');
+        }
+        return prior;
+      }
+
+      if (index.entries.some(entry => entry.runId === envelope.runId && entry.attemptId === envelope.attemptId)) {
+        throw new AttemptExistsError('run/attempt 已冻结，不能跨题目或幂等键复用。');
       }
 
       const finalDirectory = attemptDirectory(request.taskId, envelope.runId, envelope.attemptId);
@@ -481,14 +531,17 @@ export function createRunStore(root: string = defaultRunRoot, options: { exclude
       if (entry === undefined) throw new Error(`未找到已冻结的 attempt：${runId}/${attemptId}`);
       const source = join(attemptDirectory(entry.taskId, runId, attemptId), 'candidate');
       if (!existsSync(source)) throw new FrozenSnapshotTamperedError(`冻结快照缺失：${relativePathOf(source)}`);
-      const digest = digestTree(source, { excluded });
+      const frozen = outcomeOf(entry).attempt;
+      const digest = digestTree(source, { excluded: frozen.excluded });
       if (digest.treeHash !== entry.treeHash) {
         throw new FrozenSnapshotTamperedError(`冻结快照摘要与冻结记录不一致：记录 ${entry.treeHash}，当前 ${digest.treeHash}`);
       }
       const target = resolve(destination);
       if (existsSync(target) && readdirSync(target).length > 0) throw new Error(`物化目标必须为空：${target}`);
-      copyTree(source, target, excludedSet);
-      return { directory: target, treeHash: digest.treeHash, fileCount: digest.fileCount };
+      copyTree(source, target, new Set(frozen.excluded));
+      const copied = digestTree(target, { excluded: frozen.excluded });
+      if (copied.treeHash !== digest.treeHash) throw new FrozenSnapshotTamperedError('物化期间冻结快照发生变化，副本摘要不一致。');
+      return { directory: target, treeHash: copied.treeHash, fileCount: copied.fileCount };
     },
   };
 }

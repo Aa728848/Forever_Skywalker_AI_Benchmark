@@ -1,0 +1,26 @@
+[
+  {
+    "id": "key-only-dedup",
+    "description": "已增加持久去重，但同一键换内容仍返回旧结果。",
+    "patch": "graders/API-04/mutants/key-only-dedup.patch",
+    "expectedFailures": [
+      "public/durable-content-conflict"
+    ]
+  },
+  {
+    "id": "worker-only-fence",
+    "description": "已增加租约递增，但完成校验只比 worker 名称，旧代际可覆盖新领取。",
+    "patch": "graders/API-04/mutants/worker-only-fence.patch",
+    "expectedFailures": [
+      "hidden/durable-same-worker-stale-completion"
+    ]
+  },
+  {
+    "id": "autocommit-writes",
+    "description": "所有分支逻辑正确，但每条 SQL 自动提交，进程在结果/状态之间退出留下部分状态。",
+    "patch": "graders/API-04/mutants/autocommit-writes.patch",
+    "expectedFailures": [
+      "hidden/durable-crash-result"
+    ]
+  }
+]

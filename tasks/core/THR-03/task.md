@@ -2,7 +2,7 @@
 
 - 难度：困难；题型：独立核心题；能力域：多线程。
 - 运行时：F# / .NET 10（`dotnet fsi` 直接运行 `.fsx` 脚本，使用真实 .NET 线程）。
-- 题目版本：0.2.0（相对 0.1.0 的设计调整：题目包只用 .NET 真实线程实现，不再混入 TypeScript 侧）；评分规则版本：0.1.0。
+- 题目版本：0.2.1（增加真正锁外的通知接口；保留 0.2.0 的真实线程读写锁接口）；评分规则版本：0.1.0。
 
 ## 背景
 
@@ -21,6 +21,7 @@ type Gate =
     new: unit -> Gate
     member WithRead<'T> : (unit -> 'T) -> 'T
     member WithWrite<'T> : (unit -> 'T) -> 'T
+    member WithWriteThen<'T, 'U> : (unit -> 'T) * ('T -> 'U) -> 'U
     member Snapshot: unit -> Snapshot
 ```
 
@@ -30,9 +31,12 @@ type Gate =
 2. 读并发：至少两个读区可以**同时**存在，不得把读也串行化。
 3. 写优先且不饿死：存在等待中的写者时，新读者必须排队，不得插队。
 4. 异常释放：`WithRead` / `WithWrite` 的回调抛异常时必须向上传播，并且锁必须已释放——之后的读或写必须能正常获取。
-5. 计数一致：在读区内调用 `Snapshot()` 看到 `Readers ≥ 1`；在写区内看到 `Writers = 1`；离开后恢复为 0。
+5. 计数一致：在读区内调用 `Snapshot()` 看到 `Readers ≥ 1`；在写区内看到 `Writers = 1`；离开后恢复为 0。`Waiters` 表示已经排队但尚未进入写区的写者数量，可由其它线程观察。
 6. 回调返回值必须原样返回。
 7. 等待必须使用 `Monitor.Pulse`/`Wait` 或等价的阻塞原语，不得自旋轮询。
+8. `WithWriteThen(action, notify)` 先在写临界区执行 `action`，完全释放写锁后才调用 `notify`，把 action 的结果传给通知并原样返回通知结果。通知中的慢操作期间其它线程必须能读写；通知抛错也不能遗留锁。action 抛错时不通知。
+
+`WithRead` / `WithWrite` 的 action 是受保护的临界区；只有 `WithWriteThen` 的 notify 是用户通知，不得持有读锁、写锁或内部计数锁执行。
 
 ## 限制
 

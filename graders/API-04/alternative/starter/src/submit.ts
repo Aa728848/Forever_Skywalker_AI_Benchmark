@@ -16,7 +16,7 @@ function entryKey(key: string): string {
   return 'task:' + key;
 }
 
-/** 替代实现：把幂等判断放进私有 ensure 方法，失败时显式回滚序号。 */
+/** 旧接口保留既有的键去重语义；持久队列的新协议位于 queue.ts。 */
 export class TaskSubmitter {
   readonly #store: TaskStore;
   readonly #committed: string[] = [];
@@ -43,7 +43,7 @@ export class TaskSubmitter {
       if (!this.#committed.includes(found)) this.#committed.push(found);
       return Promise.resolve(found);
     }
-    const candidate = 'task-' + (this.#sequence + 1);
+    const candidate = 'task-' + Array.from({ length: key.length }, (_, index) => key.charCodeAt(index).toString(16).padStart(4, '0')).join('');
     try {
       this.#store.write(entryKey(key), candidate + '|' + payload);
     } catch (error) {

@@ -1,0 +1,106 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "CACHE-04",
+  "taskVersion": "0.1.1",
+  "title": "并发冷启动、持久化和版本隔离",
+  "runtime": "typescript",
+  "runtimeRange": "node >=24.14.1 <25",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "node",
+      "--test",
+      "--test-isolation=process",
+      "--test-reporter=tap",
+      "public-tests/**/*.test.ts"
+    ],
+    "hidden": [
+      "node",
+      "--test",
+      "--test-isolation=process",
+      "--test-reporter=tap",
+      "__checks__/**/*.test.ts"
+    ]
+  },
+  "grader": {
+    "checks": "graders/CACHE-04/checks",
+    "referencePatch": "graders/CACHE-04/reference.patch",
+    "alternative": "graders/CACHE-04/alternative",
+    "defectDetectors": [
+      "public/cold-start-single-read",
+      "public/domain-isolation",
+      "hidden/resource-real-file-restart"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/cold-start-single-read",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "public/cold-start-single-read"
+    },
+    {
+      "id": "public/state-write-failure",
+      "kind": "public",
+      "group": "regression",
+      "weight": 1,
+      "critical": true,
+      "summary": "public/state-write-failure"
+    },
+    {
+      "id": "public/domain-isolation",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "public/domain-isolation"
+    },
+    {
+      "id": "hidden/boundary-corruption-vs-permission",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "hidden/boundary-corruption-vs-permission"
+    },
+    {
+      "id": "hidden/state-serial-writes",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "hidden/state-serial-writes"
+    },
+    {
+      "id": "hidden/resource-real-file-restart",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": true,
+      "summary": "hidden/resource-real-file-restart"
+    }
+  ]
+}

@@ -1,0 +1,148 @@
+diff --git a/starter/src/host/oauth-service.ts b/starter/src/host/oauth-service.ts
+index 26d3805..6c92423 100644
+--- a/starter/src/host/oauth-service.ts
++++ b/starter/src/host/oauth-service.ts
+@@ -75,6 +75,8 @@ export class OAuthService {
+   private refreshPromise: Promise<StoredOAuthCredentials> | null = null
+   private lastLoginError: PublicErrorDto | undefined
+   private disposed = false
++  private credentialGeneration = 0
++  private credentialWrites: Promise<void> = Promise.resolve()
+ 
+   constructor(private readonly store: TokenStore, options: OAuthServiceOptions = {}) {
+     this.fetchFn = options.fetchFn ?? fetch
+@@ -166,10 +168,11 @@ export class OAuthService {
+   }
+ 
+   async logout(): Promise<void> {
++    this.credentialGeneration += 1
+     if (this.activeLogin !== null) {
+       this.cancelActive(new OAuthServiceError('login-cancelled', 'ChatGPT sign-in was cancelled.'), 'cancelled')
+     }
+-    await this.store.clear().catch(() => {
++    await this.mutateCredentials(() => this.store.clear()).catch(() => {
+       throw new OAuthServiceError('storage-failed', 'Secure credentials could not be deleted.')
+     })
+     this.lastLoginError = undefined
+@@ -177,6 +180,7 @@ export class OAuthService {
+   }
+ 
+   async credentials(forceRefresh = false): Promise<StoredOAuthCredentials> {
++    this.assertAvailable()
+     const stored = await this.loadAuthenticated()
+     if (forceRefresh || stored.expiresAt - this.now() <= TOKEN_REFRESH_MARGIN_MS) {
+       return this.refreshCredentials(stored)
+@@ -187,6 +191,7 @@ export class OAuthService {
+   dispose(): void {
+     if (this.disposed) return
+     this.disposed = true
++    this.credentialGeneration += 1
+     if (this.activeLogin !== null) {
+       this.cancelActive(new OAuthServiceError('login-cancelled', 'ChatGPT sign-in was cancelled.'), 'cancelled')
+     }
+@@ -195,6 +200,7 @@ export class OAuthService {
+   }
+ 
+   private async exchangeCode(code: string, verifier: string, signal: AbortSignal): Promise<void> {
++    const generation = ++this.credentialGeneration
+     const response = await this.fetchFn(OAUTH_TOKEN_URL, {
+       method: 'POST',
+       headers: { 'content-type': 'application/x-www-form-urlencoded' },
+@@ -215,20 +221,25 @@ export class OAuthService {
+     }
+     const tokens = await response.json() as OAuthTokenResponse
+     const credentials = credentialsFromTokenResponse(tokens, this.now())
+-    await this.store.save(credentials).catch(() => {
+-      throw new OAuthServiceError('storage-failed', 'ChatGPT credentials could not be saved securely.')
++    await this.mutateCredentials(async () => {
++      this.assertCredentialGeneration(generation)
++      await this.store.save(credentials).catch(() => {
++        throw new OAuthServiceError('storage-failed', 'ChatGPT credentials could not be saved securely.')
++      })
++      this.assertCredentialGeneration(generation)
+     })
+   }
+ 
+   private refreshCredentials(stored: StoredOAuthCredentials): Promise<StoredOAuthCredentials> {
+     if (this.refreshPromise !== null) return this.refreshPromise
+-    this.refreshPromise = this.performRefresh(stored).finally(() => {
++    const generation = this.credentialGeneration
++    this.refreshPromise = this.performRefresh(stored, generation).finally(() => {
+       this.refreshPromise = null
+     })
+     return this.refreshPromise
+   }
+ 
+-  private async performRefresh(stored: StoredOAuthCredentials): Promise<StoredOAuthCredentials> {
++  private async performRefresh(stored: StoredOAuthCredentials, generation: number): Promise<StoredOAuthCredentials> {
+     const response = await this.fetchFn(OAUTH_TOKEN_URL, {
+       method: 'POST',
+       headers: { 'content-type': 'application/x-www-form-urlencoded' },
+@@ -243,16 +254,23 @@ export class OAuthService {
+     if (!response.ok) {
+       const detail = await oauthErrorIdentifier(response)
+       if (response.status === 400 || response.status === 401) {
+-        await this.store.clear().catch(() => {
+-          throw new OAuthServiceError('storage-failed', 'Expired ChatGPT credentials could not be deleted securely.')
++        await this.mutateCredentials(async () => {
++          this.assertCredentialGeneration(generation)
++          await this.store.clear().catch(() => {
++            throw new OAuthServiceError('storage-failed', 'Expired ChatGPT credentials could not be deleted securely.')
++          })
+         })
+       }
+       throw new OAuthServiceError('refresh-failed', `ChatGPT token refresh failed (${response.status}${detail === null ? '' : `, ${detail}`}). Sign in again.`)
+     }
+     const tokens = await response.json() as OAuthTokenResponse
+     const fresh = credentialsFromTokenResponse(tokens, this.now(), stored)
+-    await this.store.save(fresh).catch(() => {
+-      throw new OAuthServiceError('storage-failed', 'Refreshed credentials could not be saved securely.')
++    await this.mutateCredentials(async () => {
++      this.assertCredentialGeneration(generation)
++      await this.store.save(fresh).catch(() => {
++        throw new OAuthServiceError('storage-failed', 'Refreshed credentials could not be saved securely.')
++      })
++      this.assertCredentialGeneration(generation)
+     })
+     this.logger.info('[dsh-chatgpt-subscription] OAuth credentials refreshed')
+     return fresh
+@@ -320,6 +338,7 @@ export class OAuthService {
+   }
+ 
+   private cancelActive(error: OAuthServiceError, outcome: 'cancelled' | 'failed'): void {
++    this.credentialGeneration += 1
+     const active = this.activeLogin
+     if (active === null) return
+     clearTimeout(active.timeout)
+@@ -335,6 +354,18 @@ export class OAuthService {
+     for (const listener of this.listeners.get(event.loginId) ?? []) listener(event)
+   }
+ 
++  private mutateCredentials(work: () => Promise<void>): Promise<void> {
++    const operation = this.credentialWrites.then(work)
++    this.credentialWrites = operation.catch(() => undefined)
++    return operation
++  }
++
++  private assertCredentialGeneration(generation: number): void {
++    if (generation !== this.credentialGeneration || this.disposed) {
++      throw new OAuthServiceError('not-authenticated', 'Authentication changed during the pending operation.')
++    }
++  }
++
+   private assertAvailable(): void {
+     if (this.disposed) throw new OAuthServiceError('internal', 'The OAuth service has been disposed.')
+   }
+diff --git a/starter/src/host/common/idle-watchdog.ts b/starter/src/host/common/idle-watchdog.ts
+index 9c3da09..fbe0337 100644
+--- a/starter/src/host/common/idle-watchdog.ts
++++ b/starter/src/host/common/idle-watchdog.ts
+@@ -44,7 +44,7 @@ export async function* wrapStreamWithWatchdog<T>(
+     }
+     throw error
+   } finally {
+-    // 注入回归：提前停止消费时遗失上游取消。
++    consumer.abort(`${providerTag} stream consumer stopped`)
+     if (!exhausted) {
+       try {
+         await iterator.return?.(undefined)

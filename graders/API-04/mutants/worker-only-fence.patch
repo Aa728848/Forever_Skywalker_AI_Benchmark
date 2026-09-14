@@ -1,0 +1,13 @@
+diff --git a/starter/src/queue.ts b/starter/src/queue.ts
+index f064dab..562d236 100644
+--- a/starter/src/queue.ts
++++ b/starter/src/queue.ts
+@@ -69,7 +69,7 @@ export class DurableQueue {
+     let changed = false;
+     const accepted = this.#storage.write(() => {
+       const row = this.#storage.db.prepare('SELECT * FROM tasks WHERE id=?').get(lease.taskId);
+-      if (!row || row.owner !== lease.worker || row.generation !== lease.generation || row.leaseUntil !== lease.expiresAt) return false;
++      if (!row || row.owner !== lease.worker) return false;
+       if (row.state === 'completed') {
+         const previous = this.#storage.db.prepare('SELECT value FROM results WHERE taskId=?').get(lease.taskId);
+         if (previous?.value !== result) throw new QueueError('conflict', 'completed result differs');

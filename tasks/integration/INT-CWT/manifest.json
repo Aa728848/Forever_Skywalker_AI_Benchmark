@@ -1,0 +1,133 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "INT-CWT",
+  "taskVersion": "0.1.0",
+  "title": "LSP、缓存与编辑器全链路",
+  "runtime": "fsharp",
+  "runtimeRange": "dotnet >=10.0; vendored FSharp.Data 3.3.1",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "PROVENANCE.json",
+        "to": "PROVENANCE.json"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "dotnet",
+      "fsi",
+      "public-tests/checks.fsx"
+    ],
+    "hidden": [
+      "dotnet",
+      "fsi",
+      "__checks__/checks.fsx"
+    ]
+  },
+  "grader": {
+    "checks": "graders/INT-CWT/checks",
+    "referencePatch": "graders/INT-CWT/reference.patch",
+    "alternative": "graders/INT-CWT/alternative",
+    "defectDetectors": [
+      "public/original-documentstore-regression",
+      "public/editor-change-updates-cache-index-diagnostics",
+      "public/close-isolates-late-publication",
+      "hidden/configuration-generation-rejects-old-plan",
+      "hidden/incremental-text-matches-full-document",
+      "hidden/reopen-same-version-rejects-prior-lifecycle"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 1024,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/original-documentstore-regression",
+      "kind": "public",
+      "group": "regression",
+      "weight": 1,
+      "critical": true,
+      "summary": "保留原DocumentStore生命周期/路径与文本回归断言。"
+    },
+    {
+      "id": "public/editor-change-updates-cache-index-diagnostics",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "合成编辑器JSON-RPC变更经原解析器、文本缓存到索引/诊断。"
+    },
+    {
+      "id": "public/close-isolates-late-publication",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "关闭工作区文档后拒绝迟到诊断/索引发布。"
+    },
+    {
+      "id": "public/original-write-lock-releases-on-error",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "原F#写请求异常分类并释放真实读写锁。"
+    },
+    {
+      "id": "hidden/configuration-generation-rejects-old-plan",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "配置代际变化拒绝旧准备结果。"
+    },
+    {
+      "id": "hidden/incremental-text-matches-full-document",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "多条增量编辑与全量文本和诊断一致。"
+    },
+    {
+      "id": "hidden/reopen-same-version-rejects-prior-lifecycle",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "相同版本号重开仍隔离旧生命周期。"
+    },
+    {
+      "id": "hidden/closed-workspace-releases-retained-state",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": true,
+      "summary": "关闭后文档、索引和失效状态保留量归零。"
+    },
+    {
+      "id": "hidden/notification-runs-after-root-release",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": true,
+      "summary": "原RefreshLockPhases验证通知在根写锁之外运行。"
+    }
+  ]
+}

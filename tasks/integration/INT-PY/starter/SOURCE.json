@@ -1,0 +1,32 @@
+{
+  "repository": "https://github.com/llm-as-a-verifier/llm-as-a-verifier",
+  "commit": "8db8a114355a9d7fdf9a8d1d5c87f6aeebd18770",
+  "license": "MIT",
+  "retrieval": "原本机目录不存在，从公开固定commit的raw URL恢复；运行期不联网。",
+  "files": [
+    {
+      "path": "llm_verifier/fine_grained_reward.py",
+      "sha256": "3f5adc9d47ce995ce1cf7a2273bcf8ec382bbde1a6497e4e88f5bc819974450e"
+    },
+    {
+      "path": "llm_verifier/pivot_tournament.py",
+      "sha256": "61352172aae1c086a4dff369474f3b8e2569278e92a53e80fbf03a0a3d9f3517"
+    },
+    {
+      "path": "pyproject.toml",
+      "sha256": "100fb2863d7a20483347d4c0ec8339166c2855028ac0b5794d4599346d7e98d1"
+    },
+    {
+      "path": "LICENSE",
+      "sha256": "65a590981607098561dc1f4e0db8726130b3ce5120daa1b80e20962c4f40e274"
+    }
+  ],
+  "runtime": "CPython >=3.11 <3.14; stdlib-only tested paths; external call_verifier transport replaced by deterministic fixture",
+  "variants": {
+    "scoreTokens": "A..T/a..t，按标量值去重时取最大概率，再对保留概率归一化",
+    "repetitions": "奇数rep交换提示槽位，结果恢复为原候选a/b顺序",
+    "pairs": "方向敏感缓存；调用方所需pairs为唯一有向对，反向是不同键",
+    "failures": "tie仅本次0.5且不写缓存；raise传播线程异常",
+    "rng": "Python random.Random(seed).shuffle；不假设与JavaScript随机算法一致"
+  }
+}

@@ -123,6 +123,12 @@ report "public/counts-return-to-zero" (fun () ->
     let snapshot = gate.Snapshot()
     if snapshot.Readers <> 0 || snapshot.Writers <> 0 then failwith ("计数未回到 0：" + sprintf "%A" snapshot))
 
+report "public/notification-runs-after-write-release" (fun () ->
+    let gate = Gate()
+    let observed = gate.WithWriteThen((fun () -> 41), (fun value ->
+        let read = expectOk "通知期间另一个线程读取" (attempt 3000 (fun () -> gate.WithRead(fun () -> 1)))
+        value + read))
+    if observed <> 42 then failwith "通知参数或返回值被改变")
+
 printfn "# passed %d failed %d" passed failed
 if failed > 0 then exit 1
-

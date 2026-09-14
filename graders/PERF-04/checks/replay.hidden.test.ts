@@ -95,15 +95,16 @@ test('hidden/does-not-mutate-input', () => {
 test('hidden/timing-samples-are-bounded', () => {
   const events = makeEvents(5000, 40, 41);
   for (let index = 0; index < 2; index += 1) replaySession(events);
-  const samples: number[] = [];
-  for (let index = 0; index < 3; index += 1) {
+  const samples: { round: number; durationMs: number; rssBytes: number; heapUsedBytes: number }[] = [];
+  for (let index = 0; index < 7; index += 1) {
     const started = process.hrtime.bigint();
     replaySession(events);
-    samples.push(Number(process.hrtime.bigint() - started) / 1e6);
+    const durationMs = Number(process.hrtime.bigint() - started) / 1e6;
+    const memory = process.memoryUsage();
+    samples.push({ round: index + 1, durationMs, rssBytes: memory.rss, heapUsedBytes: memory.heapUsed });
   }
-  samples.sort((left, right) => left - right);
-  const median = samples[Math.floor(samples.length / 2)] as number;
-  const heapMb = process.memoryUsage().heapUsed / (1024 * 1024);
-  console.log('原始样本：n=5000 中位耗时 ' + median.toFixed(2) + 'ms，heapUsed ' + heapMb.toFixed(1) + 'MB');
+  const times = samples.map(sample => sample.durationMs).sort((left, right) => left - right);
+  const median = times[Math.floor(times.length / 2)] as number;
+  console.log('性能原始样本：' + JSON.stringify({ n: 5000, warmups: 2, samples, medianMs: median, measurementTrust: 'in-process-diagnostic' }));
   assert.ok(median < 10000, 'n=5000 的中位耗时必须远低于预算，实际 ' + median.toFixed(2) + 'ms');
 });

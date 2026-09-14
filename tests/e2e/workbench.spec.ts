@@ -1,4 +1,6 @@
 import { expect, test } from '@playwright/test';
+import { join } from 'node:path';
+import { exportWorkspace, applyReferencePatch, readManifest } from '../../packages/tasks/src/index.ts';
 
 test('筛选题目、保存示例预览并在刷新后显示证据', async ({ page }, testInfo) => {
   await page.goto('/');
@@ -22,4 +24,34 @@ test('筛选题目、保存示例预览并在刷新后显示证据', async ({ pa
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('report-mobile.png'), fullPage: true });
+});
+
+test('真实提交后显示待定质量、执行证据和不补齐缺测的四级汇总', async ({ page, request }, testInfo) => {
+  const root = process.env.BENCH_E2E_ROOT!;
+  const candidate = join(root, 'candidate');
+  exportWorkspace('CACHE-02', candidate);
+  expect(applyReferencePatch(readManifest('CACHE-02'), candidate, join(root, 'patch')).exitCode).toBe(0);
+  const response = await request.post('http://127.0.0.1:4318/api/runs', { headers: { 'x-bench-token': process.env.BENCH_E2E_TOKEN! }, data: { taskId: 'CACHE-02', candidateDirectory: candidate, idempotencyKey: 'browser-flow', submittedBy: 'e2e', reason: 'agent-completed' } });
+  expect(response.status()).toBe(201);
+  const status = await response.json();
+  expect(status.classification).toBe('passed');
+  expect(status.scoring).toMatchObject({ functional: 50, quality: null, total: null, mode: 'local' });
+  const selected = { runId: status.runId, attemptId: status.attemptId };
+  const duplicate = await request.post('http://127.0.0.1:4318/api/summaries', { data: [selected, selected] });
+  expect(duplicate.status()).toBe(400);
+  await page.goto('/');
+  await page.getByRole('button', { name: /运行记录/ }).click();
+  await expect(page.getByRole('heading', { name: 'CACHE-02 · 执行报告' })).toBeVisible();
+  await expect(page.locator('.score-hero strong')).toContainText('待定');
+  await expect(page.locator('.timeline')).toContainText('score.finalized');
+  await page.getByRole('checkbox', { name: /加入汇总 CACHE-02/ }).check();
+  await page.getByRole('button', { name: '汇总所选 1 次作答' }).click();
+  await expect(page.getByRole('heading', { name: '四级汇总 · 本机诊断' })).toBeVisible();
+  await expect(page.locator('.suite-summary')).toContainText('核心加权总分：待定');
+  await expect(page.locator('.suite-summary tbody tr')).toHaveCount(4);
+  const artifact = await request.get(`http://127.0.0.1:4318/api/runs/${status.runId}/${status.attemptId}/artifacts/${status.artifacts[0].id}`);
+  expect(artifact.ok()).toBe(true);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('run-report-mobile.png'), fullPage: true });
 });

@@ -1,0 +1,105 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "INT-TRADING",
+  "taskVersion": "0.1.0",
+  "title": "模拟行情与账本恢复一致性",
+  "runtime": "typescript",
+  "runtimeRange": "node >=24.14.1 <25",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "node",
+      "--test",
+      "--test-isolation=process",
+      "--test-reporter=tap",
+      "public-tests/**/*.test.mjs"
+    ],
+    "hidden": [
+      "node",
+      "--test",
+      "--test-isolation=process",
+      "--test-reporter=tap",
+      "__checks__/**/*.test.mjs"
+    ]
+  },
+  "grader": {
+    "checks": "graders/INT-TRADING/checks",
+    "referencePatch": "graders/INT-TRADING/reference.patch",
+    "alternative": "graders/INT-TRADING/alternative",
+    "defectDetectors": [
+      "public/state-failed-write-is-not-visible",
+      "hidden/state-retry-after-create-failure"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/behavior-quote-cache-to-durable-task",
+      "kind": "public",
+      "group": "behavior",
+      "summary": "合成报价经真实TTL缓存、协议与账本，持久化后可恢复。",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "public/state-failed-write-is-not-visible",
+      "kind": "public",
+      "group": "state",
+      "summary": "真实rename失败不改变内存、磁盘、通知或消费请求键。",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "public/boundary-protocol-and-idempotent-conflict",
+      "kind": "public",
+      "group": "boundary",
+      "summary": "协议拒绝未知字段，同请求不同动作拒绝且不覆盖。",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/state-retry-after-create-failure",
+      "kind": "hidden",
+      "group": "state",
+      "summary": "首次写入失败后原请求重试和新实例均能见到唯一确认任务。",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/regression-startup-reconciliation",
+      "kind": "hidden",
+      "group": "regression",
+      "summary": "真实重启取消未创建会话的执行，保留已绑定会话的执行。",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/resources-lock-and-history-bound",
+      "kind": "hidden",
+      "group": "resources",
+      "summary": "账本目录单写者、真实执行历史与请求缓存有界。",
+      "weight": 1,
+      "critical": true
+    }
+  ]
+}

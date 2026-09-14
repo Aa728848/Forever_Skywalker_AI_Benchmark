@@ -1,6 +1,19 @@
-# CONC-02 · 任务组的取消传播
+# CONC-02 · 并发令牌刷新与注销竞争
 
-- 难度：中等；题型：独立核心题；能力域：异步并发。运行时：TypeScript on Node.js 24。题目版本：0.1.0。
+- 难度：中等；题型：独立核心题；能力域：异步并发。运行时：TypeScript on Node.js 24。题目版本：0.1.1。
+
+0.1.1 补齐目录要求的令牌刷新/注销场景，并保留 0.1.0 的 TaskGroup 接口和回归行为。
+
+## 令牌刷新契约
+
+`starter/src/token-session.ts` 导出 `TokenSession`、`Tokens`、`RefreshedTokens`、`RefreshPort` 和 `SignedOutError`。构造函数接收初始令牌与异步刷新函数；`current` 返回当前凭据快照，`refresh()` 返回刷新后的 `Tokens`，`logout()` 注销。
+
+1. 同一实例同时刷新只调用一次 RefreshPort，所有调用者取得同一次结果或错误。
+2. `logout()` 立即清空凭据；在途刷新随后成功也必须拒绝为 SignedOutError，不能复活身份。
+3. 已注销的实例不能再次调用刷新端口。
+4. 端口未返回 refreshToken 时保留原值，返回轮换值时下一次刷新使用新值。
+5. 刷新失败向上保留原因，不污染旧凭据，下一次允许重试。
+6. 实例、返回快照互相隔离；修改读取到的对象不能改写内部凭据。
 
 ## 背景
 

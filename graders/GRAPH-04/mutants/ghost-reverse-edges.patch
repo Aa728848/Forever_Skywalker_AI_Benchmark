@@ -1,0 +1,11 @@
+--- a/starter/src/graph.ts
++++ b/starter/src/graph.ts
+@@ -62,7 +62,7 @@
+       return reverse.get(id) as Set<string>;
+     };
+     for (const id of changed) {
+-      for (const dependency of this.documents.get(id)?.deps ?? []) mutable(dependency).delete(id);
++      for (const dependency of this.documents.get(id)?.deps ?? []) mutable(dependency);
+       if (records.has(id)) mutable(id);
+     }
+     for (const id of changed) for (const dependency of records.get(id)?.deps ?? []) mutable(dependency).add(id);

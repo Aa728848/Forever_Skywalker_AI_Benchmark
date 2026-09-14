@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "PERF-04",
-  "taskVersion": "0.1.0",
+  "taskVersion": "0.2.0",
   "title": "长会话重放的延迟、吞吐与内存预算",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",

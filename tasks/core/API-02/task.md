@@ -1,10 +1,10 @@
-# API-02 · 分页游标与边界
+# API-02 · 分页与幂等写入
 
-- 难度：中等；题型：独立核心题；能力域：后端与服务协议。运行时：TypeScript on Node.js 24。题目版本：0.1.0。
+- 难度：中等；题型：独立核心题；能力域：后端与服务协议。运行时：TypeScript on Node.js 24。题目版本：0.1.1。
 
 ## 背景
 
-`starter/src/page.ts` 用不可猜测的 base64url 游标分页。当前实现的 `decodeCursor` **不做任何校验**：
+`starter/src/page.ts` 用 base64url 编码偏移游标分页（编码不是加密，不能保证不可猜测）。当前实现的 `decodeCursor` **不做任何校验**：
 前缀不对、数字非法、写法不规范都会得到 `NaN` 或错误偏移，而不是明确的 `PageError`。请在**不改变公开接口**的前提下修复。
 
 ## 公开接口（冻结）
@@ -25,6 +25,22 @@ export function paginate<T>(items: readonly T[], request: PageRequest): Page<T>;
 3. `limit` 必须是 1..100 的整数，否则抛 `PageError`（`field` 为 `limit`）。
 4. `cursor` 为 `null` 时从第 0 项开始；偏移超出数据范围时返回空 `items` 且 `nextCursor` 为 `null`（不是错误）。
 5. `nextCursor` 仅在**还有剩余数据**时给出；恰好取完最后一页时必须为 `null`。
+
+## 幂等写入接口与契约（0.1.1）
+
+`starter/src/idempotent-writer.ts` 另有以下公开接口，当前错误地重复执行在途写入并忽略请求冲突：
+
+```ts
+export class IdempotencyConflictError extends Error {}
+export class IdempotentWriter<T> {
+  write(key: string, request: string, commit: (body: string) => Promise<T>): Promise<T>;
+}
+```
+
+- 相同键与相同请求字符串只执行一次 commit，包括首次调用尚未完成的情况；后续调用获得同一个结果对象。
+- 相同键但不同请求字符串以 IdempotencyConflictError 拒绝，不能执行新的 commit，也不能覆盖原结果；键按精确字符串比较。
+- commit 失败要原样传播并释放该键，下一次显式调用可以重试；不得自动无限重试。
+- 不同键互不阻塞。此中等难度题只要求单进程内幂等，持久化崩溃恢复由 API-04 覆盖。
 
 ## 限制
 

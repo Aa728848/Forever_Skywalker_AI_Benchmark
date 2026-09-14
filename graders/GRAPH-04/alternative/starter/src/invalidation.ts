@@ -22,7 +22,7 @@ function consumersOf(nodes: readonly Node[]): Map<string, string[]> {
   return consumers;
 }
 
-/** 替代实现：递归深度优先 + 已访问集合。 */
+/** 替代实现：显式栈深度优先 + 已访问集合，深图不依赖调用栈。 */
 export class Invalidator {
   readonly #consumers: Map<string, string[]>;
 
@@ -33,12 +33,13 @@ export class Invalidator {
   invalidate(changed: readonly string[]): readonly string[] {
     for (const id of changed) if (!this.#consumers.has(id)) throw new UnknownNodeError(id);
     const affected = new Set<string>();
-    const walk = (id: string): void => {
-      if (affected.has(id)) return;
+    const stack = [...changed];
+    while (stack.length > 0) {
+      const id = stack.pop()!;
+      if (affected.has(id)) continue;
       affected.add(id);
-      for (const consumer of this.#consumers.get(id) as string[]) walk(consumer);
-    };
-    for (const id of changed) walk(id);
+      for (const consumer of this.#consumers.get(id) as string[]) stack.push(consumer);
+    }
     return [...affected].sort();
   }
 }

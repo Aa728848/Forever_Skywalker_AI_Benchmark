@@ -2,6 +2,7 @@ import {
   assessmentValidator, difficulties, functionalWeights, qualityWeights, rubricVersion,
   type Assessment, type Difficulty, type ExecutionResult, type ExecutionScore, type ScoreResult, type Task, type TaskManifest,
 } from '@fsa/contracts';
+export { scoreBenchmark, type BenchmarkPolicy, type BenchmarkSamples } from './benchmark.ts';
 
 const round = (value: number) => Math.round(value * 100) / 100;
 
@@ -76,7 +77,7 @@ export function scoreAssessment(value: unknown): ScoreResult {
 
 export function summarizeLevels(
   tasks: ReadonlyArray<Pick<Task, 'id' | 'track' | 'difficulty'>>,
-  reports: ReadonlyArray<{ taskId: string; result: ScoreResult }>,
+  reports: ReadonlyArray<{ taskId: string; result: Pick<ScoreResult, 'total' | 'thresholdMet'> }>,
 ) {
   const byId = new Map(reports.map(report => [report.taskId, report.result]));
   if (byId.size !== reports.length) throw new Error('同一题只能选择一次作答，禁止隐式挑选最高分。');
@@ -128,6 +129,8 @@ export interface QualityReview {
 }
 
 export interface QualityEvidence {
+  readonly mode?: 'rehearsal';
+  readonly release?: { readonly taskReady: boolean; readonly staticCalibrated: boolean; readonly benchmarkCalibrated: boolean; readonly independentReview: boolean };
   readonly objective?: Partial<Record<QualityDimension, QualityObjective>>;
   readonly review?: Partial<Record<QualityDimension, QualityReview>>;
 }
@@ -145,6 +148,11 @@ function composeQuality(evidence: QualityEvidence, reasons: string[]): { dimensi
   for (const key of qualityDimensions) {
     const objective = evidence.objective?.[key];
     const review = evidence.review?.[key];
+    for (const item of [objective, review]) {
+      if (item !== undefined && (!Number.isFinite(item.score) || item.score < 0 || item.score > 100)) {
+        throw new RangeError('质量维度 ' + key + ' 的分数必须是 0–100 的有限数。');
+      }
+    }
     if (objective === undefined || review === undefined) {
       complete = false;
       if (objective !== undefined && objective.evidence.length === 0) reasons.push('质量维度 ' + key + ' 的客观分缺少证据引用。');
@@ -157,19 +165,22 @@ function composeQuality(evidence: QualityEvidence, reasons: string[]): { dimensi
       reasons.push('质量维度 ' + key + ' 的客观证据类型必须是 ' + expected + '，实际是 ' + objective.kind + '。');
       continue;
     }
-    if (objective.evidence.length === 0 || review.evidence.length === 0) {
+    if (objective.evidence.length === 0 || review.evidence.length === 0 || [...objective.evidence, ...review.evidence].some(ref => ref.trim() === '')) {
       complete = false;
       reasons.push('质量维度 ' + key + ' 的分数必须引用证据。');
       continue;
     }
     const weight = qualityWeights[key];
-    const value = round(objective.score * weight + review.score * (1 - weight));
-    dimensions[key] = value;
+    const value = objective.score * weight + review.score * (1 - weight);
+    dimensions[key] = round(value);
     total += (value / 100) * 12.5;
   }
-  return { dimensions, quality: complete ? round(total) : null };
+  return { dimensions, quality: complete ? total : null };
 }
 export function scoreExecution(execution: ExecutionResult, manifest: TaskManifest, evidence: QualityEvidence = {}): ExecutionScore {
+  if (execution.taskId !== manifest.taskId || execution.taskVersion !== manifest.taskVersion) throw new Error('执行结果与题目版本不一致。');
+  if (new Set(execution.checks.map(check => check.id)).size !== execution.checks.length) throw new Error('执行结果的检查 ID 不得重复。');
+  if (execution.checks.some(check => !manifest.checks.some(declared => declared.id === check.id))) throw new Error('执行结果含题目未声明的检查。');
   const statusOf = (id: string) => execution.checks.find(check => check.id === id)?.status ?? 'not-run';
   const undone = execution.classification === 'infrastructure-error' || execution.classification === 'cancelled';
   const groups = executionGroups.map(group => {
@@ -180,7 +191,7 @@ export function scoreExecution(execution: ExecutionResult, manifest: TaskManifes
     const notRun = declared.filter(check => statusOf(check.id) === 'not-run');
     const weightPassed = passed.reduce((sum, check) => sum + check.weight, 0);
     // 被测失败（含超时/OOM）按评分标准把未取得的项记 0；只有基础设施故障与取消才是“未取得结论”。
-    const complete = !undone && weightTotal > 0;
+    const complete = !undone && weightTotal > 0 && (execution.classification !== 'passed' || notRun.length === 0);
     return {
       group,
       weight: functionalWeights[group],
@@ -194,27 +205,37 @@ export function scoreExecution(execution: ExecutionResult, manifest: TaskManifes
   });
   const complete = groups.every(group => group.score !== null);
   const functional = complete
-    ? round(groups.reduce((sum, group) => sum + ((group.score ?? 0) / 100) * group.weight, 0))
+    ? groups.reduce((sum, group) => sum + (group.weightPassed / group.weightTotal) * group.weight, 0)
     : null;
   const criticalPassed = manifest.checks.filter(check => check.critical).every(check => statusOf(check.id) === 'passed');
   const reasons: string[] = [];
+  const releaseReady = evidence.release !== undefined && Object.values(evidence.release).every(value => value === true);
+  const mode: ExecutionScore['mode'] = evidence.mode === 'rehearsal' ? 'rehearsal' : execution.isolation === 'none' ? 'local' : releaseReady ? 'formal' : 'rehearsal';
+  if (mode === 'local') reasons.push('宿主执行结果仅供本地验证，不是隔离正式成绩。');
+  if (mode === 'rehearsal') reasons.push('演练成绩：正式发布需要题目 ready、静态与性能阈值已校准、独立真实评审及容器隔离。');
   if (execution.classification === 'infrastructure-error') reasons.push('基础设施故障：只允许同一快照有限重试，本次不产生分数。');
   if (execution.classification === 'cancelled') reasons.push('执行被取消：未取得结论，总分保持待定。');
   if (execution.classification === 'timeout') reasons.push('候选未在时间预算内完成：未取得的检查项按被测失败记 0。');
   if (execution.classification === 'memory-exceeded') reasons.push('候选因内存耗尽终止：未取得的检查项按被测失败记 0。');
   const notRunTotal = groups.reduce((sum, group) => sum + group.notRun.length, 0);
-  if (!undone && notRunTotal > 0) reasons.push('仍有 ' + notRunTotal + ' 项检查未取得结论，按被测失败记 0。');
-  if (!criticalPassed) reasons.push('存在未通过的关键验收项。');
+  if (!undone && notRunTotal > 0) reasons.push('仍有 ' + notRunTotal + ' 项检查未取得结论，' + (execution.classification === 'passed' ? '通过声明缺少完整证据，保持待定。' : '按被测失败记 0。'));
+  const criticalFailed = manifest.checks.some(check => check.critical && (statusOf(check.id) === 'failed' || (!undone && execution.classification !== 'passed' && statusOf(check.id) === 'not-run')));
+  const fatalExecution = ['timeout', 'memory-exceeded'].includes(execution.classification)
+    || execution.phases.some(phase => phase.outputLimitExceeded)
+    || (execution.classification === 'check-failed' && execution.checks.every(check => check.status === 'passed'));
+  if (fatalExecution) reasons.push('执行异常或超出硬资源限制，不能仅凭已打印的通过检查判定合格。');
+  if (criticalFailed) reasons.push('存在未通过的关键验收项。');
+  else if (!criticalPassed) reasons.push('关键验收项尚未取得结论。');
   const composed = composeQuality(evidence, reasons);
-  const total = functional !== null && composed.quality !== null ? round(functional + composed.quality) : null;
+  const total = functional !== null && composed.quality !== null ? functional + composed.quality : null;
   if (composed.quality === null) {
     const missing = qualityDimensions.filter(key => composed.dimensions[key] === null);
     reasons.push('代码质量维度仍缺证据：' + missing.join('、') + '（客观分需要 static/benchmark 证据，评审分需要 review 证据），总分待定。');
   }
-  const readiness: ExecutionScore['readiness'] = execution.classification === 'infrastructure-error' ? 'infra-error' : functional === null ? 'pending' : 'complete';
+  const readiness: ExecutionScore['readiness'] = execution.classification === 'infrastructure-error' ? 'infra-error' : total === null ? 'pending' : 'complete';
   return {
     schemaVersion: '0.1.0',
-    mode: 'formal',
+    mode,
     rubricVersion,
     runId: execution.runId,
     attemptId: execution.attemptId,
@@ -222,17 +243,19 @@ export function scoreExecution(execution: ExecutionResult, manifest: TaskManifes
     taskVersion: execution.taskVersion,
     candidateTreeHash: execution.candidateTreeHash,
     classification: execution.classification,
-    functional,
-    quality: composed.quality,
-    total,
+    functional: functional === null ? null : round(functional),
+    quality: composed.quality === null ? null : round(composed.quality),
+    total: total === null ? null : round(total),
     groups,
     dimensions: composed.dimensions,
     criticalPassed,
     readiness,
     // 总分已知时按「总分 ≥70、可用验证 ≥40、关键项全过」判定；证据不全时只保留关键项失败的确定结论。
-    thresholdMet: total === null ? (criticalPassed ? null : false) : total >= 70 && (functional ?? 0) >= 40 && criticalPassed,
+    thresholdMet: total === null ? (criticalFailed || fatalExecution ? false : null) : !fatalExecution && total >= 70 && (functional ?? 0) >= 40 && criticalPassed,
     reasons,
-    evidenceRefs: execution.evidenceRefs,
+    evidenceRefs: [...new Set([...execution.evidenceRefs, ...qualityDimensions.flatMap(key => [
+      ...(evidence.objective?.[key]?.evidence ?? []), ...(evidence.review?.[key]?.evidence ?? []),
+    ])])],
     scoredAt: new Date().toISOString(),
   };
 }

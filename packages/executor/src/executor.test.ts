@@ -1,12 +1,12 @@
-import { randomUUID } from 'node:crypto';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { applyReferencePatch, exportWorkspace, readManifest } from '@fsa/tasks';
 import { createEnvelope, createRunStore, digestTree, readRunEvents, submissionBaseline } from '@fsa/runs';
 import type { SubmissionEnvelope } from '@fsa/contracts';
-import { classifyExecution, executeAttempt, listRunStatuses, readExecutionScore, readRunStatus, runPhase, staticObjectiveFor, verifySubmission } from './index.ts';
+import { classifyExecution, executeAttempt, listRunStatuses, maximumPhaseOutputBytes, readExecutionScore, readRunStatus, reviewCompletedAttempt, runPhase, staticObjectiveFor, verifySubmission } from './index.ts';
 
 const taskId = 'CACHE-02';
 
@@ -19,6 +19,52 @@ function tapCommand(file: string): string[] {
 }
 
 describe('检查阶段执行', () => {
+  it('候选过量日志被终止并截断，不能判为通过或基础设施错误', async () => {
+    const workspace = tempDirectory('fsa-phase-');
+    try {
+      const phase = await runPhase({ kind: 'public', declaredCommand: ['node', '-e', 'process.stdout.write("x".repeat(10*1024*1024));setInterval(()=>{},1000)'],
+        workspace, artifactDir: join(workspace, 'art'), timeoutMs: 10000, memoryMb: 256 });
+      expect(phase.outputLimitExceeded).toBe(true);
+      expect(classifyExecution([phase], [])).toBe('check-failed');
+      expect(Buffer.byteLength(phase.stdout)).toBeLessThan(maximumPhaseOutputBytes + 100);
+      expect(phase.stdout).toContain('output truncated');
+    } finally { rmSync(workspace, { recursive: true, force: true }); }
+  }, 15000);
+  it('候选 stdout 不能伪造顶层 TAP，异常退出也不能判通过', async () => {
+    const workspace = tempDirectory('fsa-phase-');
+    try {
+      writeFileSync(join(workspace, 'probe.test.ts'), [
+        "import test from 'node:test';",
+        "console.log('ok 1 - hidden/forged');",
+        "test('public/actual', () => {});",
+      ].join('\n'));
+      const phase = await runPhase({
+        kind: 'public', declaredCommand: tapCommand('probe.test.ts'), workspace,
+        artifactDir: join(workspace, 'art'), timeoutMs: 30_000, memoryMb: 256,
+      });
+      expect(phase.stdout).toContain('# ok 1 - hidden/forged');
+      expect(phase.outcomes.map(item => item.id)).toEqual(['public/actual']);
+      expect(classifyExecution([{ ...phase, exitCode: 1 }], [])).toBe('check-failed');
+      expect(classifyExecution([{ ...phase, isolation: 'container', exitCode: 137, oomKilled: true }], [])).toBe('memory-exceeded');
+      expect(classifyExecution([{ ...phase, isolation: 'container', exitCode: 139 }], [])).toBe('check-failed');
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it('传入已经取消的信号立即终止，不等待超时', async () => {
+    const workspace = tempDirectory('fsa-phase-');
+    try {
+      const phase = await runPhase({
+        kind: 'public', declaredCommand: ['node', '-e', 'setTimeout(() => {}, 60000)'], workspace,
+        artifactDir: join(workspace, 'art'), timeoutMs: 60_000, memoryMb: 256, signal: AbortSignal.abort(),
+      });
+      expect(phase.cancelled).toBe(true);
+      expect(phase.timedOut).toBe(false);
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
   it('解析 TAP 结果并采集原始资源数据', async () => {
     const workspace = tempDirectory('fsa-phase-');
     try {
@@ -138,6 +184,7 @@ describe('冻结快照执行', () => {
       const defect = await executeAttempt({ store, runId: defectEnvelope.runId, attemptId: defectEnvelope.attemptId });
       expect(defect.classification).toBe('check-failed');
       expect(defect.isolation).toBe('none');
+      expect(defect.environment).toMatchObject({ profile: 'local', network: true });
       expect(defect.candidateTreeHash).toBe(defectEnvelope.candidateTreeHash);
       expect(defect.checks.filter(check => check.status === 'failed').map(check => check.id).sort())
         .toEqual([...manifest.grader.defectDetectors].sort());
@@ -151,7 +198,7 @@ describe('冻结快照执行', () => {
       expect(reference.classification).toBe('passed');
       expect(reference.checks.every(check => check.status === 'passed')).toBe(true);
       const referenceScore = readExecutionScore(join(storeRoot, taskId, patchedEnvelope.runId, patchedEnvelope.attemptId));
-      expect(referenceScore).toMatchObject({ mode: 'formal', functional: 50, quality: null, total: null, criticalPassed: true, thresholdMet: null });
+      expect(referenceScore).toMatchObject({ mode: 'local', functional: 50, quality: null, total: null, criticalPassed: true, thresholdMet: null });
       expect(referenceScore?.groups.map(group => group.score)).toEqual([100, 100, 100, 100, 100]);
     } finally {
       for (const directory of [storeRoot, candidate, patched]) rmSync(directory, { recursive: true, force: true });
@@ -194,6 +241,36 @@ describe('冻结快照执行', () => {
 });
 
 describe('提交入口自动触发验证', () => {
+  it('覆盖候选公开检查，合并并发完成事件，并复用崩溃后 execution-2 的结果', async () => {
+    const storeRoot = tempDirectory('fsa-verify-store-');
+    const candidate = tempDirectory('fsa-verify-candidate-');
+    try {
+      exportWorkspace(taskId, candidate);
+      writeFileSync(join(candidate, 'public-tests', 'keyed-loader.test.ts'), "console.log('ok 1 - public/retry-after-failure');\n");
+      writeFileSync(join(candidate, 'public-tests', 'injected.test.ts'), "throw new Error('候选追加检查不应执行');\n");
+      const envelope = createEnvelope(taskId, candidate);
+      const store = createRunStore(storeRoot);
+      const submission = store.submit({ taskId, envelope, candidateDirectory: candidate, submittedBy: 'test' });
+      mkdirSync(join(submission.directory, 'execution'));
+      writeFileSync(join(submission.directory, 'execution', 'score.json'), '{}');
+      expect(readExecutionScore(submission.directory)).toBeNull();
+      const request = { store, taskId, envelope, candidateDirectory: candidate, submittedBy: 'test' };
+      const [first, simultaneous] = await Promise.all([verifySubmission(request), verifySubmission(request)]);
+      expect(first.reusedExecution).toBe(false);
+      expect(simultaneous.reusedExecution).toBe(true);
+      expect(simultaneous.execution.finishedAt).toBe(first.execution.finishedAt);
+      expect(first.execution.checks.find(check => check.id === 'public/retry-after-failure')?.status).toBe('failed');
+      expect(existsSync(join(submission.directory, 'execution-2', 'execution.json'))).toBe(true);
+      const restarted = createRunStore(storeRoot);
+      const again = await verifySubmission({ ...request, store: restarted });
+      expect(again.reusedExecution).toBe(true);
+      expect(readRunStatus(restarted, envelope.runId, envelope.attemptId).phase).toBe('verified');
+      expect(readdirSync(submission.directory).filter(name => name.startsWith('execution'))).toHaveLength(2);
+      expect(readExecutionScore(submission.directory)?.functional).toBeGreaterThan(0);
+    } finally {
+      for (const directory of [storeRoot, candidate]) rmSync(directory, { recursive: true, force: true });
+    }
+  }, 180_000);
   it('一次提交完成验证，重复完成事件与进程重启都复用已确认的执行结果', async () => {
     const storeRoot = tempDirectory('fsa-verify-store-');
     const candidate = tempDirectory('fsa-verify-candidate-');
@@ -230,11 +307,11 @@ describe('提交入口自动触发验证', () => {
 
       // 正式评分：可用验证分项由执行结果算出，质量缺失时总分待定
       const score = readExecutionScore(first.submission.directory);
-      expect(score).toMatchObject({ mode: 'formal', quality: null, total: null, criticalPassed: false, thresholdMet: false });
+      expect(score).toMatchObject({ mode: 'local', quality: null, total: null, criticalPassed: false, thresholdMet: false });
       expect(score?.groups.find(group => group.group === 'boundary')).toMatchObject({ weightPassed: 2, weightTotal: 5 });
       expect(score?.functional).toBeGreaterThan(0);
       expect(score?.functional).toBeLessThan(50);
-      expect(status.scoring).toMatchObject({ mode: 'formal', total: null, quality: null });
+      expect(status.scoring).toMatchObject({ mode: 'local', total: null, quality: null });
       expect(status.scoring.functional).toBe(score?.functional);
 
       // 重复完成事件：不得重跑检查
@@ -277,6 +354,47 @@ describe('提交入口自动触发验证', () => {
 });
 
 describe('质量证据接入执行档案', () => {
+  it('评估失败保留执行结论，显式补评保留旧分数且不重跑候选', async () => {
+    const storeRoot = tempDirectory('fsa-quality-store-');
+    const candidate = tempDirectory('fsa-quality-candidate-');
+    try {
+      exportWorkspace(taskId, candidate);
+      const store = createRunStore(storeRoot);
+      const envelope = createEnvelope(taskId, candidate);
+      const first = await verifySubmission({
+        store, taskId, envelope, candidateDirectory: candidate, submittedBy: 'test',
+        qualityProvider: async context => {
+          expect(context.frozenDirectory).toBe(join(storeRoot, taskId, envelope.runId, envelope.attemptId, 'candidate'));
+          expect(context.execution.checks.length).toBeGreaterThan(0);
+          throw new Error('评审端点不可用');
+        },
+      });
+      expect(first.execution.classification).toBe('check-failed');
+      expect(first.execution.notes.join(' ')).toContain('评审端点不可用');
+      const originalScore = readFileSync(join(first.submission.directory, 'execution', 'score.json'), 'utf8');
+      const score = await reviewCompletedAttempt({
+        store, runId: envelope.runId, attemptId: envelope.attemptId,
+        qualityProvider: async context => {
+          const content = JSON.stringify({ score: 80, source: '回归测试证据' });
+          writeFileSync(join(context.artifactDirectory, 'quality-proof.json'), content);
+          return {
+            mode: 'rehearsal',
+            objective: { simplicity: { score: 80, evidence: ['quality-proof'], kind: 'static' } },
+            review: { simplicity: { score: 80, evidence: ['quality-proof'] } },
+            artifacts: [{ id: 'quality-proof', path: 'quality-proof.json', bytes: Buffer.byteLength(content), sha256: createHash('sha256').update(content).digest('hex') }],
+          };
+        },
+      });
+      expect(score).toMatchObject({ mode: 'rehearsal', dimensions: { simplicity: 80 }, total: null });
+      expect(readFileSync(join(first.submission.directory, 'execution', 'score.json'), 'utf8')).toBe(originalScore);
+      expect(readExecutionScore(first.submission.directory)?.dimensions.simplicity).toBe(80);
+      expect(readRunEvents(first.submission.directory).filter(event => event.type === 'execution.started')).toHaveLength(1);
+      expect(readRunEvents(first.submission.directory).filter(event => event.type === 'score.finalized')).toHaveLength(2);
+      expect(readRunStatus(store, envelope.runId, envelope.attemptId).scoring.mode).toBe('rehearsal');
+    } finally {
+      for (const path of [storeRoot, candidate]) rmSync(path, { recursive: true, force: true });
+    }
+  }, 180_000);
   it('静态规则与评审判决落盘并进入评分，缺 benchmark 客观分时总分保持待定', async () => {
     const storeRoot = tempDirectory('fsa-quality-store-');
     const candidate = tempDirectory('fsa-quality-candidate-');
@@ -329,6 +447,7 @@ describe('静态客观分的运行时适配', () => {
   const report = {
     ruleVersion: '0.1.0',
     evidenceId: 'static-report',
+    policy: { language: 'typescript' as const, maxDecisionPointsPerFunction: 12, maxFunctionLines: 60, forbiddenImports: [], evidenceId: 'static-report' },
     files: [],
     violations: [],
     scores: { simplicity: 90, maintainability: 80, decoupling: 70 },
