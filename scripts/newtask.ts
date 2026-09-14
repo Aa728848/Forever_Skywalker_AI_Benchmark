@@ -154,6 +154,14 @@ if (verify.status !== 0) {
   const publicObserved = observedFailures(verify.stdout, 'starter-public');
   const hiddenObserved = observedFailures(verify.stdout, 'starter-hidden');
   const othersPassed = verify.stdout.split('\n').every(line => !/^不通过 (reference|alternative)-/.test(line));
+  // 起始版本一条都不失败时，缺陷注入或检查本身有问题：拒绝收敛，也不推进状态。
+  const starterClean = /(?:通过|不通过) starter-public：exit=0，实际失败=\[\]/.test(verify.stdout)
+    && /(?:通过|不通过) starter-hidden：exit=0，实际失败=\[\]/.test(verify.stdout);
+  if (starterClean) {
+    console.error('起始版本没有任何失败项：缺陷注入或检查设计有问题，拒绝自动收敛，保持 designed 状态。');
+    console.log(showStages(verify));
+    process.exitCode = 1;
+  }
   if (publicObserved !== null && hiddenObserved !== null && othersPassed && publicObserved.length + hiddenObserved.length > 0) {
     const declared = [...spec.defectDetectors].sort();
     const observed = [...publicObserved, ...hiddenObserved].sort();
@@ -168,9 +176,10 @@ if (verify.status !== 0) {
     console.log(showStages(verify));
   } else if (publicObserved !== null && hiddenObserved !== null && publicObserved.length + hiddenObserved.length === 0) {
     // 起始版本一条都不失败，说明缺陷注入或检查写错了：不能把空数组写进 manifest（协议要求至少一项）。
+    // 只设置退出码并继续走下面的失败分支：直接 process.exit 会丢掉尚未刷新的诊断输出。
     console.error('起始版本没有任何失败项：缺陷注入或检查设计有问题，拒绝自动收敛，保持 designed 状态。');
     console.log(showStages(verify));
-    process.exit(1);
+    process.exitCode = 1;
   }
 }
 if (verify.status !== 0) {
