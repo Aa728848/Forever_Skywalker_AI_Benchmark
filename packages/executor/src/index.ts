@@ -610,6 +610,10 @@ export interface VerifySubmissionRequest {
   image?: string | null;
   imageDigest?: string | null;
   signal?: AbortSignal;
+  /** 透传给执行器的质量证据：静态规则、评审判决与调用方补充（例如 benchmark 客观分）。 */
+  staticPolicy?: StaticPolicy;
+  review?: ReviewVerdict;
+  quality?: QualityEvidence;
 }
 
 export interface VerificationOutcome {
@@ -650,6 +654,9 @@ export async function verifySubmission(request: VerifySubmissionRequest): Promis
     attemptId: submission.attempt.attemptId,
     artifactDirectory: nextArtifactDirectory(submission.directory),
     ...(request.signal === undefined ? {} : { signal: request.signal }),
+    ...(request.staticPolicy === undefined ? {} : { staticPolicy: request.staticPolicy }),
+    ...(request.review === undefined ? {} : { review: request.review }),
+    ...(request.quality === undefined ? {} : { quality: request.quality }),
   });
   return { submission, execution, reusedExecution: false };
 }
@@ -684,7 +691,7 @@ export function readRunStatus(store: RunStore, runId: string, attemptId: string)
           functional: score.functional,
           quality: score.quality,
           total: score.total,
-          reason: score.reasons.join(' '),
+          reason: score.reasons.length > 0 ? score.reasons.join(' ') : '按规则版本 ' + score.rubricVersion + ' 计算，无异常说明。',
         },
     evidenceRefs: execution?.evidenceRefs ?? [],
     artifacts: execution?.artifacts ?? [],

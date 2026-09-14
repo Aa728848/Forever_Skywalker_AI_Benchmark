@@ -21,7 +21,8 @@
     "task:export": "node scripts/task.ts export",
     "task:verify": "node scripts/task.ts verify",
     "run:rehearse": "node scripts/run.ts",
-    "trial": "node scripts/trial.ts"
+    "trial": "node scripts/trial.ts",
+    "score:rehearse": "node scripts/score-rehearse.ts"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
