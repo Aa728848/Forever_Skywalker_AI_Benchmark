@@ -111,6 +111,14 @@ pnpm task:export --all "C:\Users\A\Documents\BenchAnswers\batch-all"
 pnpm bench submit CACHE-02 "C:\Users\A\Documents\BenchAnswers\cache-r1" --key other-agent-cache-r1 --profile linux-container --measure
 ```
 
+如果需要把某次作答交给外部评分 Agent，可先导出脱敏评审材料：
+
+```powershell
+pnpm bench review-export <runId> <attemptId> --output "C:\Users\A\Documents\BenchAnswers\review-cache-r1"
+```
+
+目录中会生成 `review-request.json` 与说明文件。评分 Agent 返回 `ReviewVerdict` 后，请包装为 `{"reviewer":"agent-id","reason":"独立评分","verdict":<ReviewVerdict>}` 文件，再用 `bench review <runId> <attemptId> --human <JSON文件>` 写回该次作答；材料包不包含隐藏检查、参考补丁或 API 令牌。
+
 这种方式同样不需要 DSH，也不要求网页先启动。当前内置的自动做题连接是 DSH；仅填一个普通聊天模型 API，还缺少负责读写文件和运行命令的编程 Agent。裁判模型负责评审最终代码，不负责替被测模型做题。
 
 如果要交给外部评分 Agent，平台应先导出冻结作答的评审材料，再由 Agent 返回符合协议的 JSON；Agent 不能直接修改分数。当前 `bench review` 会使用已配置的独立裁判，质量材料不足或响应无效时质量分继续显示“待定”。

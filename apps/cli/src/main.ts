@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { tasks, requireTask } from '@fsa/catalog';
 import { difficultyLabels, humanReviewValidator, type RunStatus } from '@fsa/contracts';
@@ -7,6 +8,7 @@ import { createEnvelope, createRunStore, defaultRunRoot } from '@fsa/runs';
 import { listRunStatuses, readExecutionScore, readRunStatus, renderRunReport, reviewCompletedAttempt, verifySubmission } from '@fsa/executor';
 import { createEnvironmentJudge, judgeConfigFromEnvironment, JudgeUnavailableError } from '@fsa/judge';
 import { createQualityProvider, summarizeRuns } from '@fsa/evaluation';
+import { repositoryRoot } from '@fsa/tasks';
 
 const usage = [
   '用法：',
@@ -17,6 +19,7 @@ const usage = [
   '  bench status <runId> <attemptId> [--root <运行存储目录>] [--format json]',
   '  bench runs [--root <运行存储目录>] [--format json]',
   '  bench review <runId> <attemptId> [--human <复核JSON>] [--measure] [--root <运行存储目录>]',
+  '  bench review-export <runId> <attemptId> --output <目录> [--root <运行存储目录>]   # 导出脱敏评审材料给外部评分 Agent',
   '  bench report <runId> <attemptId> [--format json|markdown] [--root <运行存储目录>]',
   '  bench summary <作答选择JSON> [--root <运行存储目录>]   # [{runId, attemptId}]，每题显式选择一次',
   '  bench judge-config   # 本地检查裁判有效参数与配置指纹，不发起模型请求，不输出密钥',
@@ -58,6 +61,7 @@ try {
       static: { type: 'boolean', default: false },
       measure: { type: 'boolean' },
       human: { type: 'string' },
+      output: { type: 'string' },
     },
     allowPositionals: true,
     allowNegative: true,
@@ -66,7 +70,7 @@ try {
   const asJson = values.format === 'json';
   if (!['text', 'json', 'markdown'].includes(values.format)) throw new Error('--format 必须为 text、json 或 markdown。');
   if (positionals.length > 3) throw new Error('位置参数过多。');
-  const arity: Record<string, number> = { list: 1, show: 2, score: 2, submit: 3, status: 3, runs: 1, review: 3, report: 3, summary: 2, 'judge-config': 1 };
+  const arity: Record<string, number> = { list: 1, show: 2, score: 2, submit: 3, status: 3, runs: 1, review: 3, 'review-export': 3, report: 3, summary: 2, 'judge-config': 1 };
   if (command && arity[command] !== undefined && positionals.length !== arity[command]) throw new Error('位置参数数量不正确。\n' + usage);
 
   if (command === 'list' && first === undefined) {
@@ -126,6 +130,40 @@ try {
       signal: controller.signal,
       qualityProvider: createQualityProvider({ ...(input === undefined ? {} : { humanReview: input }), ...(values.measure === undefined ? {} : { measurePerformance: values.measure }) }) });
     console.log(JSON.stringify(score, null, 2));
+  } else if (command === 'review-export' && first !== undefined && second !== undefined) {
+    if (values.output === undefined || values.output.trim() === '') throw new Error('review-export 必须指定 --output <目录>。');
+    const store = createRunStore(values.root);
+    const attempt = store.readAttempt(first, second);
+    if (!attempt) throw new Error('未找到运行记录。');
+    const executionDirectories = readdirSync(attempt.directory, { withFileTypes: true })
+      .filter(entry => entry.isDirectory() && /^execution(?:-[1-9][0-9]*)?$/.test(entry.name))
+      .map(entry => entry.name)
+      .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+    const executionDirectory = executionDirectories.map(name => join(attempt.directory, name))
+      .find(directory => existsSync(join(directory, 'review-materials.json')));
+    const materialsPath = executionDirectory === undefined ? undefined : join(executionDirectory, 'review-materials.json');
+    if (materialsPath === undefined || !existsSync(materialsPath)) throw new Error('该 attempt 尚未生成评审材料；请先完成一次 submit（即使裁判暂不可用也会生成材料）。');
+    const outputDirectory = resolve(values.output);
+    const repositoryScope = resolve(repositoryRoot);
+    if (outputDirectory === repositoryScope || outputDirectory.startsWith(repositoryScope + '\\') || outputDirectory.startsWith(repositoryScope + '/')) {
+      throw new Error('评审导出目录不得位于评测仓库内，请使用仓库外的临时目录。');
+    }
+    if (existsSync(outputDirectory) && readdirSync(outputDirectory).length > 0) throw new Error(`评审导出目录必须为空：${outputDirectory}`);
+    mkdirSync(outputDirectory, { recursive: true });
+    const materials = JSON.parse(readFileSync(materialsPath, 'utf8')) as Record<string, unknown>;
+    // 只导出评审请求中已允许的 task/candidate/evidence 材料，不复制 candidate、graders 或令牌。
+    if (!Array.isArray(materials.materials) || materials.materials.length === 0) throw new Error('评审材料格式无效或为空。');
+    writeFileSync(join(outputDirectory, 'review-request.json'), `${JSON.stringify(materials, null, 2)}\n`);
+    writeFileSync(join(outputDirectory, 'README.md'), [
+      '# 外部 Agent 评审材料', '',
+      `runId：${first}`, `attemptId：${second}`, `taskId：${String(materials.taskId ?? attempt.attempt.taskId)}`, '',
+      '请仅依据 review-request.json 中的材料，返回符合 `ReviewVerdict` 协议的 JSON（四个维度均需引用材料 id）。',
+      '录入时将其包装为 `{"reviewer":"agent-id","reason":"独立评分","verdict":<ReviewVerdict>}`，再运行 `bench review <runId> <attemptId> --human <JSON>`。', '',
+      '该目录不包含单独的候选源码目录、隐藏检查、参考补丁或任何 API 令牌；评审所需的候选文本已包含在 review-request.json 中。',
+    ].join('\n') + '\n');
+    console.log(`已导出评审材料：${outputDirectory}`);
+    console.log(`请求：${join(outputDirectory, 'review-request.json')}`);
+    console.log(`说明：${join(outputDirectory, 'README.md')}`);
   } else if (command === 'report' && first !== undefined && second !== undefined) {
     const store = createRunStore(values.root);
     if (asJson) {
