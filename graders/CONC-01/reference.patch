@@ -1,0 +1,54 @@
+diff --git a/starter/src/cancelable.ts b/starter/src/cancelable.ts
+index 670bb35..712d951 100644
+--- a/starter/src/cancelable.ts
++++ b/starter/src/cancelable.ts
+@@ -38,11 +38,15 @@ export function runCancelable<T>(
+     resolveTask = resolve;
+     rejectTask = reject;
+   });
+-  // 缺陷：超时只结算 Promise，既不 abort signal，也不取消定时器。
+-  options.scheduler.after(timeoutMs, () => {
++  function finish(settle: () => void): void {
+     if (settled) return;
+     settled = true;
+-    rejectTask(new TimeoutError());
++    timer.cancel();
++    settle();
++  }
++  const timer = options.scheduler.after(timeoutMs, () => {
++    controller.abort();
++    finish(() => rejectTask(new TimeoutError()));
+   });
+   const started = (() => {
+     try {
+@@ -52,25 +56,14 @@ export function runCancelable<T>(
+     }
+   })();
+   started.then(
+-    value => {
+-      // 缺陷：成功结算后没有取消定时器。
+-      if (settled) return;
+-      settled = true;
+-      resolveTask(value);
+-    },
+-    error => {
+-      if (settled) return;
+-      settled = true;
+-      rejectTask(error);
+-    },
++    value => finish(() => resolveTask(value)),
++    error => finish(() => rejectTask(error)),
+   );
+   return {
+     promise,
+     cancel(): void {
+-      // 缺陷：取消只结算 Promise，不 abort signal，也不取消定时器。
+-      if (settled) return;
+-      settled = true;
+-      rejectTask(new CancelledError());
++      controller.abort();
++      finish(() => rejectTask(new CancelledError()));
+     },
+   };
+ }
+\ No newline at end of file
