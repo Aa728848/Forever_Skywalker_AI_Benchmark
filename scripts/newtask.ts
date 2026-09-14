@@ -187,7 +187,10 @@ if (verify.status !== 0) {
   }
 }
 if (verify.status !== 0) {
-  console.error('三向验证未通过，保持 designed 状态。');
+  console.error('三向验证未通过，保持 designed 状态。原始输出如下：');
+  // 不再只打印阶段行：验证器在阶段开始前抛错（协议校验、补丁应用失败等）时必须原样可见。
+  console.error(verify.stdout.trim());
+  if (verify.stderr.trim() !== '') console.error(verify.stderr.trim());
   process.exitCode = 1;
 } else {
   // 5) 状态推进 + 目录刷新
