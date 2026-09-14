@@ -1,0 +1,26 @@
+[
+  {
+    "id": "ignore-document-version",
+    "description": "只用构建代际，不校验文档结果版本。",
+    "patch": "graders/LSP-04/mutants/ignore-document-version.patch",
+    "expectedFailures": [
+      "hidden/document-version-and-duplicate-result"
+    ]
+  },
+  {
+    "id": "omit-version-publication",
+    "description": "符号已提交但版本快照遗漏对应更新。",
+    "patch": "graders/LSP-04/mutants/omit-version-publication.patch",
+    "expectedFailures": [
+      "hidden/readers-observe-atomic-versioned-view"
+    ]
+  },
+  {
+    "id": "close-no-retire",
+    "description": "关闭未移除旧代与已发布状态，也没有发出取消。",
+    "patch": "graders/LSP-04/mutants/close-no-retire.patch",
+    "expectedFailures": [
+      "hidden/close-callback-reopen-and-foreign-ticket"
+    ]
+  }
+]

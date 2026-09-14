@@ -41,15 +41,30 @@ export class VersionedCache {
     const hit = this.#entries.get(key);
     if (hit !== undefined) return hit.promise;
     const version = this.version(key);
-    const promise = this.#port.load(key).then(value => {
+    let loaded: Promise<string>;
+    try { loaded = this.#port.load(key); } catch (error) { return Promise.reject(error); }
+    const promise = loaded.then(value => {
       const stillCurrent = this.version(key) === version && this.#entries.get(key)?.version === version;
       if (!stillCurrent) {
         const current = this.#entries.get(key);
         if (current !== undefined && current.version === version) this.#entries.delete(key);
       }
       return value;
+    }, error => {
+      if (this.#entries.get(key)?.promise === promise) this.#entries.delete(key);
+      throw error;
     });
     this.#entries.set(key, { version, promise });
     return promise;
+  }
+
+  /** 在同一组代际上读取，失效交错只重试尚未形成一致视图的一组。 */
+  async getMany(keys: readonly string[]): Promise<readonly string[]> {
+    const requested = [...keys];
+    for (;;) {
+      const versions = requested.map(key => this.version(key));
+      const values = await Promise.all(requested.map(key => this.get(key)));
+      if (requested.every((key, index) => this.version(key) === versions[index])) return Object.freeze(values);
+    }
   }
 }

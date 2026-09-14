@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "ARCH-03",
-  "taskVersion": "0.1.0",
+  "taskVersion": "0.2.0",
   "title": "替换适配器并保持公共契约",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -47,7 +47,13 @@
       "hidden/v2-status-maps-to-ok",
       "public/adapter-failures-are-normalized",
       "public/v2-seconds-become-milliseconds",
-      "public/v2-status-maps-to-ok"
+      "public/v2-status-maps-to-ok",
+      "public/subscriber-cancel-does-not-abort-other-readers",
+      "public/old-adapter-completion-cannot-clear-new-inflight",
+      "hidden/last-reader-cancel-detaches-before-retry",
+      "hidden/adapter-failure-normalization-and-retry",
+      "hidden/already-aborted-read-never-loads",
+      "hidden/synchronous-adapter-reentry-cannot-publish-old-read"
     ]
   },
   "limits": {
@@ -136,6 +142,54 @@
       "weight": 1,
       "critical": false,
       "summary": "隐藏样本下的不可变性。"
+    },
+    {
+      "id": "public/subscriber-cancel-does-not-abort-other-readers",
+      "kind": "public",
+      "group": "resources",
+      "weight": 2,
+      "critical": true,
+      "summary": "同键合并但调用方取消独立，仍有读者时保持底层请求。"
+    },
+    {
+      "id": "public/old-adapter-completion-cannot-clear-new-inflight",
+      "kind": "public",
+      "group": "state",
+      "weight": 2,
+      "critical": true,
+      "summary": "热替换中止旧读者，旧结果晚到不能删除新代合并记录。"
+    },
+    {
+      "id": "hidden/last-reader-cancel-detaches-before-retry",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 2,
+      "critical": true,
+      "summary": "最后读者取消立即移除在途身份，下一次请求不复用已abort请求。"
+    },
+    {
+      "id": "hidden/adapter-failure-normalization-and-retry",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 2,
+      "critical": true,
+      "summary": "同步和异步故障统一AdapterError并释放合并记录。"
+    },
+    {
+      "id": "hidden/already-aborted-read-never-loads",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 2,
+      "critical": true,
+      "summary": "预先取消的读者不会触发底层适配器。"
+    },
+    {
+      "id": "hidden/synchronous-adapter-reentry-cannot-publish-old-read",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 2,
+      "critical": true,
+      "summary": "load调用同步重入replace，外层请求已经登记且能被新代撤销。"
     }
   ]
 }

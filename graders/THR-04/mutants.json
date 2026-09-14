@@ -1,0 +1,26 @@
+[
+  {
+    "id": "per-generation-limit",
+    "description": "每代各自限制窗口，旧线程未退出时新代可超出实例预算。",
+    "patch": "graders/THR-04/mutants/per-generation-limit.patch",
+    "expectedFailures": [
+      "hidden/global-budget-and-superseded-queue"
+    ]
+  },
+  {
+    "id": "close-no-stop",
+    "description": "关闭入口不停止接收后续代际。",
+    "patch": "graders/THR-04/mutants/close-no-stop.patch",
+    "expectedFailures": [
+      "hidden/close-cancels-queued-and-drains"
+    ]
+  },
+  {
+    "id": "old-generation-publishes",
+    "description": "忽略旧代终止标记与代际门禁，把被替换构建当作成功。",
+    "patch": "graders/THR-04/mutants/old-generation-publishes.patch",
+    "expectedFailures": [
+      "public/state-old-generation-finishes-late"
+    ]
+  }
+]

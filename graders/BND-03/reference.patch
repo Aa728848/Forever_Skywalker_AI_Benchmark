@@ -1,38 +1,71 @@
 diff --git a/starter/src/decoder.ts b/starter/src/decoder.ts
-index 8b235ee..cfcf357 100644
+index 4a62734..5738b9e 100644
 --- a/starter/src/decoder.ts
 +++ b/starter/src/decoder.ts
-@@ -15,21 +15,30 @@ export class IncompleteSequenceError extends Error {
- }
- 
+@@ -1,38 +1,31 @@
+-export class InvalidUtf8Error extends Error {
+-  readonly offset: number;
+-  constructor(offset: number) {
+-    super('非法 UTF-8 字节序列，起始偏移 ' + offset);
+-    this.name = 'InvalidUtf8Error';
+-    this.offset = offset;
+-  }
+-}
+-
+-export class IncompleteSequenceError extends Error {
+-  constructor(message = '流结束时仍有未完成的多字节序列') {
+-    super(message);
+-    this.name = 'IncompleteSequenceError';
+-  }
+-}
+-
++export class InvalidUtf8Error extends Error { readonly offset:number; constructor(offset:number){super('invalid UTF-8 at '+offset);this.name='InvalidUtf8Error';this.offset=offset;} }
++export class IncompleteSequenceError extends Error {constructor(message='incomplete UTF-8'){super(message);this.name='IncompleteSequenceError';}}
  export class StreamDecoder {
-+  readonly #decoder = new TextDecoder('utf-8', { fatal: true });
-   #offset = 0;
-+  #open = false;
- 
-   push(bytes: Uint8Array): string {
-+    if (this.#open) throw new IncompleteSequenceError('解码器已经结束');
-     const start = this.#offset;
-     this.#offset += bytes.length;
-     try {
+-  #offset = 0;
+-
+-  push(bytes: Uint8Array): string {
+-    const start = this.#offset;
+-    this.#offset += bytes.length;
+-    try {
 -      // 缺陷：每块独立解码，不保留跨块状态——被拆开的多字节字符直接报错。
 -      return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-+      // stream: true 让解码器保留跨块的未完成序列。
-+      return this.#decoder.decode(bytes, { stream: true });
-     } catch {
-       throw new InvalidUtf8Error(start);
-     }
-   }
- 
-   end(): string {
+-    } catch {
+-      throw new InvalidUtf8Error(start);
+-    }
+-  }
+-
+-  end(): string {
 -    return '';
-+    if (this.#open) return '';
-+    this.#open = true;
-+    try {
-+      return this.#decoder.decode();
-+    } catch {
-+      throw new IncompleteSequenceError();
-+    }
+-  }
+-
+-  get offset(): number {
+-    return this.#offset;
++ #offset=0;#closed=false;#failure:Error|undefined;#pending:number[]=[];#expected=0;#start=0;
++ get offset():number{return this.#offset;}
++ push(bytes:Uint8Array):string{
++  if(this.#failure)throw this.#failure;if(this.#closed)throw new IncompleteSequenceError('decoder ended');
++  const base=this.#offset;this.#offset+=bytes.length;const output:string[]=[];
++  const invalid=()=>{this.#pending=[];this.#failure=new InvalidUtf8Error(this.#start);throw this.#failure;};
++  for(let index=0;index<bytes.length;index++){
++   const byte=bytes[index]!;
++   if(this.#pending.length===0){
++    this.#start=base+index;
++    if(byte<0x80){output.push(String.fromCharCode(byte));continue;}
++    this.#expected=byte>=0xc2&&byte<=0xdf?2:byte>=0xe0&&byte<=0xef?3:byte>=0xf0&&byte<=0xf4?4:0;
++    if(this.#expected===0)invalid();this.#pending.push(byte);continue;
++   }
++   if(byte<0x80||byte>0xbf)invalid();
++   const lead=this.#pending[0]!;
++   if(this.#pending.length===1&&((lead===0xe0&&byte<0xa0)||(lead===0xed&&byte>0x9f)||(lead===0xf0&&byte<0x90)||(lead===0xf4&&byte>0x8f)))invalid();
++   this.#pending.push(byte);
++   if(this.#pending.length===this.#expected){
++    let point=lead&((1<<(7-this.#expected))-1);
++    for(const continuation of this.#pending.slice(1))point=(point<<6)|(continuation&63);
++    output.push(String.fromCodePoint(point));this.#pending=[];
++   }
    }
- 
-   get offset(): number {
++  return output.join('');
++ }
++ end():string{if(this.#failure)throw this.#failure;if(this.#closed)return '';this.#closed=true;if(this.#pending.length){this.#pending=[];this.#failure=new IncompleteSequenceError();throw this.#failure;}return '';}
+ }

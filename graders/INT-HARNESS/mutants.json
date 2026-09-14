@@ -1,0 +1,26 @@
+[
+  {
+    "id": "eager-prefix",
+    "description": "使用完整历史而非已选前缀展开，输出虽正确但读取了未用尾部。",
+    "patch": "graders/INT-HARNESS/mutants/eager-prefix.patch",
+    "expectedFailures": [
+      "hidden/resources-prefix-does-not-read-tail"
+    ]
+  },
+  {
+    "id": "short-prefix",
+    "description": "前缀计数少一，跨压缩块恢复丢失delta。",
+    "patch": "graders/INT-HARNESS/mutants/short-prefix.patch",
+    "expectedFailures": [
+      "hidden/behavior-mixed-packed-prefix-oracle"
+    ]
+  },
+  {
+    "id": "gap-poisons-cursor",
+    "description": "发现错误帧仍推进游标，随后正确帧无法接续。",
+    "patch": "graders/INT-HARNESS/mutants/gap-poisons-cursor.patch",
+    "expectedFailures": [
+      "public/state-gap-cannot-publish"
+    ]
+  }
+]

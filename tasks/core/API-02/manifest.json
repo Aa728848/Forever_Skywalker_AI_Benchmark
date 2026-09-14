@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "API-02",
-  "taskVersion": "0.1.1",
+  "taskVersion": "0.2.0",
   "title": "分页与幂等写入",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -48,7 +48,8 @@
       "public/rejects-noncanonical-cursor",
       "public/inflight-idempotent-write",
       "public/idempotency-conflict-preserves-original",
-      "hidden/conflicting-inflight-body-never-commits"
+      "hidden/conflicting-inflight-body-never-commits",
+      "hidden/canonical-bytes-and-safe-offsets"
     ]
   },
   "limits": {
@@ -169,6 +170,22 @@
       "weight": 1,
       "critical": true,
       "summary": "失败后可显式重试，不阻塞其它键。"
+    },
+    {
+      "id": "hidden/canonical-bytes-and-safe-offsets",
+      "kind": "hidden",
+      "group": "boundary",
+      "summary": "游标字节规范和安全整数",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/independent-pagination-partitions",
+      "kind": "hidden",
+      "group": "regression",
+      "summary": "独立分页划分无重漏",
+      "weight": 1,
+      "critical": true
     }
   ]
 }

@@ -1,0 +1,13 @@
+diff --git a/starter/src/locks.ts b/starter/src/locks.ts
+index 7c90195..229513f 100644
+--- a/starter/src/locks.ts
++++ b/starter/src/locks.ts
+@@ -27,7 +27,7 @@ export class LockManager {
+     const blocked = new Set<string>();
+     for (let index = 0; index < this.#queue.length;) {
+       const entry = this.#queue[index]!;
+-      if ([...entry.keys].some(key => this.#held.has(key) || blocked.has(key))) {
++      if ([...entry.keys].some(key => this.#held.has(key))) {
+         for (const key of entry.keys) blocked.add(key);
+         index++;
+         continue;

@@ -1,8 +1,26 @@
+diff --git a/starter/src/snapshot-batch.ts b/starter/src/snapshot-batch.ts
+--- a/starter/src/snapshot-batch.ts
++++ b/starter/src/snapshot-batch.ts
+@@ -5,6 +5,13 @@
+ 
+ export class SnapshotBatch {
+   #items:SnapshotItem[]=[];
+-  get items():readonly SnapshotItem[]{return this.#items;}
+-  replace(input:readonly SnapshotInput[]):readonly SnapshotItem[]{this.#items=[];for(const item of input)this.#items.push({key:item.key,value:migrate(item.value)});return this.items;}
++  get items():readonly SnapshotItem[]{return this.#items.map(item=>({key:item.key,value:{...item.value}}));}
++  replace(input:readonly SnapshotInput[]):readonly SnapshotItem[]{
++    const seen=new Set<string>();const next:SnapshotItem[]=[];
++    for(const [index,item]of input.entries()){try{
++      if(typeof item.key!=='string'||!item.key.trim()||seen.has(item.key))throw new RangeError('key');seen.add(item.key);
++      next.push({key:item.key,value:migrate(item.value)});
++    }catch(error){throw new SnapshotBatchError(index,item.key,error);}}
++    this.#items=next;return this.items;
++  }
+ }
 diff --git a/starter/src/snapshot.ts b/starter/src/snapshot.ts
-index 4830cfc..dbb8460 100644
 --- a/starter/src/snapshot.ts
 +++ b/starter/src/snapshot.ts
-@@ -32,10 +32,32 @@ export class UnknownStateError extends Error {
+@@ -32,10 +32,32 @@
  
  export const orderStates: readonly OrderState[] = ['draft', 'placed', 'paid', 'shipped', 'cancelled'];
  
@@ -39,4 +57,3 @@ index 4830cfc..dbb8460 100644
 +  }
 +  throw new UnsupportedVersionError(String(version));
  }
-\ No newline at end of file

@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "INT-CWT",
-  "taskVersion": "0.1.0",
+  "taskVersion": "0.1.1",
   "title": "LSP、缓存与编辑器全链路",
   "runtime": "fsharp",
   "runtimeRange": "dotnet >=10.0; vendored FSharp.Data 3.3.1",
@@ -47,7 +47,9 @@
       "public/close-isolates-late-publication",
       "hidden/configuration-generation-rejects-old-plan",
       "hidden/incremental-text-matches-full-document",
-      "hidden/reopen-same-version-rejects-prior-lifecycle"
+      "hidden/reopen-same-version-rejects-prior-lifecycle",
+      "hidden/changed-document-version-rejects-late-plan",
+      "hidden/same-version-notification-requires-current-admission"
     ]
   },
   "limits": {
@@ -128,6 +130,22 @@
       "weight": 1,
       "critical": true,
       "summary": "原RefreshLockPhases验证通知在根写锁之外运行。"
+    },
+    {
+      "id": "hidden/changed-document-version-rejects-late-plan",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "变化后的旧版本不能迟到发布"
+    },
+    {
+      "id": "hidden/same-version-notification-requires-current-admission",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "同版本消息后的旧准入不能确认新失效"
     }
   ]
 }

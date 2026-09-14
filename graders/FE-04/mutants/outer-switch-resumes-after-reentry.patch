@@ -1,0 +1,12 @@
+diff --git a/starter/src/workspace-view.ts b/starter/src/workspace-view.ts
+--- a/starter/src/workspace-view.ts
++++ b/starter/src/workspace-view.ts
+@@ -13,7 +13,7 @@
+   const render=(state:State)=>{log.replaceChildren();elements.clear();for(const row of state.rows.values())add(row);};
+   const trim=(state:State)=>{while(state.rows.size>limits.maxRows){const id=state.rows.keys().next().value!;state.rows.delete(id);elements.get(id)?.remove();elements.delete(id);}};
+   return {
+-    switchWorkspace(workspace){if(disposed)return;const generation=++epoch;const previous=unsubscribe;unsubscribe=undefined;previous?.();if(disposed||generation!==epoch)return;current=workspace;let state=caches.get(workspace);if(!state)state={sequence:0,rows:new Map()};caches.delete(workspace);caches.set(workspace,state);while(caches.size>limits.maxWorkspaces)caches.delete(caches.keys().next().value!);render(state);error.textContent='';const selected=state;
++    switchWorkspace(workspace){if(disposed)return;const generation=++epoch;const previous=unsubscribe;unsubscribe=undefined;previous?.();current=workspace;let state=caches.get(workspace);if(!state)state={sequence:0,rows:new Map()};caches.delete(workspace);caches.set(workspace,state);while(caches.size>limits.maxWorkspaces)caches.delete(caches.keys().next().value!);render(state);error.textContent='';const selected=state;
+       let release:(()=>void);try{release=connect(workspace,state.sequence,event=>{
+         if(disposed||generation!==epoch||current!==workspace)return;
+         if(event.kind==='error'){error.textContent=event.message;return;}

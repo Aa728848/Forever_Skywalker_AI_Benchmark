@@ -1,0 +1,26 @@
+[
+  {
+    "id": "accept-surrogates",
+    "description": "保留续字节检查但遗漏代理区Unicode标量限制。",
+    "patch": "graders/BND-03/mutants/accept-surrogates.patch",
+    "expectedFailures": [
+      "hidden/invalid-continuation-at-global-sequence-start"
+    ]
+  },
+  {
+    "id": "chunk-relative-error",
+    "description": "非法序列偏移重置为本块起点，跨块错误归属不正确。",
+    "patch": "graders/BND-03/mutants/chunk-relative-error.patch",
+    "expectedFailures": [
+      "hidden/terminal-errors-and-borrowed-buffer"
+    ]
+  },
+  {
+    "id": "recover-after-invalid",
+    "description": "丢弃终结错误并接受后续块，破坏失败后流状态。",
+    "patch": "graders/BND-03/mutants/recover-after-invalid.patch",
+    "expectedFailures": [
+      "hidden/terminal-errors-and-borrowed-buffer"
+    ]
+  }
+]

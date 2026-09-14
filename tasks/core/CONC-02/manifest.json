@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "CONC-02",
-  "taskVersion": "0.1.1",
+  "taskVersion": "0.2.0",
   "title": "并发令牌刷新与注销竞争",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -47,7 +47,11 @@
       "public/coalesces-token-refresh",
       "public/logout-invalidates-inflight-refresh",
       "hidden/coalesces-rejection-without-auto-retry",
-      "hidden/late-success-cannot-restore-credentials"
+      "hidden/late-success-cannot-restore-credentials",
+      "hidden/logout-drains-authorized-work",
+      "hidden/logout-before-refresh-prevents-transport",
+      "hidden/group-registers-before-reentrant-cancel",
+      "hidden/refresh-snapshots-and-sync-reentrancy"
     ]
   },
   "limits": {
@@ -184,6 +188,38 @@
       "weight": 1,
       "critical": true,
       "summary": "失败清理在途状态，只在显式调用时重试。"
+    },
+    {
+      "id": "hidden/logout-drains-authorized-work",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": true,
+      "summary": "注销先取消可见结果，close等待真实传输清理完成。"
+    },
+    {
+      "id": "hidden/logout-before-refresh-prevents-transport",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "刷新在途注销阻止后续传输启动。"
+    },
+    {
+      "id": "hidden/group-registers-before-reentrant-cancel",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "任务登记先于回调，可同步重入取消。"
+    },
+    {
+      "id": "hidden/refresh-snapshots-and-sync-reentrancy",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": true,
+      "summary": "刷新端口重入合并，所有调用者快照独立。"
     }
   ]
 }

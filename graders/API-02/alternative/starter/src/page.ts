@@ -18,6 +18,7 @@ export class PageError extends Error {
 }
 
 export function encodeCursor(offset: number): string {
+  if (!Number.isSafeInteger(offset) || offset < 0) throw new PageError('cursor', '游标偏移必须是非负安全整数');
   return Buffer.from('offset:' + offset, 'utf8').toString('base64url');
 }
 
@@ -31,7 +32,7 @@ export function decodeCursor(cursor: string): number {
     throw new PageError('cursor', '游标偏移必须是十进制数字');
   }
   const offset = Number.parseInt(digits, 10);
-  if (String(offset) !== digits) throw new PageError('cursor', '游标不是规范编码');
+  if (!Number.isSafeInteger(offset) || encodeCursor(offset) !== cursor || String(offset) !== digits) throw new PageError('cursor', '游标不是规范编码');
   return offset;
 }
 

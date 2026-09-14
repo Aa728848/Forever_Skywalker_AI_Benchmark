@@ -11,8 +11,9 @@
 | `reference.patch` | 参考修复：显式栈遍历与带 limit 的深度查询 |
 | `alternative/starter/src/ast.ts` | 替代实现：双栈后序 + 队列式前序 + BFS 深度 |
 
-隐藏检查在导出之后由受信侧注入 `__checks__/`，只导入工作区的 `starter/src/ast.ts`，
-不导入工作区其它文件；递归差分参考只用于检查内部的小树对照。
+隐藏检查在导出之后由受信侧注入 `__checks__/`，只导入公开接口对应的 `starter/src/ast.ts` 和 `starter/src/rewrite.ts`；递归差分参考只用于检查内部的小树对照。
+
+0.2.0 增加共享 AST 的两阶段后序转换与增量身份复用。`checks/rewrite.hidden.test.ts` 验证父节点消费已改子树、共享节点只转换一次、无变化对象身份、整图预检及错误恢复。`pnpm task:mutants GRAPH-03` 验证三类近似错误修复。
 
 ## 独立验证计划
 

@@ -1,0 +1,14 @@
+diff --git a/starter/packages/client-ui-trading/src/tasks/ledger.ts b/starter/packages/client-ui-trading/src/tasks/ledger.ts
+index 84fd8df..254bc6e 100644
+--- a/starter/packages/client-ui-trading/src/tasks/ledger.ts
++++ b/starter/packages/client-ui-trading/src/tasks/ledger.ts
+@@ -376,8 +376,8 @@ export class TasksLedger {
+     } finally {
+       closeSync(fd)
+     }
+-    renameSync(tmp, this.filePath)
+     this.document = next
++    renameSync(tmp, this.filePath)
+     if (process.platform !== 'win32') {
+       try {
+         chmodSync(this.filePath, 0o600)

@@ -1,0 +1,12 @@
+diff --git a/starter/src/workspace-view.ts b/starter/src/workspace-view.ts
+--- a/starter/src/workspace-view.ts
++++ b/starter/src/workspace-view.ts
+@@ -27,7 +27,7 @@
+         if(event.sequence!==selected.sequence+1){error.textContent='sequence gap';return;}
+         const row={id:event.id,text:event.text};selected.rows.set(row.id,row);selected.sequence=event.sequence;add(row);trim(selected);
+       });}catch(cause){if(!disposed&&generation===epoch)error.textContent=String(cause);throw cause;}
+-      if(disposed||generation!==epoch)release();else unsubscribe=release;
++      unsubscribe=release;
+     },
+     dispose(){if(disposed)return;disposed=true;epoch++;unsubscribe?.();unsubscribe=undefined;current=null;caches.clear();elements.clear();root.replaceChildren();},
+     stats(){return {workspace:current,sequence:current===null?0:caches.get(current)!.sequence,retainedRows:[...caches.values()].reduce((count,state)=>count+state.rows.size,0),cachedWorkspaces:caches.size};}

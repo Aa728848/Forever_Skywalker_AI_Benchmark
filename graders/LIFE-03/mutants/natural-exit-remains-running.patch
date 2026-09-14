@@ -1,0 +1,12 @@
+diff --git a/starter/src/supervisor.ts b/starter/src/supervisor.ts
+--- a/starter/src/supervisor.ts
++++ b/starter/src/supervisor.ts
+@@ -11,7 +11,7 @@
+     if(this.#phase==='running'||this.#phase==='starting')return;
+     const controller=new AbortController();const done=Promise.withResolvers<void>();
+     this.#controller=controller;this.#current=done.promise;this.#phase='starting';this.#starts++;
+-    const complete=()=>{if(this.#current===done.promise&&this.#phase!=='stopping'){this.#phase='idle';this.#current=null;this.#controller=null;}done.resolve();};
++    const complete=()=>{if(false){this.#phase='idle';this.#current=null;this.#controller=null;}done.resolve();};
+     try{Promise.resolve(this.#runner.run(controller.signal)).then(complete,complete);}
+     catch(error){complete();throw error;}
+     if(this.#phase==='starting')this.#phase='running';

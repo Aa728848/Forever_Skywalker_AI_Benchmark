@@ -2,7 +2,7 @@
 
 - 难度：极度困难；题型：独立核心题；能力域：性能优化。
 - 运行时：TypeScript on Node.js 24（依赖 Node 原生类型剥离，仅可使用可擦除语法）。
-- 题目版本：0.2.0；评分规则版本：0.1.0。
+- 题目版本：0.3.0；评分规则版本：0.1.0。
 
 ## 背景
 
@@ -39,7 +39,7 @@ export function replaySession(events: readonly SessionEvent[]): SessionSummary;
 ## 真实性能证据（0.2.0）
 
 - 最低资源检查保留 5,000 条事件、2 次预热后的 7 次原始耗时/RSS/堆内存样本及中位数，不能只保留最好一轮。它的宽松终止上限不等同于性能质量分。
-- 独立受信工作负载为 32,000 条事件、2,000 个会话，每次 12 轮完整摘要计算，包含 UTF-8 payload、负时间戳及并列会话排序；每轮都校验结果语义。
+- 0.3.0 的独立受信工作负载改为新增流式投影主路径：160 个会话、3 次生命周期、4 次独立重放，共 51,828 条事件与 828 个持久切面；每个生命周期从检查点恢复，包含 UTF-8 payload、负时间戳、关闭与重开，并由独立累计结果校验。
 - 正式效率证据由平台在同一固定环境交替运行参考和候选：预热至少 2 轮、测量至少 7 对，记录全部原始样本、环境哈希、比值中位数与离散度。
 - 候选同进程返回的耗时、吞吐与 RSS 只能作为诊断；评分使用外部受信计时与资源采样。阈值未校准时只报告演练结果，不能据此宣称正式性能成绩。
 
@@ -65,3 +65,44 @@ node --test --test-isolation=none --test-reporter=tap "public-tests/**/*.test.ts
 - 注入目标缺陷的起始版本必须被检出（失败项限于预先声明的检出项），其余已正确行为不得回归。
 - 与参考实现结构不同的替代实现也必须通过同一契约。
 - 本阶段只产出检查通过或失败；代码质量评审接入前总分保持待定。
+
+
+## 流式会话投影与持久切面（0.3.0）
+
+实际长会话恢复按批读取日志并更新派生投影，已有 replaySession 接口作为回归保留。新增 starter/src/projection.ts，修复作答期间投影确认早于持久化、旧准备结果覆盖新切面、错误日志检查点被误用等问题。
+
+### 接口
+
+- ProjectionEvent={seq:number;session:string;epoch:number;kind:'open'|'message'|'close';at:number;payload?:string}。
+- ProjectionLimits={maxSessions:number;maxBatchEvents:number;maxBatchBytes:number}，各值为正安全整数；logId 为非空字符串。
+- SessionProjection(logId, limits, checkpoint?)；snapshot():ProjectionCheckpoint；prepare(events):ProjectionTicket；commit(ticket,persist):Promise<boolean>。
+- replayProjection(projection, source:AsyncIterable<readonly ProjectionEvent[]>, persist):Promise<ProjectionCheckpoint> 串流恢复。
+- ProjectionError.code 为 invalid、gap、lifecycle、capacity、checkpoint 或 stale。完整只读类型在源码中。
+
+### 日志和生命周期
+
+seq 为正安全整数。初始 through=0，新事件必须连续；seq 不大于本次已处理 through 的事件视为重放前缀而忽略，不重新计数。日志源被假定不可变；不承诺检出已确认 seq 的内容被恶意替换。
+
+session 非空，epoch 为正安全整数，at 为有限数（允许负数），payload 可选字符串。每批先验证所有事件形状和预算（包括重放事件）；事件数超过 maxBatchEvents，或全部 payload 的 UTF-8 字节和超过 maxBatchBytes，报 capacity。无效形状报 invalid，序号跳跃报 gap。
+
+每个新 session 必须先 open，epoch=1。open 时该 session 必须未打开，重开已关闭 session 的 epoch 必须为原 epoch+1。message/close 只能应用于已打开且 epoch 相同的 session；否则报 lifecycle。open 创建/重置该生命周期的 messages=0、bytes=本次payload字节数、lastAt=at；message 累加 messages，message/close 都累加payload字节数并更新 lastAt 最大值。close 关闭但保留该行，重开重新计数。
+
+最多保留 maxSessions 个不同 session，包括已关闭行；超出报 capacity。投影仅保留各会话当前生命周期的累计数值，不保留全部历史事件或 payload；检查点尺寸应与会话数相关，与已经重放的事件数无关。
+
+### 准备与确认
+
+prepare 是同步的整批事务：任意错误不改变已确认投影；成功返回冻结 ticket={through,accepted}，accepted 是本批新事件数量。准备期间复制需要的输入信息，不保留可被调用方修改的事件引用。
+
+commit 仅接受本实例实际签发、基于当前已确认代际、尚未成功消费的 ticket。伪造、跨实例、陈旧或重复票据返回 false，不能调用 persist。并行 commit 按调用顺序排队；先成功确认后，同代其它准备票据过期。
+
+非空有效提交把完整冻结 checkpoint 交给 persist 并等待；persist 成功后才同时发布投影、through 和代际。持久期间 snapshot 保持旧确认切面；persist 抛错以同一对象拒绝，状态不变，同票据允许显式重试，后续队列不被失败堵塞。本题 persist 保证失败未提交；真实文件故障由 CACHE-04 另行验证。
+
+accepted=0 的纯重放提交返回 true，不调用 persist；消费该票据但不推进确认代际。回调自身外部副作用不在本题回滚范围内。
+
+### 检查点与背压
+
+checkpoint={schema:1,logId,through,rows}。rows 按 id 的 JavaScript 字符串顺序排序，每行含 id、epoch、open、messages、bytes、lastAt。schema/logId 必须匹配当前日志；through、epoch、messages、bytes 须符合相应非负/正安全整数约束，lastAt 有限，行 id 非空且不得重复，rows 不超过 maxSessions；非法检查点报 checkpoint。
+
+构造时隔离检查点输入，snapshot 的记录、数组及嵌套行均冻结；任何后续编辑不改变旧快照。用 checkpoint 重建后，从已确认 through 继续，旧前缀可以重放且不会重复累计。
+
+replayProjection 每次只从 source 取一批，必须等本批 commit 确认后才能请求下一批，不缓存整个日志。准备、源迭代或持久失败时拒绝并关闭迭代器，不继续请求；此前已确认切面保留。专用性能负载测该流式主路径、检查点恢复、UTF-8 计数与关闭/重开生命周期，保留全部配对样本且阈值仍未校准。

@@ -38,6 +38,8 @@ type Gate =
 
 `WithRead` / `WithWrite` 的 action 是受保护的临界区；只有 `WithWriteThen` 的 notify 是用户通知，不得持有读锁、写锁或内部计数锁执行。
 
+写优先保证已经等待的写者不会被后来读者持续越过；不承诺无限写请求流下读者的等待上界。action 不递归进入同一个 Gate，也不进行读锁升级；notify 在完全释放锁后可再次使用 Gate。上述范围澄清不改变原有读并发与锁外通知要求。
+
 ## 限制
 
 - 答案范围限于 `starter/`；不要修改 `public-tests/`。

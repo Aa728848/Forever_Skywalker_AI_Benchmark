@@ -21,4 +21,8 @@ export class PersistentCache {
     this.#tail=operation.catch(()=>{});
     return operation;
   }
+
+  async setMany(entries:readonly (readonly [string,string])[]):Promise<void>{for(const [key,value] of entries)await this.set(key,value);}
+  async refresh():Promise<void>{const text=await this.#storage.read();this.#entries=text===null?new Map():new Map(JSON.parse(text).entries);}
+  async snapshot(keys:readonly string[]):Promise<readonly {readonly key:string;readonly value:string|undefined}[]>{return Object.freeze(await Promise.all(keys.map(async key=>Object.freeze({key,value:await this.get(key)}))));}
 }

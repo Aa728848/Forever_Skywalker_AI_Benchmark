@@ -1,55 +1,123 @@
 diff --git a/starter/src/group.ts b/starter/src/group.ts
-index 6cd2261..aa46e9b 100644
+index 812d10b..3118167 100644
 --- a/starter/src/group.ts
 +++ b/starter/src/group.ts
-@@ -52,7 +52,15 @@ export class TaskGroup {
-   }
- 
-   async cancelAll(): Promise<void> {
+@@ -1,58 +1,15 @@
+-export class GroupCancelledError extends Error {
+-  readonly pending: readonly string[];
+-  constructor(pending: readonly string[]) {
+-    super('任务组已取消，尚有未完成的成员：' + pending.join('、'));
+-    this.name = 'GroupCancelledError';
+-    this.pending = pending;
+-  }
+-}
+-
+-interface Member {
+-  readonly controller: AbortController;
+-  readonly reject: (error: unknown) => void;
+-  done: Promise<void>;
+-}
+-
++export class GroupCancelledError extends Error {readonly pending:readonly string[];constructor(pending:readonly string[]){super('group cancelled');this.pending=pending;}}
++interface Member {controller:AbortController;reject(error:unknown):void;done:Promise<void>}
+ export class TaskGroup {
+-  readonly #members = new Map<string, Member>();
+-
+-  get active(): readonly string[] {
+-    return [...this.#members.keys()];
+-  }
+-
+-  run<T>(id: string, work: (signal: AbortSignal) => Promise<T>): Promise<T> {
+-    const controller = new AbortController();
+-    let resolveOuter: (value: T) => void = () => {};
+-    let rejectOuter: (error: unknown) => void = () => {};
+-    const promise = new Promise<T>((resolve, reject) => {
+-      resolveOuter = resolve;
+-      rejectOuter = reject;
+-    });
+-    const member: Member = { controller, reject: rejectOuter, done: Promise.resolve() };
+-    const started = (() => {
+-      try {
+-        return Promise.resolve(work(controller.signal));
+-      } catch (error) {
+-        return Promise.reject(error);
+-      }
+-    })();
+-    const finished = started.then(
+-      value => {
+-        if (this.#members.get(id) === member) this.#members.delete(id);
+-        resolveOuter(value);
+-      },
+-      error => {
+-        if (this.#members.get(id) === member) this.#members.delete(id);
+-        rejectOuter(error);
+-      },
+-    );
+-    member.done = finished.then(() => undefined, () => undefined);
+-    this.#members.set(id, member);
+-    return promise;
+-  }
+-
+-  async cancelAll(): Promise<void> {
 -    // 缺陷：既不 abort signal、也不清理 active，还用普通 Error 拒绝并且不等待成员结算。
 -    for (const member of this.#members.values()) member.reject(new Error('已取消'));
-+    const entries = [...this.#members.entries()];
-+    if (entries.length === 0) return;
-+    const pending = entries.map(([id]) => id);
-+    // 先 abort 全部成员，再统一拒绝并清空，最后等待它们真正结算。
-+    for (const [, member] of entries) member.controller.abort();
-+    for (const [id, member] of entries) {
-+      this.#members.delete(id);
-+      member.reject(new GroupCancelledError(pending));
-+    }
-+    await Promise.all(entries.map(([, member]) => member.done));
-   }
+-  }
++ #members=new Map<string,Member>();
++ get active():readonly string[]{return [...this.#members.keys()];}
++ run<T>(id:string,work:(signal:AbortSignal)=>Promise<T>):Promise<T>{
++  if(this.#members.has(id))return Promise.reject(new Error('duplicate active id'));
++  let resolve!:(value:T)=>void,reject!:(error:unknown)=>void;const result=new Promise<T>((yes,no)=>{resolve=yes;reject=no;});
++  let markDone!:()=>void;const member:Member={controller:new AbortController(),reject,done:new Promise<void>(resolve=>{markDone=resolve;})};this.#members.set(id,member);
++  let started:Promise<T>;try{started=Promise.resolve(work(member.controller.signal));}catch(error){started=Promise.reject(error);}
++  void started.then(value=>{if(this.#members.get(id)===member)this.#members.delete(id);resolve(value);},error=>{if(this.#members.get(id)===member)this.#members.delete(id);reject(error);}).then(markDone,markDone);
++  return result;
++ }
++ async cancelAll():Promise<void>{const entries=[...this.#members.entries()];const error=new GroupCancelledError(entries.map(([id])=>id));for(const [id,member] of entries)if(this.#members.get(id)===member)this.#members.delete(id);for(const [,member] of entries){member.controller.abort();member.reject(error);}await Promise.all(entries.map(([,member])=>member.done));}
  }
-\ No newline at end of file
-
 diff --git a/starter/src/token-session.ts b/starter/src/token-session.ts
-index d5f4f81..f98a36b 100644
+index cba610f..6e32a38 100644
 --- a/starter/src/token-session.ts
 +++ b/starter/src/token-session.ts
-@@ -5,16 +5,22 @@ export class SignedOutError extends Error { constructor() { super('已注销');
+@@ -1,22 +1,23 @@
+-export interface Tokens { readonly accessToken: string; readonly refreshToken: string }
+-export interface RefreshedTokens { readonly accessToken: string; readonly refreshToken?: string }
+-export type RefreshPort = (refreshToken: string) => Promise<RefreshedTokens>;
+-export class SignedOutError extends Error { constructor() { super('已注销'); } }
++import {TaskGroup,GroupCancelledError} from './group.ts';
++export interface Tokens {readonly accessToken:string;readonly refreshToken:string}
++export interface RefreshedTokens {readonly accessToken:string;readonly refreshToken?:string}
++export type RefreshPort=(refreshToken:string)=>Promise<RefreshedTokens>;
++export class SignedOutError extends Error {constructor(){super('signed out');}}
  export class TokenSession {
-   #tokens: Tokens | null;
-   #refreshPort: RefreshPort;
-+  #generation = 0;
-+  #pending: Promise<Tokens> | null = null;
-   constructor(tokens: Tokens, refreshPort: RefreshPort) { this.#tokens = { ...tokens }; this.#refreshPort = refreshPort; }
-   get current(): Tokens | null { return this.#tokens === null ? null : { ...this.#tokens }; }
+-  close():Promise<void>{this.logout();return Promise.resolve();}
+-  authorized<T>(id:string,work:(accessToken:string,signal:AbortSignal)=>Promise<T>):Promise<T>{void id;return this.refresh().then(tokens=>work(tokens.accessToken,new AbortController().signal));}
+-  #tokens: Tokens | null;
+-  #refreshPort: RefreshPort;
+-  constructor(tokens: Tokens, refreshPort: RefreshPort) { this.#tokens = { ...tokens }; this.#refreshPort = refreshPort; }
+-  get current(): Tokens | null { return this.#tokens === null ? null : { ...this.#tokens }; }
 -  logout(): void { this.#tokens = null; }
-+  logout(): void { this.#generation += 1; this.#tokens = null; this.#pending = null; }
-   refresh(): Promise<Tokens> {
-     if (this.#tokens === null) return Promise.reject(new SignedOutError());
-+    if (this.#pending !== null) return this.#pending;
-     const original = this.#tokens;
+-  refresh(): Promise<Tokens> {
+-    if (this.#tokens === null) return Promise.reject(new SignedOutError());
+-    const original = this.#tokens;
 -    // 缺陷：并发调用各自刷新，且过期结果会在注销之后重新写回凭据。
 -    return Promise.resolve().then(() => this.#refreshPort(original.refreshToken)).then(tokens => {
-+    const generation = this.#generation;
-+    const pending = Promise.resolve().then(() => this.#refreshPort(original.refreshToken)).then(tokens => {
-+      if (generation !== this.#generation) throw new SignedOutError();
-       this.#tokens = { accessToken: tokens.accessToken, refreshToken: tokens.refreshToken ?? original.refreshToken };
-       return { ...this.#tokens };
+-      this.#tokens = { accessToken: tokens.accessToken, refreshToken: tokens.refreshToken ?? original.refreshToken };
+-      return { ...this.#tokens };
 -    });
-+    }).finally(() => { if (this.#pending === pending) this.#pending = null; });
-+    this.#pending = pending;
-+    return pending;
++ #tokens:Tokens|null;#port:RefreshPort;#pending:Promise<Tokens>|undefined;#group=new TaskGroup();#closing:Promise<void>|undefined;
++ constructor(tokens:Tokens,refreshPort:RefreshPort){this.#tokens={...tokens};this.#port=refreshPort;}
++ get current():Tokens|null{return this.#tokens===null?null:{...this.#tokens};}
++ logout():void{if(this.#closing)return;this.#tokens=null;this.#closing=this.#group.cancelAll();}
++ close():Promise<void>{this.logout();return this.#closing!;}
++ refresh():Promise<Tokens>{
++  if(this.#tokens===null)return Promise.reject(new SignedOutError());
++  if(!this.#pending){const original=this.#tokens;const operation=Promise.resolve().then(()=>this.#port(original.refreshToken)).then(tokens=>{if(this.#tokens===null)throw new SignedOutError();this.#tokens={accessToken:tokens.accessToken,refreshToken:tokens.refreshToken??original.refreshToken};return this.#tokens;},error=>{if(this.#tokens===null)throw new SignedOutError();throw error;});
++   this.#pending=operation.finally(()=>{this.#pending=undefined;});
    }
++  return this.#pending.then(tokens=>({...tokens}));
++ }
++ authorized<T>(id:string,work:(accessToken:string,signal:AbortSignal)=>Promise<T>):Promise<T>{
++  if(this.#tokens===null)return Promise.reject(new SignedOutError());
++  return this.#group.run(id,async signal=>{const tokens=await this.refresh();if(signal.aborted||this.#tokens===null)throw new SignedOutError();return work(tokens.accessToken,signal);}).catch(error=>{if(error instanceof GroupCancelledError)throw new SignedOutError();throw error;});
++ }
  }

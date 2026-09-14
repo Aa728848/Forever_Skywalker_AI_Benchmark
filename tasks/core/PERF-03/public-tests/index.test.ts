@@ -1,0 +1,2 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {GraphIndex} from '../starter/src/graph-index.ts';
+test('public/incremental-replacement-removes-old-edge',()=>{const source=new Map([['a',['b']],['b',[]],['c',[]]]);const index=new GraphIndex([...source.keys()],id=>source.get(id)!);source.set('a',['c']);index.apply([{kind:'put',id:'a'}]);assert.equal(index.snapshot().inDegree.get('b'),0);assert.equal(index.snapshot().inDegree.get('c'),1);});

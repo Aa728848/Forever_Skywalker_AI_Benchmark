@@ -1,0 +1,882 @@
+{
+  "schemaVersion": "0.1.0",
+  "reviewedAt": "2026-09-14",
+  "baselineCommit": "dad3c9b49d19c2f6fb874e7e998c91d911727bad",
+  "status": "engineering-validation",
+  "realModelCalls": 0,
+  "empiricalCalibration": "pending",
+  "summary": {
+    "reviewed": 55,
+    "improved": 32,
+    "clarified": 4,
+    "retained": 19,
+    "mutants": 83,
+    "verifiedMutants": 83
+  },
+  "items": [
+    {
+      "taskId": "FE-01",
+      "track": "core",
+      "difficulty": "easy",
+      "baselineVersion": "0.2.0",
+      "version": "0.2.0",
+      "action": "retained",
+      "reason": "分页重叠、失败游标与busy恢复构成基础门槛。",
+      "checkCount": 13,
+      "mutantCount": 0,
+      "mutationEvidence": null,
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "FE-02",
+      "track": "core",
+      "difficulty": "medium",
+      "baselineVersion": "0.1.0",
+      "version": "0.1.0",
+      "action": "retained",
+      "reason": "同键替代、取消与迟到Promise形成中等生命周期控制。",
+      "checkCount": 10,
+      "mutantCount": 0,
+      "mutationEvidence": null,
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "FE-03",
+      "track": "core",
+      "difficulty": "hard",
+      "baselineVersion": "0.1.1",
+      "version": "0.1.1",
+      "action": "retained",
+      "reason": "真实DOM身份、滚动与流重连序号已有独立工程约束。",
+      "checkCount": 5,
+      "mutantCount": 0,
+      "mutationEvidence": null,
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "FE-04",
+      "track": "core",
+      "difficulty": "extreme",
+      "baselineVersion": "0.1.1",
+      "version": "0.2.0",
+      "action": "improved",
+      "reason": "补connect/unsubscribe同步重入、迟到句柄归属与错误视图，保留真实浏览器堆预算。",
+      "checkCount": 10,
+      "mutantCount": 3,
+      "mutationEvidence": {
+        "path": "data/task-mutations/FE-04/2026-09-14T13-35-09-598Z/report.json",
+        "detected": 3,
+        "total": 3,
+        "profile": "local"
+      },
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "LSP-01",
+      "track": "core",
+      "difficulty": "easy",
+      "baselineVersion": "0.1.0",
+      "version": "0.1.0",
+      "action": "clarified",
+      "reason": "保留真实字节分帧与UTF-8基础题，明确帧头和输入范围。",
+      "checkCount": 12,
+      "mutantCount": 0,
+      "mutationEvidence": null,
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "LSP-02",
+      "track": "core",
+      "difficulty": "medium",
+      "baselineVersion": "0.1.1",
+      "version": "0.1.1",
+      "action": "retained",
+      "reason": "UTF-16位置、CRLF、顺序编辑、版本拒绝和原子性结合合理。",
+      "checkCount": 7,
+      "mutantCount": 0,
+      "mutationEvidence": null,
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "LSP-03",
+      "track": "core",
+      "difficulty": "hard",
+      "baselineVersion": "0.1.1",
+      "version": "0.2.0",
+      "action": "improved",
+      "reason": "增加同URI和跨Coordinator身份竞争、锁外取消回调、重入及异常恢复。",
+      "checkCount": 10,
+      "mutantCount": 3,
+      "mutationEvidence": {
+        "path": "data/task-mutations/LSP-03/2026-09-14T13-23-17-705Z/report.json",
+        "detected": 3,
+        "total": 3,
+        "profile": "local"
+      },
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "LSP-04",
+      "track": "core",
+      "difficulty": "extreme",
+      "baselineVersion": "0.1.1",
+      "version": "0.2.0",
+      "action": "improved",
+      "reason": "联合文档版本与构建代际，真实读线程观察快照发布，覆盖重开与重复结果。",
+      "checkCount": 9,
+      "mutantCount": 3,
+      "mutationEvidence": {
+        "path": "data/task-mutations/LSP-04/2026-09-14T13-47-17-220Z/report.json",
+        "detected": 3,
+        "total": 3,
+        "profile": "local"
+      },
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "API-01",
+      "track": "core",
+      "difficulty": "easy",
+      "baselineVersion": "0.1.0",
+      "version": "0.2.0",
+      "action": "improved",
+      "reason": "补普通对象/继承边界与独立错误顺序组合，保留简单难度。",
+      "checkCount": 18,
+      "mutantCount": 0,
+      "mutationEvidence": null,
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "API-02",
+      "track": "core",
+      "difficulty": "medium",
+      "baselineVersion": "0.1.1",
+      "version": "0.2.0",
+      "action": "improved",
+      "reason": "修正负数游标契约、非安全整数/非规范编码及独立分页分区检查。",
+      "checkCount": 16,
+      "mutantCount": 0,
+      "mutationEvidence": null,
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "API-03",
+      "track": "core",
+      "difficulty": "hard",
+      "baselineVersion": "0.1.1",
+      "version": "0.1.1",
+      "action": "retained",
+      "reason": "真实UTF-8字节拆分、消费游标和背压失败具有多个交互不变量。",
+      "checkCount": 16,
+      "mutantCount": 0,
+      "mutationEvidence": null,
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "API-04",
+      "track": "core",
+      "difficulty": "extreme",
+      "baselineVersion": "0.2.0",
+      "version": "0.2.0",
+      "action": "retained",
+      "reason": "已有SQLite跨进程领取、租约隔离、提交故障及三个部分修复反例。",
+      "checkCount": 26,
+      "mutantCount": 3,
+      "mutationEvidence": {
+        "path": "data/task-mutations/API-04/2026-09-14T10-54-42-718Z/report.json",
+        "detected": 3,
+        "total": 3,
+        "profile": "local"
+      },
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "CACHE-01",
+      "track": "core",
+      "difficulty": "easy",
+      "baselineVersion": "0.1.0",
+      "version": "0.1.0",
+      "action": "retained",
+      "reason": "TTL与LRU交互适合作为基础退化检查。",
+      "checkCount": 13,
+      "mutantCount": 0,
+      "mutationEvidence": null,
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "CACHE-02",
+      "track": "core",
+      "difficulty": "medium",
+      "baselineVersion": "0.1.0",
+      "version": "0.1.0",
+      "action": "retained",
+      "reason": "同键合并、同步抛错、失败恢复、键隔离及删除语义适合作为中等控制题。",
+      "checkCount": 17,
+      "mutantCount": 0,
+      "mutationEvidence": null,
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "CACHE-03",
+      "track": "core",
+      "difficulty": "hard",
+      "baselineVersion": "0.1.0",
+      "version": "0.2.0",
+      "action": "improved",
+      "reason": "新增多键一致快照、调用目标冻结、失效重试与旧失败不清理新请求。",
+      "checkCount": 16,
+      "mutantCount": 3,
+      "mutationEvidence": {
+        "path": "data/task-mutations/CACHE-03/2026-09-14T13-54-08-295Z/report.json",
+        "detected": 3,
+        "total": 3,
+        "profile": "local"
+      },
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "CACHE-04",
+      "track": "core",
+      "difficulty": "extreme",
+      "baselineVersion": "0.1.1",
+      "version": "0.2.0",
+      "action": "improved",
+      "reason": "增加真实原子文件存储和进程退出、批次提交与刷新队列隔离。",
+      "checkCount": 13,
+      "mutantCount": 3,
+      "mutationEvidence": {
+        "path": "data/task-mutations/CACHE-04/2026-09-14T13-54-11-985Z/report.json",
+        "detected": 3,
+        "total": 3,
+        "profile": "local"
+      },
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "BND-01",
+      "track": "core",
+      "difficulty": "easy",
+      "baselineVersion": "0.1.0",
+      "version": "0.1.0",
+      "action": "clarified",
+      "reason": "保留参数解析基础题，修正与起始实现不符的重复参数描述。",
+      "checkCount": 16,
+      "mutantCount": 0,
+      "mutationEvidence": null,
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "BND-02",
+      "track": "core",
+      "difficulty": "medium",
+      "baselineVersion": "0.1.0",
+      "version": "0.2.0",
+      "action": "improved",
+      "reason": "冻结围栏语法/错误优先级，补特殊键与只解析一次等反例。",
+      "checkCount": 17,
+      "mutantCount": 0,
+      "mutationEvidence": null,
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "BND-03",
+      "track": "core",
+      "difficulty": "hard",
+      "baselineVersion": "0.1.0",
+      "version": "0.2.0",
+      "action": "improved",
+      "reason": "覆盖完整UTF-8边界、任意切分、错误全局偏移、终结状态和输入隔离。",
+      "checkCount": 14,
+      "mutantCount": 3,
+      "mutationEvidence": {
+        "path": "data/task-mutations/BND-03/2026-09-14T13-29-38-378Z/report.json",
+        "detected": 3,
+        "total": 3,
+        "profile": "local"
+      },
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "BND-04",
+      "track": "core",
+      "difficulty": "extreme",
+      "baselineVersion": "0.1.1",
+      "version": "0.2.0",
+      "action": "improved",
+      "reason": "增加语法驱动物化前预算及错误token偏移，避免仅靠加深输入。",
+      "checkCount": 11,
+      "mutantCount": 3,
+      "mutationEvidence": {
+        "path": "data/task-mutations/BND-04/2026-09-14T13-35-27-641Z/report.json",
+        "detected": 3,
+        "total": 3,
+        "profile": "local"
+      },
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "THR-01",
+      "track": "core",
+      "difficulty": "easy",
+      "baselineVersion": "0.1.1",
+      "version": "0.1.1",
+      "action": "retained",
+      "reason": "真实worker创建/消息/退出与线程窗口能拒绝Promise伪线程。",
+      "checkCount": 11,
+      "mutantCount": 0,
+      "mutationEvidence": null,
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "THR-02",
+      "track": "core",
+      "difficulty": "medium",
+      "baselineVersion": "0.1.1",
+      "version": "0.1.1",
+      "action": "retained",
+      "reason": "真实线程屏障、异常、有界活跃量和关闭排空已形成中等工程任务。",
+      "checkCount": 5,
+      "mutantCount": 0,
+      "mutationEvidence": null,
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "THR-03",
+      "track": "core",
+      "difficulty": "hard",
+      "baselineVersion": "0.2.1",
+      "version": "0.2.1",
+      "action": "clarified",
+      "reason": "保留真实读写锁/锁外通知，明确写者优先不等于无限写流下读者无饥饿。",
+      "checkCount": 14,
+      "mutantCount": 0,
+      "mutationEvidence": null,
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "THR-04",
+      "track": "core",
+      "difficulty": "extreme",
+      "baselineVersion": "0.1.1",
+      "version": "0.2.0",
+      "action": "improved",
+      "reason": "增加跨代共享worker预算、排队撤销、在途终止确认和close排空。",
+      "checkCount": 8,
+      "mutantCount": 3,
+      "mutationEvidence": {
+        "path": "data/task-mutations/THR-04/2026-09-14T13-21-07-440Z/report.json",
+        "detected": 3,
+        "total": 3,
+        "profile": "local"
+      },
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "CONC-01",
+      "track": "core",
+      "difficulty": "easy",
+      "baselineVersion": "0.1.0",
+      "version": "0.1.0",
+      "action": "clarified",
+      "reason": "保留abort/结算/计时器基础题，明确Scheduler回调时序。",
+      "checkCount": 10,
+      "mutantCount": 0,
+      "mutationEvidence": null,
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "CONC-02",
+      "track": "core",
+      "difficulty": "medium",
+      "baselineVersion": "0.1.1",
+      "version": "0.2.0",
+      "action": "improved",
+      "reason": "让TaskGroup与刷新/传输共享生命周期，覆盖注销、close等待及同步重入。",
+      "checkCount": 20,
+      "mutantCount": 0,
+      "mutationEvidence": null,
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "CONC-03",
+      "track": "core",
+      "difficulty": "hard",
+      "baselineVersion": "0.1.0",
+      "version": "0.2.0",
+      "action": "improved",
+      "reason": "从单资源FIFO升级多资源整组申请、公平交接、独立请求和等待取消。",
+      "checkCount": 15,
+      "mutantCount": 3,
+      "mutationEvidence": {
+        "path": "data/task-mutations/CONC-03/2026-09-14T13-18-19-975Z/report.json",
+        "detected": 3,
+        "total": 3,
+        "profile": "local"
+      },
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "CONC-04",
+      "track": "core",
+      "difficulty": "extreme",
+      "baselineVersion": "0.1.0",
+      "version": "0.2.0",
+      "action": "improved",
+      "reason": "真实持久分片归并、并发重复提交、进程退出恢复与代际原子发布。",
+      "checkCount": 16,
+      "mutantCount": 3,
+      "mutationEvidence": {
+        "path": "data/task-mutations/CONC-04/2026-09-14T13-42-34-213Z/report.json",
+        "detected": 3,
+        "total": 3,
+        "profile": "local"
+      },
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "ARCH-01",
+      "track": "core",
+      "difficulty": "easy",
+      "baselineVersion": "0.1.0",
+      "version": "0.1.0",
+      "action": "retained",
+      "reason": "运行边界与解耦基础控制题，无需为体量重写。",
+      "checkCount": 10,
+      "mutantCount": 0,
+      "mutationEvidence": null,
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "ARCH-02",
+      "track": "core",
+      "difficulty": "medium",
+      "baselineVersion": "0.1.0",
+      "version": "0.2.0",
+      "action": "improved",
+      "reason": "runtime筛选与真实惰性加载结合，验证隔离、single-flight及失败重试。",
+      "checkCount": 14,
+      "mutantCount": 0,
+      "mutationEvidence": null,
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "ARCH-03",
+      "track": "core",
+      "difficulty": "hard",
+      "baselineVersion": "0.1.0",
+      "version": "0.2.0",
+      "action": "improved",
+      "reason": "增加热替换代际、多读者独立取消和旧finally隔离。",
+      "checkCount": 16,
+      "mutantCount": 3,
+      "mutationEvidence": {
+        "path": "data/task-mutations/ARCH-03/2026-09-14T13-58-02-230Z/report.json",
+        "detected": 3,
+        "total": 3,
+        "profile": "local"
+      },
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "ARCH-04",
+      "track": "core",
+      "difficulty": "extreme",
+      "baselineVersion": "0.1.0",
+      "version": "0.2.0",
+      "action": "improved",
+      "reason": "新增异步插件准备/发布/回滚、重入关闭与LIFO异步资源回收。",
+      "checkCount": 19,
+      "mutantCount": 3,
+      "mutationEvidence": {
+        "path": "data/task-mutations/ARCH-04/2026-09-14T13-57-58-979Z/report.json",
+        "detected": 3,
+        "total": 3,
+        "profile": "local"
+      },
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "GRAPH-01",
+      "track": "core",
+      "difficulty": "easy",
+      "baselineVersion": "0.1.0",
+      "version": "0.1.0",
+      "action": "retained",
+      "reason": "路径内环与跨分支共享节点的区别适合作为基础图题。",
+      "checkCount": 10,
+      "mutantCount": 0,
+      "mutationEvidence": null,
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "GRAPH-02",
+      "track": "core",
+      "difficulty": "medium",
+      "baselineVersion": "0.1.0",
+      "version": "0.2.0",
+      "action": "improved",
+      "reason": "修正自环语义，验证真实闭环每条边、确定性和独立DAG oracle。",
+      "checkCount": 12,
+      "mutantCount": 0,
+      "mutationEvidence": null,
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "GRAPH-03",
+      "track": "core",
+      "difficulty": "hard",
+      "baselineVersion": "0.1.0",
+      "version": "0.2.0",
+      "action": "improved",
+      "reason": "增加共享AST后序重写、身份复用、环/DAG区分及全树预检。",
+      "checkCount": 19,
+      "mutantCount": 3,
+      "mutationEvidence": {
+        "path": "data/task-mutations/GRAPH-03/2026-09-14T13-54-15-483Z/report.json",
+        "detected": 3,
+        "total": 3,
+        "profile": "local"
+      },
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "GRAPH-04",
+      "track": "core",
+      "difficulty": "extreme",
+      "baselineVersion": "0.2.0",
+      "version": "0.2.0",
+      "action": "retained",
+      "reason": "已有批次图更新、未解析依赖、累计失效、发布票据和全量oracle。",
+      "checkCount": 17,
+      "mutantCount": 3,
+      "mutationEvidence": {
+        "path": "data/task-mutations/GRAPH-04/2026-09-14T11-31-59-950Z/report.json",
+        "detected": 3,
+        "total": 3,
+        "profile": "local"
+      },
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "LIFE-01",
+      "track": "core",
+      "difficulty": "easy",
+      "baselineVersion": "0.1.0",
+      "version": "0.1.0",
+      "action": "retained",
+      "reason": "资源释放基础题保持小范围，承担基础门槛。",
+      "checkCount": 12,
+      "mutantCount": 0,
+      "mutationEvidence": null,
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "LIFE-02",
+      "track": "core",
+      "difficulty": "medium",
+      "baselineVersion": "0.1.0",
+      "version": "0.2.0",
+      "action": "improved",
+      "reason": "source/deadline同步终态与迟到句柄回收形成同一生命周期。",
+      "checkCount": 14,
+      "mutantCount": 0,
+      "mutationEvidence": null,
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "LIFE-03",
+      "track": "core",
+      "difficulty": "hard",
+      "baselineVersion": "0.1.0",
+      "version": "0.2.0",
+      "action": "improved",
+      "reason": "新增自然结束、同步启动错误、多个重启等待同次停止与清理。",
+      "checkCount": 15,
+      "mutantCount": 3,
+      "mutationEvidence": {
+        "path": "data/task-mutations/LIFE-03/2026-09-14T13-26-28-556Z/report.json",
+        "detected": 3,
+        "total": 3,
+        "profile": "local"
+      },
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "LIFE-04",
+      "track": "core",
+      "difficulty": "extreme",
+      "baselineVersion": "0.1.1",
+      "version": "0.1.1",
+      "action": "retained",
+      "reason": "已有真实进程树回收、异常与同快照新代际隔离。",
+      "checkCount": 16,
+      "mutantCount": 0,
+      "mutationEvidence": null,
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "PERF-01",
+      "track": "core",
+      "difficulty": "easy",
+      "baselineVersion": "0.1.0",
+      "version": "0.2.0",
+      "action": "improved",
+      "reason": "oracle不再调用候选parseLine，并修复合法原型键的参考/替代漏洞。",
+      "checkCount": 12,
+      "mutantCount": 0,
+      "mutationEvidence": null,
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "PERF-02",
+      "track": "core",
+      "difficulty": "medium",
+      "baselineVersion": "0.2.0",
+      "version": "0.2.0",
+      "action": "retained",
+      "reason": "真实DOM节点/焦点保持、窗口复用和外部性能配对已有工程意义。",
+      "checkCount": 18,
+      "mutantCount": 0,
+      "mutationEvidence": null,
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "PERF-03",
+      "track": "core",
+      "difficulty": "hard",
+      "baselineVersion": "0.1.1",
+      "version": "0.2.0",
+      "action": "improved",
+      "reason": "从全量统计扩展事务增量索引、未解析依赖恢复和真实局部更新负载。",
+      "checkCount": 12,
+      "mutantCount": 3,
+      "mutationEvidence": {
+        "path": "data/task-mutations/PERF-03/2026-09-14T13-54-19-654Z/report.json",
+        "detected": 3,
+        "total": 3,
+        "profile": "local"
+      },
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "PERF-04",
+      "track": "core",
+      "difficulty": "extreme",
+      "baselineVersion": "0.2.0",
+      "version": "0.3.0",
+      "action": "improved",
+      "reason": "增加有界流式投影、检查点/日志身份、背压回收、失败提交隔离和真实主路径负载。",
+      "checkCount": 20,
+      "mutantCount": 4,
+      "mutationEvidence": {
+        "path": "data/task-mutations/PERF-04/2026-09-14T13-54-26-098Z/report.json",
+        "detected": 4,
+        "total": 4,
+        "profile": "local"
+      },
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "STATE-01",
+      "track": "core",
+      "difficulty": "easy",
+      "baselineVersion": "0.1.0",
+      "version": "0.2.0",
+      "action": "improved",
+      "reason": "修参考解null记录错误，增加真实rename失败下旧值/原错误/临时文件检查。",
+      "checkCount": 14,
+      "mutantCount": 0,
+      "mutationEvidence": null,
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "STATE-02",
+      "track": "core",
+      "difficulty": "medium",
+      "baselineVersion": "0.1.0",
+      "version": "0.2.0",
+      "action": "improved",
+      "reason": "从局部迁移扩展混合版本批次原子发布、首错定位和快照隔离。",
+      "checkCount": 14,
+      "mutantCount": 0,
+      "mutationEvidence": null,
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "STATE-03",
+      "track": "core",
+      "difficulty": "hard",
+      "baselineVersion": "0.1.0",
+      "version": "0.2.0",
+      "action": "improved",
+      "reason": "增加事务ID内容契约、落盘ACK丢失、坏尾恢复和真实进程退出。",
+      "checkCount": 18,
+      "mutantCount": 3,
+      "mutationEvidence": {
+        "path": "data/task-mutations/STATE-03/2026-09-14T13-24-05-872Z/report.json",
+        "detected": 3,
+        "total": 3,
+        "profile": "local"
+      },
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "STATE-04",
+      "track": "core",
+      "difficulty": "extreme",
+      "baselineVersion": "0.1.1",
+      "version": "0.1.1",
+      "action": "retained",
+      "reason": "已有真实进程退出、持久服务事实与派生投影恢复。",
+      "checkCount": 15,
+      "mutantCount": 0,
+      "mutationEvidence": null,
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "INT-CWT",
+      "track": "integration",
+      "difficulty": "extreme",
+      "baselineVersion": "0.1.0",
+      "version": "0.1.1",
+      "action": "improved",
+      "reason": "保留真实LSP链路，补文档版本/admission独立检验及锁外通知反例。",
+      "checkCount": 11,
+      "mutantCount": 4,
+      "mutationEvidence": {
+        "path": "data/task-mutations/INT-CWT/2026-09-14T13-44-12-199Z/report.json",
+        "detected": 4,
+        "total": 4,
+        "profile": "local"
+      },
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "INT-HARNESS",
+      "track": "integration",
+      "difficulty": "extreme",
+      "baselineVersion": "0.1.0",
+      "version": "0.2.0",
+      "action": "improved",
+      "reason": "修复完整展开再截取的工作量漏洞，前缀访问探针和混合记录oracle。",
+      "checkCount": 8,
+      "mutantCount": 3,
+      "mutationEvidence": {
+        "path": "data/task-mutations/INT-HARNESS/2026-09-14T13-29-31-204Z/report.json",
+        "detected": 3,
+        "total": 3,
+        "profile": "local"
+      },
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "INT-SUB",
+      "track": "integration",
+      "difficulty": "hard",
+      "baselineVersion": "0.1.0",
+      "version": "0.2.0",
+      "action": "improved",
+      "reason": "补存储读取与公开Promise交接窗口的认证生命周期、预取消源创建及反例。",
+      "checkCount": 9,
+      "mutantCount": 3,
+      "mutationEvidence": {
+        "path": "data/task-mutations/INT-SUB/2026-09-14T13-57-56-970Z/report.json",
+        "detected": 3,
+        "total": 3,
+        "profile": "local"
+      },
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "INT-VERIFIER",
+      "track": "integration",
+      "difficulty": "extreme",
+      "baselineVersion": "0.1.0",
+      "version": "0.1.0",
+      "action": "retained",
+      "reason": "真实失效/缓存/成本管线能够拦住三个有意义部分修复，新增反例证据。",
+      "checkCount": 11,
+      "mutantCount": 3,
+      "mutationEvidence": {
+        "path": "data/task-mutations/INT-VERIFIER/2026-09-14T13-43-32-327Z/report.json",
+        "detected": 3,
+        "total": 3,
+        "profile": "local"
+      },
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "INT-TRADING",
+      "track": "integration",
+      "difficulty": "extreme",
+      "baselineVersion": "0.1.0",
+      "version": "0.1.0",
+      "action": "retained",
+      "reason": "真实账本持久/通知/幂等/启动恢复能拦住四种部分修复，新增反例证据。",
+      "checkCount": 6,
+      "mutantCount": 4,
+      "mutationEvidence": {
+        "path": "data/task-mutations/INT-TRADING/2026-09-14T13-44-42-157Z/report.json",
+        "detected": 4,
+        "total": 4,
+        "profile": "local"
+      },
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "INT-WEB",
+      "track": "integration",
+      "difficulty": "hard",
+      "baselineVersion": "0.1.0",
+      "version": "0.2.0",
+      "action": "improved",
+      "reason": "增加多别名真实隧道资源归属，拒绝全清理或只清一个兄弟的修复。",
+      "checkCount": 13,
+      "mutantCount": 4,
+      "mutationEvidence": {
+        "path": "data/task-mutations/INT-WEB/2026-09-14T13-45-54-235Z/report.json",
+        "detected": 4,
+        "total": 4,
+        "profile": "local"
+      },
+      "empiricalDiscrimination": null
+    },
+    {
+      "taskId": "INT-PY",
+      "track": "integration",
+      "difficulty": "hard",
+      "baselineVersion": "0.1.0",
+      "version": "0.1.1",
+      "action": "improved",
+      "reason": "方向缓存oracle改为独立固定磁盘键和真实reward消费，新增四种反例。",
+      "checkCount": 9,
+      "mutantCount": 4,
+      "mutationEvidence": {
+        "path": "data/task-mutations/INT-PY/2026-09-14T13-44-40-776Z/report.json",
+        "detected": 4,
+        "total": 4,
+        "profile": "local"
+      },
+      "empiricalDiscrimination": null
+    }
+  ],
+  "linuxValidation": {
+    "profile": "linux-container",
+    "image": "sha256:a101cfd83636ec92753323758f0de64d6d190cfa201fd2f8ccab837e4b9efc6a",
+    "taskCount": 55,
+    "referencePasses": 55,
+    "alternativePasses": 55,
+    "defectsDetected": 55,
+    "evidence": "data/quality-audit/full-linux-validation.json",
+    "sourceReports": [
+      {
+        "path": "data/trials/2026-09-14T13-58-08-888Z/report.json",
+        "sha256": "a11e004607c6db1a4c765d292e017e17fd21a5383694562f8ad5896de0835e51"
+      },
+      {
+        "path": "data/trials/2026-09-14T14-08-14-595Z/report.json",
+        "sha256": "b3a67676878e7e440ba28bcb5d6f8db9b458c80cb61b3a31e321d45fc195bc21"
+      }
+    ]
+  }
+}

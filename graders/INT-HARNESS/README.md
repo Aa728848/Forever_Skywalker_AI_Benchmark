@@ -9,3 +9,5 @@ SOURCE.json记录固定提交和原始源码摘要；参考补丁、替代实现
 缺陷来源：在真实ClientAssistantStream中注入忽略重连前缀长度、忽略稠密帧序号的回归；另补上游nextIndex=0边界。只修该源模块，真实压缩/展开/组装/不可变值模块共同运行。
 
 全部检查均运行真实源模块。运行 node scripts/task.ts verify INT-HARNESS 验证三向对照。
+
+0.2.0 修正原参考解“完整展开后 slice”带来的工作量漏洞：客户端只展开已验证历史的选定前缀，受信Proxy实际观测尾部读取，并以混合text/reasoning/tool/raw压缩记录的原展开作为独立oracle。原初始来源文件和来源hash不变，参考及替代只修改允许的客户端模块。近似错误修复覆盖提前完整展开、前缀少算一项、拒绝错误帧却污染游标；运行 `pnpm task:mutants INT-HARNESS` 验证。

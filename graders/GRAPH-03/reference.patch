@@ -1,7 +1,16 @@
 diff --git a/starter/src/ast.ts b/starter/src/ast.ts
-index ddb8ac8..0602a68 100644
+index a503484..83721bb 100644
 --- a/starter/src/ast.ts
 +++ b/starter/src/ast.ts
+@@ -22,7 +22,7 @@ export class InvalidNodeError extends Error {
+ }
+ 
+ function isNode(value: unknown): value is AstNode {
+-  return typeof value === 'object' && value !== null && typeof (value as { type?: unknown }).type === 'string';
++  return typeof value === 'object' && value !== null && typeof (value as { type?: unknown }).type === 'string' && (value as { type: string }).type.length > 0;
+ }
+ 
+ /** 校验并返回子节点；缺省 children 与空数组等价，非法结构抛出带路径的 InvalidNodeError。 */
 @@ -40,50 +40,62 @@ function assertRoot(root: AstNode): void {
    if (!isNode(root)) throw new InvalidNodeError('root');
  }
@@ -95,3 +104,21 @@ index ddb8ac8..0602a68 100644
 +  return deepest;
  }
  
+diff --git a/starter/src/rewrite.ts b/starter/src/rewrite.ts
+index f78c28f..897fe04 100644
+--- a/starter/src/rewrite.ts
++++ b/starter/src/rewrite.ts
+@@ -19,9 +19,11 @@ export function rewriteAst(root: AstNode, transform: (node: AstNode) => string):
+   const outputs = new Map<AstNode,AstNode>();
+   for (const node of order) {
+     const children = (node.children??[]).map(child=>outputs.get(child)!);
+-    const type = transform(node);
++    const view = Object.freeze(node.children===undefined?{type:node.type}:{type:node.type,children:Object.freeze(children)});
++    const type = transform(view);
+     if (typeof type !== 'string' || !type.length) throw new TypeError('transform must return a nonempty type');
+-    const result = node.children===undefined ? {type} : {type,children};
++    const unchanged = type === node.type && children.every((child,i)=>child===node.children![i]);
++    const result = unchanged ? node : node.children===undefined ? {type} : {type,children};
+     outputs.set(node,result);
+   }
+   return outputs.get(root)!;

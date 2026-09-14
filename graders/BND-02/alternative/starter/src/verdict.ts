@@ -36,7 +36,7 @@ function toVerdict(value: unknown): Verdict {
     if (typeof score !== 'number' || !Number.isFinite(score) || score < 0 || score > 100) {
       throw new VerdictFormatError('invalid-shape', 'scores.' + name + ' 必须是 0 到 100 之间的有限数。');
     }
-    normalized[name] = score;
+    Object.defineProperty(normalized, name, { value:score, enumerable:true, writable:true, configurable:true });
   }
   const rationale = value.rationale;
   if (typeof rationale !== 'string' || rationale.trim() === '') throw new VerdictFormatError('invalid-shape', 'rationale 必须是非空字符串。');
@@ -44,16 +44,14 @@ function toVerdict(value: unknown): Verdict {
 }
 
 /** 替代实现：用非贪婪正则收集围栏块，并用计数校验未闭合的 json 围栏。 */
-function jsonBlocks(raw: string): string[] {
-  const pattern = /(?:^|\n)[ \t]*```([A-Za-z0-9_-]*)[ \t]*\n([\s\S]*?)\n[ \t]*```[ \t]*(?=\n|$)/g;
-  const bodies: string[] = [];
-  for (const match of raw.matchAll(pattern)) {
-    if ((match[1] ?? '').toLowerCase() === 'json') bodies.push(match[2] ?? '');
-  }
-  const openings = raw.match(/(?:^|\n)[ \t]*```json\b/g);
-  const openingCount = openings === null ? 0 : openings.length;
-  if (openingCount > bodies.length) throw new VerdictFormatError('invalid-json', 'json 围栏块没有闭合。');
-  return bodies;
+function jsonBlocks(raw:string):string[]{
+ const result:string[]=[];let active:{length:number;json:boolean;body:string[]}|undefined;
+ for(const line of raw.split(/\r?\n/)){
+  const match=/^[ \t]*(\x60{3,})([^\x60]*)$/.exec(line);
+  if(!active){if(match)active={length:match[1]!.length,json:match[2]!.trim().toLowerCase()==='json',body:[]};continue;}
+  if(match&&match[1]!.length>=active.length&&match[2]!.trim()===''){if(active.json)result.push(active.body.join('\n'));active=undefined;}else active.body.push(line);
+ }
+ if(active?.json)throw new VerdictFormatError('invalid-json','unclosed json fence');return result;
 }
 
 function singleBody(raw: string): string {

@@ -56,5 +56,21 @@ report "hidden/notification-runs-after-root-release" (fun () ->
     active <- Some pipeline
     pipeline.Feed(opened 1 "value")
     check (pipeline.Publish(pipeline.Prepare(path))) "正常发布失败")
+report "hidden/changed-document-version-rejects-late-plan" (fun () ->
+    use pipeline = new Pipeline(ignore)
+    pipeline.Feed(opened 1 "old error")
+    let old = pipeline.Prepare(path)
+    pipeline.Feed(replaced 2 "new good")
+    check (not (pipeline.Publish(old))) "版本变化后仍发布旧文档计划"
+    check (pipeline.Publish(pipeline.Prepare(path))) "旧结果拒绝后新版本无法发布"
+    check (pipeline.Errors(path) = Some 0) "旧计划覆盖新诊断")
+report "hidden/same-version-notification-requires-current-admission" (fun () ->
+    use pipeline = new Pipeline(ignore)
+    pipeline.Feed(opened 1 "confirmed")
+    let old = pipeline.Prepare(path)
+    pipeline.Feed(replaced 1 "ignored-by-document-store")
+    check (pipeline.Text(path) = Some "confirmed") "上游同版本消息语义被改写"
+    check (not (pipeline.Publish(old))) "旧准入错误确认新一轮诊断失效"
+    check (pipeline.Publish(pipeline.Prepare(path))) "新准入无法发布")
 printfn "# checks %d failed %d" count failed
 if failed > 0 then exit 1

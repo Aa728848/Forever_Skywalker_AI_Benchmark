@@ -39,10 +39,6 @@ export class VersionedCache {
     if (cached !== undefined) return cached.promise;
     const version = this.version(key);
     const promise = this.#port.load(key);
-    // 缺陷：结算后无条件入缓存，不校验发起时的版本是否已经失效。
-    promise.then(value => {
-      void value;
-    });
     this.#entries.set(key, { version, promise });
     // 缺陷：结算时无条件写回缓存，被失效的旧结果会重新占据缓存。
     promise.then(
@@ -50,5 +46,9 @@ export class VersionedCache {
       () => {},
     );
     return promise;
+  }
+
+  async getMany(keys: readonly string[]): Promise<readonly string[]> {
+    return Object.freeze(await Promise.all(keys.map(key => this.get(key))));
   }
 }

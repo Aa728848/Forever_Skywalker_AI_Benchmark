@@ -1,50 +1,25 @@
 export type Release = () => void;
-
-interface Waiter {
-  readonly resolve: (release: Release) => void;
-}
-
-/** 替代实现：每个资源一个显式 FIFO 数组，队首在释放时同步补位。 */
+interface Request { keys: string[]; resolve(release: Release): void; reject(error: unknown): void; signal?: AbortSignal; cancel?: () => void }
 export class LockManager {
-  readonly #held = new Set<string>();
-  readonly #queues = new Map<string, Array<(release: Release) => void>>();
-
-  get queueLength(): number {
-    let total = 0;
-    for (const queue of this.#queues.values()) total += queue.length;
-    return total;
-  }
-
-  #hand(resource: string): void {
-    const queue = this.#queues.get(resource);
-    if (queue === undefined || queue.length === 0) {
-      this.#queues.delete(resource);
-      return;
-    }
-    const nextResolve = queue.shift() as (release: Release) => void;
-    if (queue.length === 0) this.#queues.delete(resource);
-    this.#held.add(resource);
-    nextResolve(this.#createRelease(resource));
-  }
-
-  #createRelease(resource: string): Release {
-    let released = false;
-    return () => {
-      if (released) return;
-      released = true;
-      this.#held.delete(resource);
-      this.#hand(resource);
-    };
-  }
-
-  acquire(resource: string): Promise<Release> {
-    const queue = this.#queues.get(resource);
-    if (queue === undefined && !this.#held.has(resource)) {
-      this.#held.add(resource);
-      return Promise.resolve(this.#createRelease(resource));
-    }
-    return new Promise<Release>(resolve => {
-      this.#queues.set(resource, [...(this.#queues.get(resource) ?? []), resolve]);
+  private owners = new Map<string, object>();
+  private waiting = new Map<object, Request>();
+  get queueLength(): number { return this.waiting.size; }
+  acquire(resource: string): Promise<Release> { return this.acquireMany([resource]); }
+  acquireMany(resources: readonly string[], signal?: AbortSignal): Promise<Release> {
+    if (signal?.aborted) return Promise.reject(signal.reason);
+    return new Promise((resolve, reject) => {
+      const key = {}, request: Request = { keys: [...new Set(resources)], resolve, reject, signal };
+      request.cancel = () => { if (!this.waiting.delete(key)) return; signal?.removeEventListener('abort', request.cancel!); reject(signal?.reason); this.drain(); };
+      this.waiting.set(key, request); signal?.addEventListener('abort', request.cancel, { once: true }); this.drain();
     });
+  }
+  private drain(): void {
+    const earlier: Request[] = [];
+    for (const [ticket, request] of this.waiting) {
+      if (request.keys.some(key => this.owners.has(key)) || earlier.some(prior => prior.keys.some(key => request.keys.includes(key)))) { earlier.push(request); continue; }
+      this.waiting.delete(ticket); request.signal?.removeEventListener('abort', request.cancel!);
+      request.keys.forEach(key => this.owners.set(key, ticket)); let released = false;
+      request.resolve(() => { if (released) return; released = true; request.keys.forEach(key => this.owners.delete(key)); this.drain(); });
+    }
   }
 }

@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "LSP-03",
-  "taskVersion": "0.1.1",
+  "taskVersion": "0.2.0",
   "title": "取消和过期诊断隔离",
   "runtime": "fsharp",
   "runtimeRange": "dotnet >= 10.0",
@@ -41,7 +41,11 @@
       "public/cancel-and-stale-result",
       "public/state-close-reopen",
       "hidden/independent-documents",
-      "hidden/state-once-and-published-retained"
+      "hidden/state-once-and-published-retained",
+      "hidden/cancellation-callback-lock-boundary",
+      "hidden/reentrant-close-and-reopen",
+      "hidden/foreign-request-identity",
+      "hidden/callback-failure-commits-retirement"
     ]
   },
   "limits": {
@@ -98,6 +102,38 @@
       "weight": 1,
       "critical": true,
       "summary": "hidden/resource-parallel-publication"
+    },
+    {
+      "id": "hidden/cancellation-callback-lock-boundary",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": true,
+      "summary": "取消回调不持内部锁，另一线程可观察状态。"
+    },
+    {
+      "id": "hidden/reentrant-close-and-reopen",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "关闭先撤销旧代，回调可重开低版本。"
+    },
+    {
+      "id": "hidden/foreign-request-identity",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "不同协调器的同号请求不能相互发布。"
+    },
+    {
+      "id": "hidden/callback-failure-commits-retirement",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": true,
+      "summary": "回调抛错仍提交退休状态并允许恢复。"
     }
   ]
 }

@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "GRAPH-02",
-  "taskVersion": "0.1.0",
+  "taskVersion": "0.2.0",
   "title": "图去重、环与确定性排序",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -43,7 +43,9 @@
     "alternative": "graders/GRAPH-02/alternative",
     "defectDetectors": [
       "hidden/lexicographic-tiebreak-is-deterministic",
-      "public/lexicographic-tiebreak-is-deterministic"
+      "public/lexicographic-tiebreak-is-deterministic",
+      "hidden/cycle-edges-and-permutation-invariance",
+      "hidden/independent-dag-order"
     ]
   },
   "limits": {
@@ -132,6 +134,22 @@
       "weight": 1,
       "critical": false,
       "summary": "隐藏样本下的空图。"
+    },
+    {
+      "id": "hidden/cycle-edges-and-permutation-invariance",
+      "kind": "hidden",
+      "group": "boundary",
+      "summary": "闭环真实边、自环和输入排列不变",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/independent-dag-order",
+      "kind": "hidden",
+      "group": "regression",
+      "summary": "独立可用节点oracle",
+      "weight": 1,
+      "critical": true
     }
   ]
 }

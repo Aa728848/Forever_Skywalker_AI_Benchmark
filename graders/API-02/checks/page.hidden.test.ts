@@ -36,7 +36,7 @@ test('hidden/rejects-invalid-cursor-text', () => {
 test('hidden/rejects-noncanonical-cursor', () => {
   assert.equal(failureOf(() => decodeCursor(encode('offset:007'))), 'page:cursor');
   assert.equal(decodeCursor(encodeCursor(7)), 7);
-  assert.equal(failureOf(() => encodeCursor(-1)), 'ok');
+  assert.equal(failureOf(() => encodeCursor(-1)), 'page:cursor');
 });
 
 test('hidden/rejects-out-of-range-limit', () => {

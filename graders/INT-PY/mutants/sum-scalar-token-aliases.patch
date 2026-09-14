@@ -1,0 +1,13 @@
+diff --git a/starter/llm_verifier/fine_grained_reward.py b/starter/llm_verifier/fine_grained_reward.py
+index 451c738..855ad87 100644
+--- a/starter/llm_verifier/fine_grained_reward.py
++++ b/starter/llm_verifier/fine_grained_reward.py
+@@ -675,7 +675,7 @@ def extract_score(text, tokens, position_logprobs, tag):
+             if tok in valid_tokens:
+                 val = valid_tokens[tok]
+                 p = math.exp(logprob)
+-                probs[val] = max(probs.get(val, 0.0), p)
++                probs[val] = probs.get(val, 0.0) + p
+ 
+     if probs:
+         unique_vals = sorted(set(valid_tokens.values()))

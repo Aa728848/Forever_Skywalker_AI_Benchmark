@@ -40,6 +40,15 @@ BENCH_DSH_REPORT_DIR=C:/Users/A/Documents/DSH-Reports
 
 保存配置后，日常只运行 `pnpm dsh:compare`。命令行优先于 `.env`；`--provider` 可选择本次使用的 DSH 供应商路由。`--preset` 选择一个预设，`--presets` 接受逗号分隔列表，二者不能同时填写。`--reasoning` 选择一个思考等级，已有 `--modes` 仍接受多个思考等级，二者不能同时填写。这些参数只作用于本次创建的 DSH 会话。
 
+未声明推理等级的模型使用 `--reasoning default`（也可设置 `BENCH_DSH_REASONING_EFFORT=default`）：本项目会省略 DSH SDK 的 `reasoningEffort` 字段，由供应商/模型配置决定行为。`default` 不等同于关闭思考；`off`、`high` 等仍要求模型明确支持该等级，原有默认 Off/High 比较不变。手动添加的自定义模型默认没有等级声明，不能直接给它传 High；若需要控制等级，先按 DSH 的 `providers.zh.md` 在模型配置中声明 `reasoningEfforts`。
+
+```powershell
+pnpm dsh:compare --provider gateway-a --model "same-model" --preset standard --reasoning default
+pnpm dsh:compare --provider gateway-b --model "same-model" --preset standard --reasoning default
+```
+
+两个命令分别使用对应 Provider ID，模型 ID 相同不会跨供应商匹配。上述ID须换成自己的实际配置。
+
 `BENCH_JUDGE_*` 控制固定裁判，与上述作答参数独立。裁判思考等级使用 `BENCH_JUDGE_REASONING_EFFORT`；例如 DeepSeek 裁判为 `high` 且 `BENCH_JUDGE_THINKING=enabled`，完整示例和预算见 [裁判供应商配置](judge-providers.md)。修改 `.env` 后重新运行命令；已启动的 API 服务需重启才读取新参数。
 
 若使用自定义提供方，请保证 SDK profile 注册了该路由及其配置；Web 中存在的路由不会自动复制到 SDK profile。思考等级由对应适配器校验。保持 `BENCH_DSH_PROFILE=sdk`，通过预设选择极简模式，不要混淆 `minimal` 预设与另一套 `sdk-minimal` 启动配置。
@@ -53,6 +62,8 @@ pnpm dsh:compare --model <模型ID> --check
 预检不启动 DSH，不验证模型认证或发起模型请求。实际调用时初始化错误会落盘并停止后续作答。
 
 ## 实验选择
+
+`--all` 选择全部已具备题目包的题目；不与 `--tasks` 同时使用。每个“题目 × 预设 × 思考等级 × 重复次数”都代表一次独立作答。
 
 ```powershell
 # 四种 DSH 预设，统一 High 思考，两个复杂任务，共 8 次作答。
@@ -86,6 +97,7 @@ SDK 回收未确认或报告写入/校验失败时，记录 `cleanup.state=retai
 - 所有预定作答都保留。未完成、超时、取消和接口失败不会假报完成；没有验证的分数保持 `null`。同一组有缺测时不只平均成功项。
 - 压缩证据内 `summaries/` 的 `*-selection.json` 和 `*-summary.json` 沿用原四级评分与集成题单列规则；缺少等级题目仍为待定。
 - 不混合不同执行环境、裁判参数或裁判返回模型。SDK 仅公开消息归属路由，尚无可靠的供应商实际响应版本与完整费用汇总，因此 `responseModels: []`、`usage: null`，不以请求参数或文本长度冒充证据。
+- `default` 和 `off` 是独立实验组；default 作答的 `solver.requestedModel.reasoningEffort` 为 `null`，表示未传该参数。预设指纹仅标识预设内容，不冒充实际思考深度；供应商默认配置应在实验期间保持固定。
 
 当前通过 SDK 调用原始四种 Agent 预设，未自动化 `/plan` 的人工审批实验。Linux 隔离用于评分，DSH 作答运行在 Windows 本机。SDK close 的验收范围为拥有的运行时，不能声称强制退出后所有脱离工具进程都已回收。
 

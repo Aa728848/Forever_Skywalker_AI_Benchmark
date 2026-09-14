@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "FE-04",
-  "taskVersion": "0.1.1",
+  "taskVersion": "0.2.0",
   "title": "多工作区实时视图一致性与资源预算",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -45,7 +45,11 @@
       "public/state-switch-resume-stale-events",
       "public/resource-bounded-visible-rows",
       "hidden/state-workspace-eviction",
-      "hidden/resource-100000-events-retained-heap"
+      "hidden/resource-100000-events-retained-heap",
+      "public/connect-synchronous-dispose-reclaims-returned-handle",
+      "hidden/reentrant-connect-retains-newest-handle",
+      "hidden/unsubscribe-reentry-supersedes-outer-switch",
+      "hidden/connect-error-keeps-confirmed-window-and-can-retry"
     ]
   },
   "limits": {
@@ -102,6 +106,38 @@
       "summary": "拒绝零值/非整数行数与工作区预算，无DOM副作用。",
       "weight": 1,
       "critical": true
+    },
+    {
+      "id": "public/connect-synchronous-dispose-reclaims-returned-handle",
+      "kind": "public",
+      "group": "resources",
+      "weight": 2,
+      "critical": true,
+      "summary": "connect同步触发dispose后才返回的取消句柄也须回收。"
+    },
+    {
+      "id": "hidden/reentrant-connect-retains-newest-handle",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 2,
+      "critical": true,
+      "summary": "connect同步切换工作区，旧connect返回不能覆盖新取消句柄。"
+    },
+    {
+      "id": "hidden/unsubscribe-reentry-supersedes-outer-switch",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 2,
+      "critical": true,
+      "summary": "旧订阅取消过程中同步发旧事件并再次切换，外层意图不可回头覆盖。"
+    },
+    {
+      "id": "hidden/connect-error-keeps-confirmed-window-and-can-retry",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 2,
+      "critical": true,
+      "summary": "重连同步抛错显示错误并保持确认窗口，后续重试从原序号接续。"
     }
   ]
 }

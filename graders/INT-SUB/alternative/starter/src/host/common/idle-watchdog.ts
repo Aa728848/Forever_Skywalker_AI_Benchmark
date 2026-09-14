@@ -15,6 +15,7 @@ export async function* wrapStreamWithWatchdog<T>(
   timeoutCode: string = STREAM_IDLE_TIMEOUT_CODE,
   providerTag: string = 'llm',
 ): AsyncIterable<T> {
+  if (upstreamSignal?.aborted) throw new LlmError(`${providerTag} request aborted by caller`, 'ABORTED')
   const consumer = new AbortController()
   const upstream = upstreamSignal === undefined
     ? consumer.signal

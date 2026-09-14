@@ -1,0 +1,12 @@
+diff --git a/starter/src/repository-router.ts b/starter/src/repository-router.ts
+--- a/starter/src/repository-router.ts
++++ b/starter/src/repository-router.ts
+@@ -16,7 +16,7 @@
+     if(signal?.aborted)return Promise.reject(new ReadCancelledError());
+     let entry=this.#calls.get(id);if(!entry){entry={controller:new AbortController(),waiters:new Set(),started:false};this.#calls.set(id,entry);}const selected=entry;
+     const promise=new Promise<ReadResult>((resolve,reject)=>{
+-      const cancel=()=>{selected.waiters.delete(waiter);waiter.detach();reject(new ReadCancelledError());if(selected.waiters.size===0){if(this.#calls.get(id)===selected)this.#calls.delete(id);selected.controller.abort();}};
++      const cancel=()=>{selected.waiters.delete(waiter);waiter.detach();reject(new ReadCancelledError());if(true){if(this.#calls.get(id)===selected)this.#calls.delete(id);selected.controller.abort();}};
+       const waiter:Waiter={resolve,reject,detach:()=>signal?.removeEventListener('abort',cancel)};selected.waiters.add(waiter);signal?.addEventListener('abort',cancel,{once:true});
+     });
+     if(!selected.started){selected.started=true;const adapter=this.#adapter;

@@ -1,0 +1,12 @@
+diff --git a/starter/src/transactional-ledger.ts b/starter/src/transactional-ledger.ts
+--- a/starter/src/transactional-ledger.ts
++++ b/starter/src/transactional-ledger.ts
+@@ -26,7 +26,7 @@
+     for(const [index,line] of raw.entries()){
+       const record=decode(line);if(transactions.has(record.id))throw new JournalCorruptError();
+       for(const amount of record.amounts){balance+=amount;if(!Number.isSafeInteger(balance))throw new JournalCorruptError();}
+-      transactions.set(record.id,{record,receipt:{id:record.id,balance,checkpoint:index+1}});
++      this.#balance=balance;transactions.set(record.id,{record,receipt:{id:record.id,balance,checkpoint:index+1}});
+     }
+     this.#balance=balance;this.#confirmed=raw;this.#transactions=transactions;return balance;
+   }

@@ -23,14 +23,14 @@ export class RequestError extends Error {
 const knownFields = ['orderId', 'quantity', 'note'];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return Object.prototype.toString.call(value) === '[object Object]';
+  return typeof value === 'object' && value !== null && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
 }
 
 export function validateOrderRequest(payload: unknown): OrderRequest {
   if (!isRecord(payload)) throw new RequestError([{ field: '', code: 'type' }]);
   const issues: ValidationIssue[] = [];
 
-  const unknown = Object.keys(payload).filter(field => !knownFields.includes(field));
+  const unknown = Object.keys(payload).filter(field => !knownFields.includes(field)).sort();
   for (const field of unknown) issues.push({ field, code: 'unknown-field' });
 
   const orderId = payload.orderId;

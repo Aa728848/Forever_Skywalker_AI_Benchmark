@@ -25,3 +25,53 @@ const store=new MemoryTokenStore();await store.save({...initial,expiresAt:999999
 test('hidden/regression-refresh-failure-retries',async()=>{
 const store=new MemoryTokenStore();await store.save(initial);let calls=0;const service=new OAuthService(store,{fetchFn:async()=>{if(++calls===1)throw new Error('synthetic outage');return response();},now:()=>1000,logger:quiet});try{await assert.rejects(service.credentials(true),error=>error.code==='refresh-failed');assert.equal((await service.credentials(true)).accessToken,'synthetic-new');assert.equal(calls,2);}finally{service.dispose();}
 });
+
+test('hidden/state-load-is-bound-to-entry-lifecycle', async () => {
+  for (const action of ['logout', 'dispose']) for (const force of [false, true, 'refresh']) {
+    const store = new MemoryTokenStore();
+    await store.save({ ...initial, expiresAt: 999999 });
+    const load = store.load.bind(store), started = deferred(), finish = deferred();
+    store.load = async () => { const value = await load(); started.resolve(); await finish.promise; return value; };
+    let calls = 0;
+    const service = new OAuthService(store, { now: () => 0, logger: quiet, fetchFn: async () => { calls++; return response(); } });
+    try {
+      const pending = (force === 'refresh' ? service.refresh() : service.credentials(force)).then(value => ({ value }), error => ({ error }));
+      await started.promise;
+      if (action === 'logout') await service.logout(); else service.dispose();
+      finish.resolve();
+      const result = await pending;
+      assert.equal(result.error?.code, 'not-authenticated', `${action}/${force} 使用了旧生命周期的读取结果`);
+      assert.equal(calls, 0, '迟到的读取触发了新网络刷新');
+      store.load = load;
+      if (action === 'logout') assert.equal(await store.load(), null);
+    } finally { finish.resolve(); store.load = load; service.dispose(); }
+  }
+});
+
+
+test('hidden/state-public-await-handoff-cannot-revive-auth', async () => {
+  // 显式覆盖微任务交接位置；不根据函数名或私有字段判断实现，也不使用计时sleep。
+  for (const action of ['logout', 'dispose']) for (const method of ['credentials', 'refresh']) for (let depth = 0; depth <= 6; depth++) {
+    const store = new MemoryTokenStore(); await store.save({ ...initial, expiresAt: 999999 });
+    let revoked = false, callsAfterRevocation = 0, revoking = Promise.resolve();
+    const invoked = deferred();
+    const service = new OAuthService(store, { now: () => 0, logger: quiet, fetchFn: async () => {
+      if (revoked) callsAfterRevocation++;
+      return response();
+    } });
+    try {
+      const pending = (method === 'credentials' ? service.credentials(true) : service.refresh()).then(value => ({ value }), error => ({ error }));
+      const revoke = remaining => {
+        if (remaining > 0) { queueMicrotask(() => revoke(remaining - 1)); return; }
+        revoked = true;
+        if (action === 'logout') revoking = service.logout(); else service.dispose();
+        invoked.resolve();
+      };
+      queueMicrotask(() => revoke(depth));
+      const result = await pending; await invoked.promise; await revoking;
+      assert.equal(callsAfterRevocation, 0, `${action}/${method}/microtask-${depth} 在撤销后启动刷新`);
+      if (action === 'logout') assert.equal(await store.load(), null, `${method}/microtask-${depth} 注销后凭据复活`);
+      if (result.error) assert.equal(result.error.code, 'not-authenticated');
+    } finally { service.dispose(); }
+  }
+});

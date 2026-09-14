@@ -1,0 +1,12 @@
+diff --git a/starter/llm_verifier/fine_grained_reward.py b/starter/llm_verifier/fine_grained_reward.py
+index 451c738..a6faa2a 100644
+--- a/starter/llm_verifier/fine_grained_reward.py
++++ b/starter/llm_verifier/fine_grained_reward.py
+@@ -773,6 +773,7 @@ def score_pair_criterion(client, problem, trace_a, trace_b, criterion,
+ # ---------------------------------------------------------------------------
+ 
+ def cache_key(crit_id, task_name, a, b, rep):
++    a, b = sorted((a, b))
+     return f"{crit_id}|{task_name}|{a},{b}|{rep}"
+ 
+ 

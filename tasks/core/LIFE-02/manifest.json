@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "LIFE-02",
-  "taskVersion": "0.1.0",
+  "taskVersion": "0.2.0",
   "title": "流结束、超时和迟到回调",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -47,7 +47,11 @@
       "hidden/timeout-freezes-stream",
       "public/ignores-events-after-end",
       "public/ignores-events-after-error",
-      "public/timeout-freezes-stream"
+      "public/timeout-freezes-stream",
+      "public/synchronous-end-releases-late-subscription-handle",
+      "hidden/cancel-freezes-and-reclaims-both-resources",
+      "hidden/synchronous-deadline-does-not-open-source",
+      "hidden/source-start-failure-releases-deadline"
     ]
   },
   "limits": {
@@ -136,6 +140,38 @@
       "weight": 1,
       "critical": false,
       "summary": "隐藏样本下的快照语义。"
+    },
+    {
+      "id": "public/synchronous-end-releases-late-subscription-handle",
+      "kind": "public",
+      "group": "resources",
+      "weight": 2,
+      "critical": true,
+      "summary": "subscribe同步结束后才返回句柄，也必须被释放且取消deadline。"
+    },
+    {
+      "id": "hidden/cancel-freezes-and-reclaims-both-resources",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 2,
+      "critical": true,
+      "summary": "主动取消后迟到数据/超时不改结果，两个资源仅释放一次。"
+    },
+    {
+      "id": "hidden/synchronous-deadline-does-not-open-source",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 2,
+      "critical": true,
+      "summary": "deadline同步超时直接进入终态，不启动已无用的source。"
+    },
+    {
+      "id": "hidden/source-start-failure-releases-deadline",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 2,
+      "critical": true,
+      "summary": "source启动同步失败时释放已取得的deadline并保留错误。"
     }
   ]
 }

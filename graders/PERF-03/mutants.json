@@ -1,0 +1,27 @@
+[
+  {
+    "id": "retain-old-reverse-edge",
+    "description": "替换依赖未清理旧入边索引",
+    "patch": "graders/PERF-03/mutants/retain-old-reverse-edge.patch",
+    "expectedFailures": [
+      "public/incremental-replacement-removes-old-edge",
+      "hidden/index-seeded-differential-and-snapshot-isolation"
+    ]
+  },
+  {
+    "id": "forget-unresolved-edge",
+    "description": "只保存已存在目标的入边，之后创建无法恢复消费者",
+    "patch": "graders/PERF-03/mutants/forget-unresolved-edge.patch",
+    "expectedFailures": [
+      "hidden/index-missing-target-delete-and-recreate"
+    ]
+  },
+  {
+    "id": "advance-generation-before-commit",
+    "description": "读取或验证失败仍然推进图代际",
+    "patch": "graders/PERF-03/mutants/advance-generation-before-commit.patch",
+    "expectedFailures": [
+      "hidden/index-failed-batch-keeps-generation-and-state"
+    ]
+  }
+]

@@ -1,7 +1,7 @@
 # API-01 · 请求校验与错误契约
 
 - 难度：简单；题型：独立核心题；能力域：后端与服务协议。
-- 运行时：TypeScript on Node.js 24（仅可擦除语法）。题目版本：0.1.0。
+- 运行时：TypeScript on Node.js 24（仅可擦除语法）。题目版本：0.2.0。
 
 ## 背景
 
@@ -24,7 +24,7 @@ export function validateOrderRequest(payload: unknown): OrderRequest;
 3. `orderId` 必填且为非空字符串；缺失报 `missing`，类型错报 `type`。
 4. `quantity` 必填且为 1..1000 的**整数**；缺失 `missing`、非数字或非整数（含数字字符串 `"5"`）报 `type`、越界报 `range`。
 5. `note` 可选；提供时必须是非空字符串且长度 ≤ 200，否则报 `type`。
-6. 一次返回**全部**问题，顺序稳定：先未知字段（按字段名升序出现顺序），再 orderId、quantity、note。
+6. 一次返回**全部**问题，顺序稳定：先未知字段（按 JavaScript 默认字符串顺序升序），再 orderId、quantity、note。
 7. 校验通过时返回冻结的结果对象，且不是调用方传入的那个对象。
 
 ## 限制
@@ -41,3 +41,5 @@ node --test --test-isolation=none --test-reporter=tap "public-tests/**/*.test.ts
 
 - 参考实现通过全部公开与未公开检查；缺陷起始版本只被声明的检出项判失败；替代实现同样通过。
 - 本阶段产出检查结论与可用验证分；代码质量评审接入前总分保持待定。
+
+普通对象指原型为 Object.prototype 或 null 的对象；Date、类实例及带自定义原型的对象拒绝。只校验自身可枚举字符串字段。

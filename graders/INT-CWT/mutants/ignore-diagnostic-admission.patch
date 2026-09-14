@@ -1,0 +1,12 @@
+diff --git a/starter/Pipeline.fs b/starter/Pipeline.fs
+index f0e64d5..e1cb277 100644
+--- a/starter/Pipeline.fs
++++ b/starter/Pipeline.fs
+@@ -79,7 +79,6 @@ type Pipeline(onPublished: string -> unit) =
+             let current =
+                 plan.Generation = generation
+                 && documents.GetVersionByPath(plan.Path) = Some plan.Version
+-                && sameAdmission plan.Admission (tracker.TryAdmit(Domain.NonLocalisation, plan.Path))
+             if current then
+                 symbols <- Map.add plan.Path plan.Symbols symbols
+                 diagnostics <- Map.add plan.Path plan.Errors diagnostics

@@ -1,0 +1,13 @@
+diff --git a/starter/src/cache.ts b/starter/src/cache.ts
+index e75e254..ab5333b 100644
+--- a/starter/src/cache.ts
++++ b/starter/src/cache.ts
+@@ -52,7 +52,7 @@ export class VersionedCache {
+     this.#entries.set(key, { version, promise: guarded });
+     guarded.catch(() => {
+       const current = this.#entries.get(key);
+-      if (current !== undefined && current.version === version) this.#entries.delete(key);
++      void current;
+     });
+     return guarded;
+   }

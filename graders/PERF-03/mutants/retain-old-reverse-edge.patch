@@ -1,0 +1,13 @@
+diff --git a/starter/src/graph-index.ts b/starter/src/graph-index.ts
+index afdbf6e..a2144ce 100644
+--- a/starter/src/graph-index.ts
++++ b/starter/src/graph-index.ts
+@@ -11,7 +11,7 @@ export class GraphIndex {
+   const loaded=new Map<string,Set<string>>();for(const change of batch)if(change.kind==='put'){const values=this.#reader(change.id);if(!Array.isArray(values)||values.some(value=>typeof value!=='string'))throw new TypeError('invalid dependencies');loaded.set(change.id,new Set(values));}
+   const nextOut=new Map(this.#out);const nextIncoming=new Map(this.#incoming);
+   const edge=(target:string,source:string,add:boolean)=>{const bucket=new Set(nextIncoming.get(target));if(add)bucket.add(source);else bucket.delete(source);if(bucket.size)nextIncoming.set(target,bucket);else nextIncoming.delete(target);};
+-  for(const change of batch){for(const target of nextOut.get(change.id)??[])edge(target,change.id,false);nextOut.delete(change.id);}
++  for(const change of batch){nextOut.delete(change.id);}
+   for(const [id,deps] of loaded){nextOut.set(id,deps);for(const target of deps)edge(target,id,true);}
+   this.#out=nextOut;this.#incoming=nextIncoming;this.#generation++;
+   return this.#generation;

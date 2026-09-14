@@ -1,11 +1,23 @@
 {
-  "version": "0.2.0",
+  "version": "0.3.0",
   "calibrated": false,
   "warmupRounds": 2,
   "minimumPairs": 7,
-  "command": ["node", "graders/PERF-04/benchmark.ts", "<frozen-workspace>"],
-  "metrics": [{ "id": "durationMs", "direction": "lower", "good": 1.25, "bad": 4, "weight": 1 }],
+  "command": [
+    "node",
+    "graders/PERF-04/benchmark.ts",
+    "<frozen-workspace>"
+  ],
+  "metrics": [
+    {
+      "id": "durationMs",
+      "direction": "lower",
+      "good": 1.25,
+      "bad": 4,
+      "weight": 1
+    }
+  ],
   "measurement": "trusted-external-wall-clock",
   "candidateReportedMetrics": "diagnostic-only",
-  "notes": "比值阈值是公开演练起点，须对固定容器与多种正确实现校准。峰值RSS及事件吞吐仅诊断，不与功能资源组重复扣分。"
+  "notes": "测新增流式投影主路径、分批持久确认、checkpoint恢复和生命周期重开；所有原始配对保留。阈值须固定容器和正确实现校准，当前仅演练。"
 }

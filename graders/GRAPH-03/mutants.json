@@ -1,0 +1,28 @@
+[
+  {
+    "id": "parent-sees-original-children",
+    "description": "回调读取旧子树而非转换后的子树",
+    "patch": "graders/GRAPH-03/mutants/parent-sees-original-children.patch",
+    "expectedFailures": [
+      "public/rewrite-parent-observes-new-child",
+      "hidden/rewrite-shared-child-and-parent-view"
+    ]
+  },
+  {
+    "id": "rebuild-unchanged-subtrees",
+    "description": "无变化子树也重建导致增量身份失效",
+    "patch": "graders/GRAPH-03/mutants/rebuild-unchanged-subtrees.patch",
+    "expectedFailures": [
+      "hidden/rewrite-unchanged-identity"
+    ]
+  },
+  {
+    "id": "discard-rewritten-children",
+    "description": "输出节点继续保存旧子树引用",
+    "patch": "graders/GRAPH-03/mutants/discard-rewritten-children.patch",
+    "expectedFailures": [
+      "public/rewrite-parent-observes-new-child",
+      "hidden/rewrite-shared-child-and-parent-view"
+    ]
+  }
+]

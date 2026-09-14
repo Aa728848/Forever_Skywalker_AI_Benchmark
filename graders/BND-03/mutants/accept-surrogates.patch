@@ -1,0 +1,13 @@
+diff --git a/starter/src/decoder.ts b/starter/src/decoder.ts
+index 5738b9e..b999130 100644
+--- a/starter/src/decoder.ts
++++ b/starter/src/decoder.ts
+@@ -17,7 +17,7 @@ export class StreamDecoder {
+    }
+    if(byte<0x80||byte>0xbf)invalid();
+    const lead=this.#pending[0]!;
+-   if(this.#pending.length===1&&((lead===0xe0&&byte<0xa0)||(lead===0xed&&byte>0x9f)||(lead===0xf0&&byte<0x90)||(lead===0xf4&&byte>0x8f)))invalid();
++   if(this.#pending.length===1&&((lead===0xe0&&byte<0xa0)||(lead===0xf0&&byte<0x90)||(lead===0xf4&&byte>0x8f)))invalid();
+    this.#pending.push(byte);
+    if(this.#pending.length===this.#expected){
+     let point=lead&((1<<(7-this.#expected))-1);

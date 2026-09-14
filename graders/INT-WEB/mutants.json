@@ -1,0 +1,34 @@
+[
+  {
+    "id": "closure-local-ownership",
+    "description": "同一apply闭包能去重，却在重复模块闭包之间丢失包所有权。",
+    "patch": "graders/INT-WEB/mutants/closure-local-ownership.patch",
+    "expectedFailures": [
+      "hidden/repeated-module-apply-keeps-one-registration"
+    ]
+  },
+  {
+    "id": "boot-failure-only-reports-error",
+    "description": "安装预检失败能恢复客户端错误状态，但未执行真实文件回滚。",
+    "patch": "graders/INT-WEB/mutants/boot-failure-only-reports-error.patch",
+    "expectedFailures": [
+      "public/failed-install-clears-real-client-progress-and-can-retry"
+    ]
+  },
+  {
+    "id": "alias-blind-tunnel-cleanup",
+    "description": "已释放隧道但省略alias范围，误伤其它配置的活跃连接。",
+    "patch": "graders/INT-WEB/mutants/alias-blind-tunnel-cleanup.patch",
+    "expectedFailures": [
+      "hidden/dropping-one-alias-preserves-unrelated-live-tunnels"
+    ]
+  },
+  {
+    "id": "first-sibling-only",
+    "description": "单隧道修复有效，却只释放同一别名的首个兄弟隧道。",
+    "patch": "graders/INT-WEB/mutants/first-sibling-only.patch",
+    "expectedFailures": [
+      "hidden/sibling-tunnels-close-on-alias-deletion-and-new-config-reconnects"
+    ]
+  }
+]

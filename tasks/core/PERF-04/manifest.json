@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "PERF-04",
-  "taskVersion": "0.2.0",
+  "taskVersion": "0.3.0",
   "title": "长会话重放的延迟、吞吐与内存预算",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -43,7 +43,12 @@
     "alternative": "graders/PERF-04/alternative",
     "defectDetectors": [
       "public/input-accesses-are-linear",
-      "hidden/scaling-ratio-is-subquadratic"
+      "hidden/scaling-ratio-is-subquadratic",
+      "public/projection-persist-failure-is-not-visible",
+      "hidden/projection-isolation-until-persist-ack",
+      "hidden/projection-rejects-stale-and-forged-tickets",
+      "hidden/projection-checkpoint-log-identity-and-aliases",
+      "hidden/projection-backpressure-and-iterator-close"
     ]
   },
   "limits": {
@@ -140,6 +145,78 @@
       "weight": 1,
       "critical": false,
       "summary": "记录原始耗时样本并守住宽松上限。"
+    },
+    {
+      "id": "public/projection-replay-checkpoint-resume",
+      "kind": "public",
+      "group": "behavior",
+      "summary": "流式UTF8投影检查点恢复且不重计",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "public/projection-persist-failure-is-not-visible",
+      "kind": "public",
+      "group": "state",
+      "summary": "持久失败不发布且同票据可重试",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/projection-isolation-until-persist-ack",
+      "kind": "hidden",
+      "group": "state",
+      "summary": "持久确认前保留旧切面",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/projection-rejects-stale-and-forged-tickets",
+      "kind": "hidden",
+      "group": "state",
+      "summary": "并行旧代与伪造票据拒绝",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/projection-checkpoint-log-identity-and-aliases",
+      "kind": "hidden",
+      "group": "boundary",
+      "summary": "检查点日志身份及输入隔离",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/projection-backpressure-and-iterator-close",
+      "kind": "hidden",
+      "group": "resources",
+      "summary": "流式背压与异常迭代器关闭",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/projection-lifecycle-and-failed-batch-atomicity",
+      "kind": "hidden",
+      "group": "boundary",
+      "summary": "生命周期、整批失败与纯重放",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/projection-bounds-payload-count-and-session-state",
+      "kind": "hidden",
+      "group": "resources",
+      "summary": "字节/事件/会话容量与固定状态大小",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/projection-seeded-partitions-match-independent-fold",
+      "kind": "hidden",
+      "group": "regression",
+      "summary": "独立生命周期折叠跨分块差分",
+      "weight": 1,
+      "critical": true
     }
   ]
 }

@@ -14,6 +14,24 @@ import type {
   SessionTransientEventEntry,
 } from '../contract/events.ts'
 
+/** Visit validated records individually and stop before decoding the unused suffix. */
+function* reconnectPrefix(stream: readonly AssistantStreamRecord[], limit: number) {
+  let emitted = 0
+  for (let index = 0; emitted < limit && index < stream.length; index += 1) {
+    const record = stream[index]!
+    if (record.type === 'chunk') {
+      yield* expandAssistantStream([record]); emitted += 1; continue
+    }
+    const left = limit - emitted
+    const count = Math.min(left, record.type === 'tool-call-chunks' ? record.args.length : record.texts.length)
+    const clipped = record.type === 'tool-call-chunks'
+      ? { ...record, args: record.args.slice(0, count), dt: record.dt.slice(0, count - 1) }
+      : { ...record, texts: record.texts.slice(0, count), dt: record.dt.slice(0, count - 1) }
+    yield* expandAssistantStream([clipped])
+    emitted += count
+  }
+}
+
 interface ActiveAttempt {
   readonly attemptId: LlmAttemptId
   readonly startedAfterSeq: number
@@ -70,9 +88,9 @@ export class ClientAssistantStream {
     this.publishedSeqs = new Set(visible.map(entry => entry.event.seq))
     this.durableCursor = visible.reduce((cursor, entry) => Math.max(cursor, entry.event.seq), -1)
     if (opening !== undefined) {
-      for (const member of expandAssistantStream(
-        opening.stream as unknown as readonly AssistantStreamRecord[],
-      ).slice(0, opening.nextIndex)) {
+      for (const member of reconnectPrefix(
+        opening.stream as unknown as readonly AssistantStreamRecord[], opening.nextIndex,
+      )) {
         this.transientInGap += 1
         visible.push({
           type: 'transient',

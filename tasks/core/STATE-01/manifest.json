@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "STATE-01",
-  "taskVersion": "0.1.0",
+  "taskVersion": "0.2.0",
   "title": "原子写入与损坏检测",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -47,7 +47,9 @@
       "hidden/empty-value-round-trips",
       "public/closed-store-rejects-operations",
       "public/detects-tampered-checksum",
-      "public/empty-value-round-trips"
+      "public/empty-value-round-trips",
+      "hidden/invalid-json-shapes-use-domain-error",
+      "hidden/rename-failure-preserves-record-and-cleans-staging"
     ]
   },
   "limits": {
@@ -152,6 +154,22 @@
       "weight": 1,
       "critical": false,
       "summary": "隐藏样本下的关闭语义。"
+    },
+    {
+      "id": "hidden/invalid-json-shapes-use-domain-error",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 2,
+      "critical": true,
+      "summary": "合法JSON的null、数组与标量也必须用领域错误拒绝。"
+    },
+    {
+      "id": "hidden/rename-failure-preserves-record-and-cleans-staging",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 2,
+      "critical": true,
+      "summary": "注入真实fs.renameSync失败，旧正式记录保持完整且暂存文件释放。"
     }
   ]
 }

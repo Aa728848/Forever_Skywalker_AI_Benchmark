@@ -1,57 +1,18 @@
-export interface Runner {
-  run(signal: AbortSignal): Promise<void>;
-}
-
-export type Phase = 'idle' | 'starting' | 'running' | 'stopping';
-
-/** 替代实现：用状态机 + 串行队列（每次操作都排在上一次之后）。 */
+export interface Runner {run(signal:AbortSignal):Promise<void>}
+export type Phase='idle'|'starting'|'running'|'stopping';
+interface Generation {controller:AbortController;finished:Promise<void>}
+/** 操作队列只串行化启动/停止控制，不等待运行生命周期结束才允许stop。 */
 export class Supervisor {
-  readonly #runner: Runner;
-  #phase: Phase = 'idle';
-  #controller: AbortController | null = null;
-  #queue: Promise<void> = Promise.resolve();
-  #current: Promise<void> | null = null;
-  #starts = 0;
-
-  constructor(runner: Runner) {
-    this.#runner = runner;
-  }
-
-  get phase(): Phase {
-    return this.#phase;
-  }
-
-  get startCount(): number {
-    return this.#starts;
-  }
-
-  #schedule<T>(work: () => Promise<T>): Promise<T> {
-    const next = this.#queue.then(work, work);
-    this.#queue = next.then(() => undefined, () => undefined);
-    return next;
-  }
-
-  start(): Promise<void> {
-    return this.#schedule(async () => {
-      if (this.#phase === "running" || this.#phase === "starting") return;
-      this.#phase = "starting";
-      this.#starts += 1;
-      const controller = new AbortController();
-      this.#controller = controller;
-      this.#current = this.#runner.run(controller.signal).catch(() => {});
-      this.#phase = "running";
-    });
-  }
-
-  stop(): Promise<void> {
-    return this.#schedule(async () => {
-      if (this.#phase === "idle") return;
-      this.#phase = "stopping";
-      this.#controller?.abort();
-      this.#controller = null;
-      await this.#current;
-      this.#current = null;
-      this.#phase = "idle";
-    });
-  }
+  #runner:Runner;#phase:Phase='idle';#queue=Promise.resolve();#generation:Generation|undefined;#starts=0;
+  constructor(runner:Runner){this.#runner=runner;}
+  get phase():Phase{return this.#phase;}get startCount():number{return this.#starts;}
+  #enqueue(action:()=>Promise<void>):Promise<void>{const next=this.#queue.then(action,action);this.#queue=next.then(()=>undefined,()=>undefined);return next;}
+  start():Promise<void>{return this.#enqueue(async()=>{
+    if(this.#generation)return;this.#phase='starting';this.#starts++;
+    const gate=Promise.withResolvers<void>();const generation:Generation={controller:new AbortController(),finished:gate.promise};this.#generation=generation;
+    const finish=()=>{if(this.#generation===generation&&this.#phase!=='stopping'){this.#generation=undefined;this.#phase='idle';}gate.resolve();};
+    try{Promise.resolve(this.#runner.run(generation.controller.signal)).then(finish,finish);}catch(error){finish();throw error;}
+    if(this.#generation===generation)this.#phase='running';
+  });}
+  stop():Promise<void>{return this.#enqueue(async()=>{const generation=this.#generation;if(!generation)return;this.#phase='stopping';generation.controller.abort();await generation.finished;if(this.#generation===generation)this.#generation=undefined;this.#phase='idle';});}
 }

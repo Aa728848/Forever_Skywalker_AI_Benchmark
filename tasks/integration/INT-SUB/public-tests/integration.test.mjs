@@ -25,3 +25,11 @@ const store=new MemoryTokenStore();await store.save(initial);const gate=deferred
 test('public/resources-consumer-stop-aborts-source',async()=>{
 let signal,returned=0;const source=upstream=>{signal=upstream;return {[Symbol.asyncIterator](){return {async next(){return {done:false,value:'chunk'};},async return(){returned++;return {done:true,value:undefined};}};}};};for await(const value of wrapStreamWithWatchdog(source,undefined,1000)){assert.equal(value,'chunk');break;}assert.equal(signal.aborted,true);assert.equal(returned,1);
 });
+
+test('public/boundary-pre-cancel-never-creates-source', async () => {
+  const controller = new AbortController(); controller.abort();
+  let created = 0;
+  const stream = wrapStreamWithWatchdog(() => { created++; throw new Error('取消后不应创建传输'); }, controller.signal, 10);
+  await assert.rejects(stream[Symbol.asyncIterator]().next(), error => error.code === 'ABORTED');
+  assert.equal(created, 0);
+});

@@ -1,0 +1,12 @@
+diff --git a/starter/llm_verifier/fine_grained_reward.py b/starter/llm_verifier/fine_grained_reward.py
+index 451c738..4cb5158 100644
+--- a/starter/llm_verifier/fine_grained_reward.py
++++ b/starter/llm_verifier/fine_grained_reward.py
+@@ -919,6 +919,7 @@ def score_directed_pairs(lazy_client, tasks, needed_pairs, criteria,
+                         raise
+                     errors += 1
+                     results[key] = {"score_A": 0.5, "score_B": 0.5}
++                    cached[key] = results[key]
+                     if errors <= 3:
+                         log(f"\n  Error: {e}")
+                 done += 1

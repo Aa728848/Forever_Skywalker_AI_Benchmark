@@ -4,7 +4,17 @@
 
 用户已授权继续完成项目和安装 Linux 依赖。工作目录：`C:/Users/A/Documents/ChatGPT/Forever_Skywalker_AI_Benchmark`。七个来源仓库只读；接手先检查 git status，保留当前改动，不重新初始化。
 
-最新用户已自行重启Windows，本轮继续配置和验收Linux容器。实际模型评测仍暂停；不会因环境就绪自动调用真实裁判。
+用户已自行重启Windows，固定Linux容器已配置并验收。实际模型评测仍暂停；不会因环境就绪自动调用真实裁判。
+
+## 最新交付：55题全量工程质量复核
+
+逐题审查55题后改善32题、澄清4题、保留19题。新版任务强化异步生命周期、持久事务/崩溃恢复、多资源并发、插件发布回滚、增量图和有界流式投影；基础题保留作退化门槛。原有及新增83个近似错误修复均有对应版本和补丁哈希的有效检出记录。逐题版本、理由和证据见 [全量审查矩阵](reviews/2026-09-14-full-task-quality-audit.md) 与 [机器矩阵](../catalog/task-quality-audit.json)。
+
+固定Linux分18题及37题两批复验，55/55通过；55个起始缺陷精确检出，参考/替代110次均50/50。PERF-03/04新增专用主路径负载各参考/替代一次，共4/4通过；不是正式配对性能校准。最终 `pnpm check` 202项、严格类型/目录/构建通过，本轮端到端2项通过。原始记录与逐题结果见 [最新Linux验收](trials/2026-09-14-full-quality-linux-validation.md)。下方旧题版本、检查数和历史“待强化”项不覆盖本节最新结论。
+
+新增 [从启动到看报告](quick-start.md)：Docker负责Linux评分；`dsh:compare`自行启动DSH SDK；`pnpm dev`只负责网页/API；不用DSH则export给编程AI后submit。`--all`选全部55题，`--provider`与`--model`联合确定供应商和模型；同名模型不跨供应商匹配。`--reasoning default`省略DSH思考参数，适用于未声明等级的模型，与明确传off不同；原默认off/high保持。独立审查及修复见 [默认思考参数Note](notes/implemented/bug-fix/2026-09-14-dsh-provider-default-reasoning.md)。
+
+全部任务仍fixture-ready，真实模型/裁判调用0；83个错误变体不是83次AI作答，实际模型通过率、难度和评分阈值继续待校准。根变更记录见 [全量工程质量Note](notes/implemented/testing/2026-09-14-full-engineering-task-quality.md)。本轮按用户授权提交并推送公开仓库，保留已有预览标签。
 
 ## GitHub 公开预览
 
@@ -89,7 +99,7 @@ pnpm score:rehearse
 
 本项目 .env 已创建并配置独立 API 令牌、提交目录和运行目录；裁判字段留空，由用户填写自己的模型、端点及令牌，不得读取其他项目凭据。BENCH_MEASURE_PERFORMANCE=1 已启用；裁判填妥后 submit 自动采集客观证据并调用两轮裁判，既有作答用 `bench review ... --measure` 追加修订。人工复核不覆盖历史。
 
-PERF-02/04 有专用负载，其它题测完整验证成本并包含启动/断言开销。内部计时/RSS仅作诊断，外部阶段时间用于配对。性能比值和静态规则尚未发布校准，不能自动标正式成绩。
+PERF-02/03/04 有专用负载，其它题测完整验证成本并包含启动/断言开销。内部计时/RSS仅作诊断，外部阶段时间用于配对。性能比值和静态规则尚未发布校准，不能自动标正式成绩。
 
 发布需真实正确/错误作答、固定容器噪声样本、裁判一致性和人工作答结果。没有这些证据时保持待校准。
 

@@ -1,0 +1,12 @@
+diff --git a/starter/src/transactional-ledger.ts b/starter/src/transactional-ledger.ts
+--- a/starter/src/transactional-ledger.ts
++++ b/starter/src/transactional-ledger.ts
+@@ -32,7 +32,7 @@
+   }
+   commit(id:string,amounts:readonly number[]):Receipt{
+     validate(id,amounts);this.recover();const previous=this.#transactions.get(id);
+-    if(previous){if(JSON.stringify(previous.record.amounts)!==JSON.stringify(amounts))throw new TransactionConflictError();return {...previous.receipt};}
++    if(previous){return {...previous.receipt};}
+     let next=this.#balance;for(const amount of amounts){next+=amount;if(!Number.isSafeInteger(next))throw new RangeError('balance');}
+     const record:Record={version:1,id,amounts:[...amounts]};
+     try{this.#journal.append(JSON.stringify(record));}

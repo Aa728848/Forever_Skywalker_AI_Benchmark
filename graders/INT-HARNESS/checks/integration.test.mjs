@@ -25,3 +25,55 @@ const compact=packed(Array.from({length:100000},(_,i)=>String(i%10)));assert.equ
 test('hidden/state-foreign-attempt-isolation',async()=>{
 const client=new ClientAssistantStream();client.replace([],baseline(packed(['a','b','c']),2));assert.equal(client.acceptFrame({...frame(2),attemptId:'foreign'}),undefined);assert.deepEqual(client.acceptFrame(frame(4)),{type:'rebaseline'});assert.equal(client.acceptFrame(frame(2,'c')).type,'transient');
 });
+
+test('hidden/resources-prefix-does-not-read-tail', () => {
+  function guarded(values, allowed) {
+    return new Proxy(values, { get(target, key, receiver) {
+      if (typeof key === 'string' && /^(0|[1-9]\d*)$/.test(key)) assert.ok(Number(key) < allowed, `读取了前缀外成员 ${key}`);
+      return Reflect.get(target, key, receiver);
+    } });
+  }
+  for (const type of ['text-chunks', 'reasoning-chunks', 'tool-call-chunks']) {
+    const record = { type, time0: 10, index: 2, dt: guarded(Array(9999).fill(2), 2) };
+    if (type === 'tool-call-chunks') Object.assign(record, { id: 'call-x', name: 'tool', args: guarded(Array(10000).fill('x'), 3) });
+    else record.texts = guarded(Array(10000).fill('中'), 3);
+    const client = new ClientAssistantStream();
+    const visible = client.replace([], baseline([record], 3));
+    assert.equal(visible.length, 3);
+    assert.deepEqual(visible.map(item => item.event.time), [10, 12, 14]);
+  }
+  const unavailable = new Proxy([packed(['tail'])[0]], { get(target, key, receiver) {
+    if (key === '0') throw new Error('零前缀读取了历史记录');
+    return Reflect.get(target, key, receiver);
+  } });
+  assert.deepEqual(new ClientAssistantStream().replace([], baseline(unavailable, 0)), []);
+});
+
+test('hidden/behavior-mixed-packed-prefix-oracle', () => {
+  for (let seed = 1; seed <= 24; seed++) {
+    const accumulator = new AssistantStreamAccumulator();
+    let time = seed;
+    for (let group = 0; group < 4; group++) {
+      for (let member = 0; member < 1 + (seed + group) % 5; member++) {
+        const chunk = group === 0 ? { type: 'text-delta', index: 0, text: `${seed}:${member}` }
+          : group === 1 ? { type: 'reasoning-delta', index: 1, text: `思考${member}` }
+          : group === 2 ? { type: 'tool-call-delta', index: 2, id: 'call-x', argumentsDelta: `${member}`, ...(seed % 2 ? { name: 'tool' } : {}) }
+          : { type: 'usage', inputTokens: member, outputTokens: seed };
+        accumulator.push({ time: time += group + 1, chunk });
+      }
+    }
+    const compact = accumulator.snapshot();
+    const full = expandAssistantStream(compact);
+    for (const take of [0, 1, Math.floor(full.length / 2), full.length - 1, full.length]) {
+      const client = new ClientAssistantStream();
+      const visible = client.replace([ordinary(seed)], baseline(compact, take));
+      assert.deepEqual(visible.slice(1).map(item => ({ time: item.event.time, chunk: item.event.data.chunk })), full.slice(0, take));
+      assert.deepEqual(client.acceptFrame(frame(take + 2)), { type: 'rebaseline' });
+      const accepted = client.acceptFrame(frame(take, 'current'));
+      assert.equal(accepted.type, 'transient');
+      assert.equal(accepted.entry.event.data.chunk.text, 'current');
+      assert.deepEqual(client.acceptFrame(frame(take)), { type: 'rebaseline' });
+      assert.equal(client.acceptFrame(frame(take + 1)).type, 'transient');
+    }
+  }
+});

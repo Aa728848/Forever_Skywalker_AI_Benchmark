@@ -82,7 +82,7 @@
   },
   {
     "id": "FE-04",
-    "version": "0.1.1",
+    "version": "0.2.0",
     "title": "多工作区实时视图一致性与资源预算",
     "domain": "前端交互",
     "difficulty": "extreme",
@@ -95,7 +95,8 @@
     ],
     "sourcePaths": [
       "dsh-web/packages/dsh-plugin-manager/tests/gateway-jobs.spec.ts",
-      "deepseek-harness/benchmarks/long-session-browser/long-session.bench.ts"
+      "deepseek-harness/benchmarks/long-session-browser/long-session.bench.ts",
+      "deepseek-harness/packages/extensions/tool-cordis/tests/cordis-lifecycle.spec.ts"
     ],
     "problem": "在独立任务仓库中实现或修复“多工作区实时视图一致性与资源预算”。公开接口、输入规模和故障语义在题目发布前冻结；保持已有正确行为。",
     "acceptance": [
@@ -163,7 +164,7 @@
   },
   {
     "id": "LSP-03",
-    "version": "0.1.1",
+    "version": "0.2.0",
     "title": "取消和过期诊断隔离",
     "domain": "LSP 与编辑器协议",
     "difficulty": "hard",
@@ -190,7 +191,7 @@
   },
   {
     "id": "LSP-04",
-    "version": "0.1.1",
+    "version": "0.2.0",
     "title": "并行工作区增量索引与安全发布",
     "domain": "LSP 与编辑器协议",
     "difficulty": "extreme",
@@ -217,7 +218,7 @@
   },
   {
     "id": "API-01",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "title": "请求校验与错误契约",
     "domain": "后端与服务协议",
     "difficulty": "easy",
@@ -244,7 +245,7 @@
   },
   {
     "id": "API-02",
-    "version": "0.1.1",
+    "version": "0.2.0",
     "title": "分页与幂等写入",
     "domain": "后端与服务协议",
     "difficulty": "medium",
@@ -380,7 +381,7 @@
   },
   {
     "id": "CACHE-03",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "title": "失效期间的在途旧结果",
     "domain": "缓存",
     "difficulty": "hard",
@@ -398,16 +399,16 @@
     "problem": "在独立任务仓库中实现或修复“失效期间的在途旧结果”。公开接口、输入规模和故障语义在题目发布前冻结；保持已有正确行为。",
     "acceptance": [
       "invalidate 之后旧在途结果不能复活",
-      "新请求可获得新代际结果",
-      "删除、重新加载、旧任务失败的交错不会污染缓存"
+      "多键读取在同一组稳定代际返回，失效交错会重取一致视图",
+      "旧失败不清理新在途，当前失败可重试且不同键并行"
     ],
-    "publicChecks": "公开接口、正常样例、预算及以下不变量：invalidate 之后旧在途结果不能复活；新请求可获得新代际结果；删除、重新加载、旧任务失败的交错不会污染缓存。",
+    "publicChecks": "旧结果失效与原接口回归，多键顺序、重复合并及冻结结果；隐藏验证代际变化、旧失败和当前失败重试交错。",
     "hiddenChecks": "使用保留的随机种子、故障位置、真实线程屏障或事件交错，验证公开不变量；性能样本在隔离执行中采集。",
     "oracle": "参考实现通过全部检查，注入目标缺陷的起始版本必须失败；边界与状态性质由独立验证器检查。"
   },
   {
     "id": "CACHE-04",
-    "version": "0.1.1",
+    "version": "0.2.0",
     "title": "并发冷启动、持久化和版本隔离",
     "domain": "缓存",
     "difficulty": "extreme",
@@ -416,19 +417,22 @@
     "runtime": "typescript",
     "sources": [
       "dsh-trading",
-      "dsh-llm-verifier"
+      "dsh-llm-verifier",
+      "deepseek-harness"
     ],
     "sourcePaths": [
       "dsh-trading/packages/client-ui-trading/test/ttl-cache.test.ts",
-      "dsh-llm-verifier/src/cache.test.ts"
+      "dsh-llm-verifier/src/cache.test.ts",
+      "deepseek-harness/packages/session/session-projection-cache/src/index.ts",
+      "deepseek-harness/packages/session/session-projection-cache/src/spec.ts"
     ],
     "problem": "在独立任务仓库中实现或修复“并发冷启动、持久化和版本隔离”。公开接口、输入规模和故障语义在题目发布前冻结；保持已有正确行为。",
     "acceptance": [
       "并发首次访问只加载一次持久化文件",
-      "模型、规则版本与工作区变化使缓存分域失效",
-      "写中断或损坏文件按契约恢复且不吞权限错误"
+      "多键提交、刷新与快照保持同一队列确认切面及域隔离",
+      "真实暂存同步/替换及进程中断保留完整确认文件，不吞IO错误"
     ],
-    "publicChecks": "公开接口、正常样例、预算及以下不变量：并发首次访问只加载一次持久化文件；模型、规则版本与工作区变化使缓存分域失效；写中断或损坏文件按契约恢复且不吞权限错误。",
+    "publicChecks": "冷启动合并、域隔离、失败写回归与单次批量提交；隐藏验证刷新/快照切面、真实文件失败和进程中断。",
     "hiddenChecks": "使用保留的随机种子、故障位置、真实线程屏障或事件交错，验证公开不变量；性能样本在隔离执行中采集。",
     "oracle": "参考实现通过全部检查，注入目标缺陷的起始版本必须失败；边界与状态性质由独立验证器检查。"
   },
@@ -463,7 +467,7 @@
   },
   {
     "id": "BND-02",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "title": "严格裁判输出和嵌套工具参数",
     "domain": "参数与边界解析",
     "difficulty": "medium",
@@ -492,7 +496,7 @@
   },
   {
     "id": "BND-03",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "title": "跨字节块的 Unicode 与流解析",
     "domain": "参数与边界解析",
     "difficulty": "hard",
@@ -521,7 +525,7 @@
   },
   {
     "id": "BND-04",
-    "version": "0.1.1",
+    "version": "0.2.0",
     "title": "超深、超大和畸形输入的有界解析",
     "domain": "参数与边界解析",
     "difficulty": "extreme",
@@ -634,7 +638,7 @@
   },
   {
     "id": "THR-04",
-    "version": "0.1.1",
+    "version": "0.2.0",
     "title": "多线程代际发布与中断恢复",
     "domain": "多线程",
     "difficulty": "extreme",
@@ -690,7 +694,7 @@
   },
   {
     "id": "CONC-02",
-    "version": "0.1.1",
+    "version": "0.2.0",
     "title": "并发令牌刷新与注销竞争",
     "domain": "异步并发",
     "difficulty": "medium",
@@ -718,7 +722,7 @@
   },
   {
     "id": "CONC-03",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "title": "多资源锁顺序和饥饿控制",
     "domain": "异步并发",
     "difficulty": "hard",
@@ -746,8 +750,8 @@
   },
   {
     "id": "CONC-04",
-    "version": "0.1.0",
-    "title": "断点续跑、重复事件和副作用去重",
+    "version": "0.2.0",
+    "title": "持久分片归并、崩溃恢复与代际发布",
     "domain": "异步并发",
     "difficulty": "extreme",
     "track": "core",
@@ -801,7 +805,7 @@
   },
   {
     "id": "ARCH-02",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "title": "Provider 元数据与运行时拆分",
     "domain": "耦合与解耦",
     "difficulty": "medium",
@@ -810,11 +814,13 @@
     "runtime": "typescript",
     "sources": [
       "cwtools-vscode",
-      "dsh-web"
+      "dsh-web",
+      "deepseek-harness"
     ],
     "sourcePaths": [
       "cwtools-vscode/client/extension/vanillaCacheLifecycle.ts",
-      "dsh-web/packages/dsh-ssh/src/engine.ts"
+      "dsh-web/packages/dsh-ssh/src/engine.ts",
+      "deepseek-harness/packages/util/http-proxy/src/policy.ts"
     ],
     "problem": "在独立任务仓库中实现或修复“Provider 元数据与运行时拆分”。公开接口、输入规模和故障语义在题目发布前冻结；保持已有正确行为。",
     "acceptance": [
@@ -828,7 +834,7 @@
   },
   {
     "id": "ARCH-03",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "title": "替换适配器并保持公共契约",
     "domain": "耦合与解耦",
     "difficulty": "hard",
@@ -837,11 +843,14 @@
     "runtime": "typescript",
     "sources": [
       "cwtools-vscode",
-      "dsh-web"
+      "dsh-web",
+      "dsh-chatgpt-subscription"
     ],
     "sourcePaths": [
       "cwtools-vscode/client/extension/vanillaCacheLifecycle.ts",
-      "dsh-web/packages/dsh-ssh/src/engine.ts"
+      "dsh-web/packages/dsh-ssh/src/engine.ts",
+      "cwtools-vscode/client/extension/ai/runner/durableStorage.ts",
+      "dsh-chatgpt-subscription/test/web-provider-lifecycle.test.ts"
     ],
     "problem": "在独立任务仓库中实现或修复“替换适配器并保持公共契约”。公开接口、输入规模和故障语义在题目发布前冻结；保持已有正确行为。",
     "acceptance": [
@@ -855,7 +864,7 @@
   },
   {
     "id": "ARCH-04",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "title": "插件热切换、失败回滚与资源归属",
     "domain": "耦合与解耦",
     "difficulty": "extreme",
@@ -864,11 +873,13 @@
     "runtime": "typescript",
     "sources": [
       "cwtools-vscode",
-      "dsh-web"
+      "dsh-web",
+      "deepseek-harness"
     ],
     "sourcePaths": [
       "cwtools-vscode/client/extension/vanillaCacheLifecycle.ts",
-      "dsh-web/packages/dsh-ssh/src/engine.ts"
+      "dsh-web/packages/dsh-ssh/src/engine.ts",
+      "deepseek-harness/packages/extensions/tool-cordis/tests/cordis-lifecycle.spec.ts"
     ],
     "problem": "在独立任务仓库中实现或修复“插件热切换、失败回滚与资源归属”。公开接口、输入规模和故障语义在题目发布前冻结；保持已有正确行为。",
     "acceptance": [
@@ -910,7 +921,7 @@
   },
   {
     "id": "GRAPH-02",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "title": "图去重、环与确定性排序",
     "domain": "递归与图算法",
     "difficulty": "medium",
@@ -938,7 +949,7 @@
   },
   {
     "id": "GRAPH-03",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "title": "深层 AST 遍历与栈安全",
     "domain": "递归与图算法",
     "difficulty": "hard",
@@ -956,11 +967,11 @@
     ],
     "problem": "在独立任务仓库中实现或修复“深层 AST 遍历与栈安全”。公开接口、输入规模和故障语义在题目发布前冻结；保持已有正确行为。",
     "acceptance": [
-      "10000 层输入不依赖调用栈深度",
-      "转义、嵌套作用域与浅层参考实现等价",
-      "错误输入给出边界位置且不无限循环"
+      "200000 层遍历与 20000 层共享AST转换保持栈安全",
+      "后序转换向父节点传播新子树，共享对象只转换一次且无变化身份复用",
+      "畸形或循环结构在转换前拒绝，异常路径精确且后续调用独立"
     ],
-    "publicChecks": "公开接口、正常样例、预算及以下不变量：10000 层输入不依赖调用栈深度；转义、嵌套作用域与浅层参考实现等价；错误输入给出边界位置且不无限循环。",
+    "publicChecks": "既有前后序/深度/错误路径回归，以及父节点消费已转换子树；隐藏验证共享图、身份复用、预检与回调错误。",
     "hiddenChecks": "使用保留的随机种子、故障位置、真实线程屏障或事件交错，验证公开不变量；性能样本在隔离执行中采集。",
     "oracle": "固定输出夹具、公开协议不变量与全量参考结果差分；变体先验证目标缺陷确实被检出。"
   },
@@ -1024,7 +1035,7 @@
   },
   {
     "id": "LIFE-02",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "title": "流结束、超时和迟到回调",
     "domain": "生命周期",
     "difficulty": "medium",
@@ -1034,12 +1045,14 @@
     "sources": [
       "dsh-web",
       "dsh-chatgpt-subscription",
-      "dsh-llm-verifier"
+      "dsh-llm-verifier",
+      "deepseek-harness"
     ],
     "sourcePaths": [
       "dsh-web/packages/dsh-ssh/src/engine.ts",
       "dsh-chatgpt-subscription/test/web-provider-lifecycle.test.ts",
-      "dsh-llm-verifier/src/auto.test.ts"
+      "dsh-llm-verifier/src/auto.test.ts",
+      "deepseek-harness/packages/extensions/tool-cordis/tests/cordis-lifecycle.spec.ts"
     ],
     "problem": "在独立任务仓库中实现或修复“流结束、超时和迟到回调”。公开接口、输入规模和故障语义在题目发布前冻结；保持已有正确行为。",
     "acceptance": [
@@ -1053,7 +1066,7 @@
   },
   {
     "id": "LIFE-03",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "title": "启动、停止和重启竞争",
     "domain": "生命周期",
     "difficulty": "hard",
@@ -1063,12 +1076,14 @@
     "sources": [
       "dsh-web",
       "dsh-chatgpt-subscription",
-      "dsh-llm-verifier"
+      "dsh-llm-verifier",
+      "deepseek-harness"
     ],
     "sourcePaths": [
       "dsh-web/packages/dsh-ssh/src/engine.ts",
       "dsh-chatgpt-subscription/test/web-provider-lifecycle.test.ts",
-      "dsh-llm-verifier/src/auto.test.ts"
+      "dsh-llm-verifier/src/auto.test.ts",
+      "deepseek-harness/packages/core/agent-loop/tests/scope-lifecycle.spec.ts"
     ],
     "problem": "在独立任务仓库中实现或修复“启动、停止和重启竞争”。公开接口、输入规模和故障语义在题目发布前冻结；保持已有正确行为。",
     "acceptance": [
@@ -1111,7 +1126,7 @@
   },
   {
     "id": "PERF-01",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "title": "消除重复解析并保持结果",
     "domain": "性能优化",
     "difficulty": "easy",
@@ -1167,7 +1182,7 @@
   },
   {
     "id": "PERF-03",
-    "version": "0.1.1",
+    "version": "0.2.0",
     "title": "图统计和索引的规模增长控制",
     "domain": "性能优化",
     "difficulty": "hard",
@@ -1185,17 +1200,17 @@
     ],
     "problem": "在独立任务仓库中实现或修复“图统计和索引的规模增长控制”。公开接口、输入规模和故障语义在题目发布前冻结；保持已有正确行为。",
     "acceptance": [
-      "统计结果与物化完整图相同",
-      "规模倍增时不出现不必要的平方级中间对象",
-      "稀疏和密集输入均满足各自公开预算"
+      "全量统计与持续增量更新都符合独立图oracle",
+      "批次读取失败不发布部分图，未解析依赖删除重建保持准确",
+      "只读取修改源，专用持续局部更新负载保存全部配对性能证据"
     ],
-    "publicChecks": "公开接口、正常样例、预算及以下不变量：统计结果与物化完整图相同；规模倍增时不出现不必要的平方级中间对象；稀疏和密集输入均满足各自公开预算。",
+    "publicChecks": "原统计语义与线性访问预算、增量替换移除旧入边；隐藏验证批次事务、未解析目标恢复、快照隔离和持续编辑差分。",
     "hiddenChecks": "使用保留的随机种子、故障位置、真实线程屏障或事件交错，验证公开不变量；性能样本在隔离执行中采集。",
     "oracle": "正确性对照固定参考实现，性能采用同机配对测量及规模增长曲线；阈值校准后方可发布。"
   },
   {
     "id": "PERF-04",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "title": "长会话重放的延迟、吞吐与内存预算",
     "domain": "性能优化",
     "difficulty": "extreme",
@@ -1209,21 +1224,24 @@
     "sourcePaths": [
       "deepseek-harness/benchmarks/support/calibration.ts",
       "deepseek-harness/benchmarks/active-stream-reconnect/reconnect.bench.client.ts",
-      "dsh-trading/packages/knowledge/test/graph.test.ts"
+      "dsh-trading/packages/knowledge/test/graph.test.ts",
+      "deepseek-harness/packages/session/session-projection-cache/src/index.ts",
+      "deepseek-harness/packages/session/session-projection-cache/src/spec.ts",
+      "deepseek-harness/packages/api/session-controller/tests/session-projections.host.spec.ts"
     ],
     "problem": "在独立任务仓库中实现或修复“长会话重放的延迟、吞吐与内存预算”。公开接口、输入规模和故障语义在题目发布前冻结；保持已有正确行为。",
     "acceptance": [
-      "100000 个增量的快照重放语义正确",
-      "与同机参考实现比较中位数、p95 和吞吐",
-      "保留堆与峰值内存符合预算且热路径不偷减工作"
+      "有界流式投影、UTF8计数、生命周期关闭重开与检查点恢复一致",
+      "持久确认后才发布，陈旧/伪造票据与错误日志检查点被拒绝",
+      "源读取遵守背压，专用新主路径负载保留同机参考的全部配对样本"
     ],
-    "publicChecks": "公开接口、正常样例、预算及以下不变量：100000 个增量的快照重放语义正确；与同机参考实现比较中位数、p95 和吞吐；保留堆与峰值内存符合预算且热路径不偷减工作。",
+    "publicChecks": "原摘要回归、流式重放/检查点恢复与持久失败隔离；隐藏验证票据代际、日志身份、背压、生命周期及独立分块折叠。",
     "hiddenChecks": "使用保留的随机种子、故障位置、真实线程屏障或事件交错，验证公开不变量；性能样本在隔离执行中采集。",
     "oracle": "正确性对照固定参考实现，性能采用同机配对测量及规模增长曲线；阈值校准后方可发布。"
   },
   {
     "id": "STATE-01",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "title": "原子写入与损坏检测",
     "domain": "持久化与故障恢复",
     "difficulty": "easy",
@@ -1252,7 +1270,7 @@
   },
   {
     "id": "STATE-02",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "title": "状态迁移与旧版本契约",
     "domain": "持久化与故障恢复",
     "difficulty": "medium",
@@ -1281,7 +1299,7 @@
   },
   {
     "id": "STATE-03",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "title": "检查点恢复和不可重复入账",
     "domain": "持久化与故障恢复",
     "difficulty": "hard",
@@ -1296,7 +1314,8 @@
     "sourcePaths": [
       "cwtools-vscode/client/extension/ai/runner/durableStorage.ts",
       "dsh-trading/packages/dsh-home/test/fs-atomic.test.ts",
-      "dsh-llm-verifier/src/topic-storage.test.ts"
+      "dsh-llm-verifier/src/topic-storage.test.ts",
+      "dsh-trading/packages/client-ui-trading/src/tasks/ledger.ts"
     ],
     "problem": "在独立任务仓库中实现或修复“检查点恢复和不可重复入账”。公开接口、输入规模和故障语义在题目发布前冻结；保持已有正确行为。",
     "acceptance": [
@@ -1339,7 +1358,7 @@
   },
   {
     "id": "INT-CWT",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "title": "LSP、缓存与编辑器全链路",
     "domain": "原仓库集成",
     "difficulty": "extreme",
@@ -1366,7 +1385,7 @@
   },
   {
     "id": "INT-HARNESS",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "title": "长会话续跑与重连一致性",
     "domain": "原仓库集成",
     "difficulty": "extreme",
@@ -1394,7 +1413,7 @@
   },
   {
     "id": "INT-SUB",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "title": "订阅适配器认证与流生命周期",
     "domain": "原仓库集成",
     "difficulty": "hard",
@@ -1481,7 +1500,7 @@
   },
   {
     "id": "INT-WEB",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "title": "插件安装、卸载和失败恢复",
     "domain": "原仓库集成",
     "difficulty": "hard",
@@ -1510,7 +1529,7 @@
   },
   {
     "id": "INT-PY",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "title": "Python 裁判聚合与并发可复现性",
     "domain": "原仓库集成",
     "difficulty": "hard",

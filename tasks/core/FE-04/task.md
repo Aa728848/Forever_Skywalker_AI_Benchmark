@@ -1,6 +1,6 @@
 # FE-04 · 多工作区实时视图一致性与资源预算
 
-题目版本：0.1.1；难度：extreme；运行时：Node.js 24 原生 TypeScript 类型剥离。
+题目版本：0.2.0；难度：extreme；运行时：Node.js 24 原生 TypeScript 类型剥离。
 
 ## 固定接口与契约
 
@@ -27,3 +27,11 @@ node --test --test-isolation=none --test-reporter=tap "public-tests/**/*.test.ts
 ## 评分证据分组
 
 本版按真实断言覆盖行为、边界、状态、回归、资源五组；各检查权重见manifest.json。缺组时不产生完整可用分。
+
+## 0.2.0 同步连接回调与重入资源归属
+
+connect与返回的unsubscribe都可能同步调用switchWorkspace/dispose。最新调用代表最新意图，旧调用后续不得覆盖新工作区、事件或取消句柄。必须在调用旧unsubscribe之前使旧事件失效；unsubscribe同步发出的旧事件也无效。
+
+connect尚未返回时发生切换/关闭，待其返回后仍须恰好一次释放这个过期连接。每次外层switchWorkspace返回后只保留最新连接（连接创建函数内部尚未返回的短暂资源交叠由此迟到回收规则约束）。重复dispose不能再次释放。
+
+connect同步抛错时传播同一错误、显示role=alert并保留该工作区已经确认的行与序号；后续可再次switchWorkspace重试。过期调用抛错不得覆盖新工作区的错误提示。unsubscribe按约定不抛错。原100000事件、LRU、堆预算及序号契约继续成立。

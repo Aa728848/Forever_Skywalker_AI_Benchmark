@@ -1,0 +1,13 @@
+diff --git a/starter/src/decoder.ts b/starter/src/decoder.ts
+index 5738b9e..febee7a 100644
+--- a/starter/src/decoder.ts
++++ b/starter/src/decoder.ts
+@@ -4,7 +4,7 @@ export class StreamDecoder {
+  #offset=0;#closed=false;#failure:Error|undefined;#pending:number[]=[];#expected=0;#start=0;
+  get offset():number{return this.#offset;}
+  push(bytes:Uint8Array):string{
+-  if(this.#failure)throw this.#failure;if(this.#closed)throw new IncompleteSequenceError('decoder ended');
++  this.#failure=undefined;if(this.#closed)throw new IncompleteSequenceError('decoder ended');
+   const base=this.#offset;this.#offset+=bytes.length;const output:string[]=[];
+   const invalid=()=>{this.#pending=[];this.#failure=new InvalidUtf8Error(this.#start);throw this.#failure;};
+   for(let index=0;index<bytes.length;index++){

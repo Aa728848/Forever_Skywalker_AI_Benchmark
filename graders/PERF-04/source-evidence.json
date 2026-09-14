@@ -1,0 +1,15 @@
+{
+  "source": "deepseek-harness",
+  "commit": "2377c272a8e839e0a84c9f0e623b867a1dce2014",
+  "files": [
+    "packages/session/session-projection-cache/src/index.ts",
+    "packages/session/session-projection-cache/src/spec.ts",
+    "packages/api/session-controller/tests/session-projections.host.spec.ts"
+  ],
+  "observedMechanisms": [
+    "durable complete checkpoint cut",
+    "log format/lifecycle identity",
+    "replacement follow generation"
+  ],
+  "adaptation": "独立有界流式投影任务；新增prepare/commit票据与背压接口用于明确复现这些约束，未复制上游实现或声称原项目具有相同缺陷。"
+}

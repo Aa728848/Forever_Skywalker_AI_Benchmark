@@ -1,0 +1,13 @@
+diff --git a/starter/upstream/packages/dsh-plugin-manager/src/host/gateway.ts b/starter/upstream/packages/dsh-plugin-manager/src/host/gateway.ts
+--- a/starter/upstream/packages/dsh-plugin-manager/src/host/gateway.ts
++++ b/starter/upstream/packages/dsh-plugin-manager/src/host/gateway.ts
+@@ -874,7 +874,8 @@
+     if (implicated) {
+       // Owner-aware: roll the new package back rather than disabling shared
+       // rows, which cannot reach every failure shape anyway.
+-      await this.rollbackInstall(job, name, `启动预检失败${tail === '' ? '' : `：\n${tail}`}`, conflicts)
++      job.phase = 'error'
++      job.error = `启动预检失败：${tail}`
+     } else {
+       job.phase = 'error'
+       job.error = tail === ''

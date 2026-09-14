@@ -10,3 +10,5 @@
 固定来源未经故障注入时，本题 11 项 Node 集成验收全部通过，原始证据在 `data/integration-baselines/INT-VERIFIER/`。原始 Vitest 回归源被保留，选定断言移植到 Node；没有宣称原仓库完整测试通过。
 
 执行 `node scripts/task.ts verify INT-VERIFIER`，三向验证全部通过后才允许推进 `fixture-ready`。集成题单独报告，正式成绩仍需要隔离、校准和独立质量评审。
+
+2026-09-14新增3个近似错误修复，保留0.1.0行为版本，验证完整prompt身份、共享flight的成本归属、失败写入后的验收时效。声明见 `mutants.json`，审查见 `mutation-review.md`；`pnpm task:mutants INT-VERIFIER` 已3/3有效检出。

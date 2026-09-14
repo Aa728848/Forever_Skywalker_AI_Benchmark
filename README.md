@@ -6,7 +6,9 @@
 
 接手先读 [交接执行文档](docs/handoff.md)。相关设计：[需求](docs/requirements.md)、[评分标准](docs/scoring.md)、[架构](docs/architecture.md)、[Linux 配置](docs/container-setup.md)、[来源与许可](docs/source-projects.md)。
 
-本轮强化：[裁判供应商与思考参数](docs/judge-providers.md)、[题目质量审查](docs/task-quality-review.md)。API-04/GRAPH-04 已升至0.2.0，并增加近似错误修复检出验证；高难度标签仍须真实作答校准。
+第一次使用先看 [从启动到看报告](docs/quick-start.md)：说明 Docker、DSH 与网页分别何时启动，以及供应商 ID 和模型 ID 如何填写。
+
+本轮逐题审查55题，改善32题、澄清4题、保留19题，83个近似错误修复已有有效检出证据。加强了异步生命周期、持久事务与崩溃恢复、增量计算、多资源并发、插件回滚及真实性能负载，详见 [完整审查矩阵](docs/reviews/2026-09-14-full-task-quality-audit.md)。简单题继续承担基础门槛；实际模型区分度和难度标签仍须真实作答校准。裁判配置见 [供应商与思考参数](docs/judge-providers.md)。
 
 ## 启动
 
@@ -28,7 +30,7 @@ pnpm dev
 pnpm dsh:compare --model <你在DSH使用的模型ID>
 ```
 
-默认标准预设、CACHE-02、Off/High 各一次。四预设统一思考等级可用 `--presets standard,ptc,minimal,cordis --reasoning high`；`--preset ptc` 选择一种，`--model` 调整作答模型，`--output <报告目录>` 指定报告位置。`--check` 仅预检，不调用模型。作答使用本机 DSH SDK，评分使用固定 Linux 容器；裁判另由 `.env` 的 `BENCH_JUDGE_*`（含思考等级）配置。报告和压缩证据保存校验后清理本次独占临时数据，详情见 [DSH 自动对比](docs/dsh-comparison.md)。
+默认标准预设、CACHE-02、Off/High 各一次，只用于检查流程。`--all` 选择全部55题；`--provider <供应商ID>` 与 `--model <模型ID>` 联合选择模型，同名模型可来自不同供应商。四预设统一思考等级可用 `--presets "standard,ptc,minimal,cordis" --reasoning high`；`--preset ptc` 选择一种，`--output <报告目录>` 指定报告位置。`--check` 仅预检，不调用模型。作答使用本机 DSH SDK，评分使用固定 Linux 容器；裁判另由 `.env` 的 `BENCH_JUDGE_*`（含思考等级）配置。报告和压缩证据保存校验后清理本次独占临时数据，详情见 [DSH 自动对比](docs/dsh-comparison.md)。
 
 ```powershell
 pnpm bench list

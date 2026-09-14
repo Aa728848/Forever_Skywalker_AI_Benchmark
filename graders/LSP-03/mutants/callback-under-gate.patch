@@ -1,0 +1,13 @@
+diff --git a/starter/src/Diagnostics.fsx b/starter/src/Diagnostics.fsx
+index b96405b..50158a3 100644
+--- a/starter/src/Diagnostics.fsx
++++ b/starter/src/Diagnostics.fsx
+@@ -23,7 +23,7 @@ type Coordinator() =
+             active.[uri] <- (request,source)
+             versions.[uri] <- version
+             request,prior)
+-        cancel prior
++        lock gate (fun () -> cancel prior)
+         request
+     member _.Complete(request: Request, diagnostics) = lock gate (fun () ->
+         match active.TryGetValue(request.Uri) with

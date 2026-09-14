@@ -1,0 +1,12 @@
+diff --git a/starter/src/WorkspaceIndex.fsx b/starter/src/WorkspaceIndex.fsx
+index 743db62..d0358b0 100644
+--- a/starter/src/WorkspaceIndex.fsx
++++ b/starter/src/WorkspaceIndex.fsx
+@@ -69,6 +69,6 @@ type Index() =
+             generations<-Map.remove workspace generations
+             visible<-Map.remove workspace visible
+             prior)
+-        cancel prior
++        ()
+     member _.View(workspace):View = lock gate (fun () -> Map.tryFind workspace visible |> Option.defaultValue empty)
+     member this.Snapshot(workspace) = (this.View(workspace)).Symbols

@@ -1,12 +1,20 @@
 diff --git a/starter/src/request.ts b/starter/src/request.ts
-index 3096bbd..39f3653 100644
+index 3096bbd..18f0842 100644
 --- a/starter/src/request.ts
 +++ b/starter/src/request.ts
-@@ -30,24 +30,27 @@ export function validateOrderRequest(payload: unknown): OrderRequest {
+@@ -23,31 +23,34 @@ export class RequestError extends Error {
+ const knownFields = ['orderId', 'quantity', 'note'];
+ 
+ function isRecord(value: unknown): value is Record<string, unknown> {
+-  return typeof value === 'object' && value !== null && !Array.isArray(value);
++  return typeof value === 'object' && value !== null && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
+ }
+ 
+ export function validateOrderRequest(payload: unknown): OrderRequest {
    if (!isRecord(payload)) throw new RequestError([{ field: '', code: 'type' }]);
    const issues: ValidationIssue[] = [];
  
-+  for (const field of Object.keys(payload)) {
++  for (const field of Object.keys(payload).sort()) {
 +    if (!knownFields.includes(field)) issues.push({ field, code: 'unknown-field' });
 +  }
 +
@@ -37,7 +45,5 @@ index 3096bbd..39f3653 100644
 +  const result: OrderRequest = note === undefined
      ? { orderId: orderId as string, quantity: quantity as number }
      : { orderId: orderId as string, quantity: quantity as number, note: note as string };
--}
 +  return Object.freeze(result);
-+}
-\ No newline at end of file
+ }

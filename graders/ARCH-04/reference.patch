@@ -1,8 +1,97 @@
+diff --git a/starter/src/async-plugins.ts b/starter/src/async-plugins.ts
+--- a/starter/src/async-plugins.ts
++++ b/starter/src/async-plugins.ts
+@@ -8,18 +8,75 @@
+   constructor(id:string,errors:readonly unknown[]){super('插件启动失败：'+id);this.name='PluginSetupError';this.id=id;this.errors=[...errors];}
+ }
+ 
++class Scope {
++  readonly id:string;
++  readonly controller=new AbortController();
++  readonly #ready=Promise.withResolvers<void>();
++  readonly done=this.#ready.promise;
++  #accepting=true;
++  #cleanups:Cleanup[]=[];
++  #closing:Promise<void>|null=null;
++  constructor(id:string){this.id=id;}
++  start(plugin:AsyncPlugin):void {
++    const context:SetupContext={signal:this.controller.signal,defer:cleanup=>{
++      if(!this.#accepting)throw new ScopeClosedError();this.#cleanups.push(cleanup);
++    }};
++    const settle=(error?:unknown,failed=false)=>{this.#accepting=false;if(failed)this.#ready.reject(error);else this.#ready.resolve();};
++    try {Promise.resolve(plugin.setup(context)).then(()=>settle(),error=>settle(error,true));}
++    catch(error){settle(error,true);}
++  }
++  close():Promise<void> {
++    if(this.#closing)return this.#closing;
++    const closing=Promise.withResolvers<void>();this.#closing=closing.promise;
++    this.controller.abort();
++    void (async()=>{
++      await this.done.catch(()=>undefined);
++      const errors:unknown[]=[];
++      while(this.#cleanups.length){try{await this.#cleanups.pop()!();}catch(error){errors.push(error);}}
++      if(errors.length)throw new AggregateError(errors,'资源清理失败');
++    })().then(closing.resolve,closing.reject);
++    return closing.promise;
++  }
++}
+ export class AsyncPluginHost {
+-  #active:string|null=null;
+-  #cleanup:Cleanup[]=[];
++  #active:Scope|null=null;
++  #scopes=new Set<Scope>();
++  #generation=0;
+   #closed=false;
+-  get active():string|null{return this.#active;}
+-  async replace(plugin:AsyncPlugin):Promise<Activation>{
+-    if(this.#closed)throw new ScopeClosedError();if(!plugin.id.trim())throw new RangeError('plugin id');
+-    if(this.#active===plugin.id)return {id:plugin.id,status:'active'};
+-    for(const cleanup of this.#cleanup)await cleanup();this.#cleanup=[];
+-    const controller=new AbortController();
+-    await plugin.setup({signal:controller.signal,defer:cleanup=>this.#cleanup.push(cleanup)});
+-    this.#active=plugin.id;return {id:plugin.id,status:'active'};
++  #closing:Promise<void>|null=null;
++  get active():string|null{return this.#active?.id??null;}
++  replace(plugin:AsyncPlugin):Promise<Activation> {
++    if(this.#closed)return Promise.reject(new ScopeClosedError());
++    if(!plugin.id.trim())return Promise.reject(new RangeError('plugin id'));
++    const generation=++this.#generation;
++    for(const scope of this.#scopes)if(scope!==this.#active)scope.controller.abort();
++    if(this.#active?.id===plugin.id)return Promise.resolve({id:plugin.id,status:'active'});
++    const scope=new Scope(plugin.id);this.#scopes.add(scope);
++    const result=this.#activate(scope,generation);
++    scope.start(plugin);
++    return result;
+   }
+-  async dispose():Promise<void>{if(this.#closed)return;this.#closed=true;for(const cleanup of this.#cleanup)await cleanup();this.#cleanup=[];this.#active=null;}
++  async #release(scope:Scope):Promise<void>{try{await scope.close();}finally{this.#scopes.delete(scope);}}
++  async #activate(scope:Scope,generation:number):Promise<Activation> {
++    try{await scope.done;}catch(error){
++      const errors=[error];try{await this.#release(scope);}catch(cleanup){errors.push(cleanup);}
++      if(errors.length>1||(!this.#closed&&generation===this.#generation))throw new PluginSetupError(scope.id,errors);
++      return {id:scope.id,status:'superseded'};
++    }
++    if(this.#closed||generation!==this.#generation){await this.#release(scope);return {id:scope.id,status:'superseded'};}
++    const previous=this.#active;this.#active=scope;
++    if(previous)await this.#release(previous);
++    return {id:scope.id,status:'active'};
++  }
++  dispose():Promise<void> {
++    if(this.#closing)return this.#closing;
++    this.#closed=true;this.#generation++;this.#active=null;
++    const closing=Promise.withResolvers<void>();this.#closing=closing.promise;
++    const scopes=[...this.#scopes];
++    void Promise.allSettled(scopes.map(scope=>this.#release(scope))).then(results=>{
++      const errors=results.filter(result=>result.status==='rejected').map(result=>(result as PromiseRejectedResult).reason);
++      if(errors.length)closing.reject(new AggregateError(errors,'宿主清理失败'));else closing.resolve();
++    });
++    return closing.promise;
++  }
+ }
 diff --git a/starter/src/plugins.ts b/starter/src/plugins.ts
-index 2db01db..235aa61 100644
 --- a/starter/src/plugins.ts
 +++ b/starter/src/plugins.ts
-@@ -34,13 +34,18 @@ export class PluginHost {
+@@ -34,13 +34,18 @@
  
    switchTo(next: Plugin): Promise<void> {
      if (next.id === this.#active.id) return Promise.resolve();
@@ -25,4 +114,3 @@ index 2db01db..235aa61 100644
      return Promise.resolve();
    }
  }
-\ No newline at end of file

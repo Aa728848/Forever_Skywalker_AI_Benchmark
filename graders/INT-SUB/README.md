@@ -1,5 +1,7 @@
 # INT-SUB 受信验证
 
+0.2.0 补上TokenStore异步读取期间的生命周期边界：credentials和refresh共享读入口捕获原世代，注销/dispose后迟到读取不能返回或刷新旧凭据；预取消不得创建流源。受信屏障分别覆盖load与save阶段，参考使用世代数、替代使用AbortSignal作用域。近似错误修复覆盖读取后才采样世代、清理跳过写队列、预取消仍创建传输，运行 `pnpm task:mutants INT-SUB`。
+
 修复真实OAuthService和流看门狗两条相互关联的生命周期：同实例并发刷新仍应合并一次网络调用，服务端不轮换refresh_token时保留旧令牌；logout、取消登录或dispose发生后，旧认证操作不得重新保存凭据，返回not-authenticated。尤其异步store.save已开始时，logout也必须等待串行清理完成，不能在logout完成后复活凭据。dispose后credentials不得工作。
 
 流消费提前停止必须取消给source的真实AbortSignal、执行iterator.return并释放watchdog；上游取消应映射ABORTED。只改 starter/src/host/oauth-service.ts 与 starter/src/host/common/idle-watchdog.ts，保持公共签名、错误代码和正常令牌刷新行为。真实MemoryTokenStore/TimeoutReason/idleWatchdog/错误模块参与执行；唯一替身为合成OAuth HTTP响应与流源，不访问真实账户或凭据，也不启动交互登录。

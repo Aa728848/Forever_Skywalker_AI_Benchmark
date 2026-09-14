@@ -1,13 +1,83 @@
 diff --git a/starter/src/publisher.ts b/starter/src/publisher.ts
-index 51c6517..bf58fc7 100644
+index 415ee68..ba47e6f 100644
 --- a/starter/src/publisher.ts
 +++ b/starter/src/publisher.ts
-@@ -18,7 +18,7 @@ export class Publisher {
-         worker.once('message',(value:number)=>{result=value;});worker.once('error',(failure:Error)=>{error=failure;});
-         worker.once('exit',code=>{if(code===0&&result!==undefined)resolve([job.id,result]);else reject(error??new Error('worker interrupted'));});
-       })));
+@@ -1,28 +1,56 @@
+-import {Worker} from 'node:worker_threads';
++import { Worker } from 'node:worker_threads';
+ export interface Job { readonly id:string; readonly value:number; readonly gate?:SharedArrayBuffer; readonly crash?:boolean }
+ export interface Snapshot { readonly generation:number|null; readonly values:ReadonlyMap<string,number> }
+-
++interface BuildState { generation:number; jobs:readonly Job[]; next:number; workers:Set<Worker>; values:Map<string,number>; stopped:boolean; error?:unknown; resolve(value:boolean):void; reject(error:unknown):void; signal?:AbortSignal; abort?:()=>void }
+ export class Publisher {
+-  constructor(maxWorkers=4){void maxWorkers;}
+-  close():Promise<void>{return Promise.resolve();}
+-  #latest=-1; #generation:number|null=null; #values=new Map<string,number>();
+-  snapshot():Snapshot{return {generation:this.#generation,values:new Map(this.#values)};}
+-  async build(generation:number,jobs:readonly Job[],signal?:AbortSignal):Promise<boolean>{
+-    if(!Number.isSafeInteger(generation)||generation<=this.#latest)throw new RangeError('generation must increase');
+-    if(new Set(jobs.map(job=>job.id)).size!==jobs.length)throw new RangeError('duplicate job');
+-    if(signal?.aborted)return false;
++  #latest=-1; #snapshot:Snapshot={generation:null,values:new Map()}; #active=0; #closed=false;
++  #states=new Set<BuildState>(); #limit:number; #closing:Promise<void>|undefined; #drained:(()=>void)|undefined;
++  constructor(maxWorkers=4){if(!Number.isInteger(maxWorkers)||maxWorkers<1||maxWorkers>8)throw new RangeError('maxWorkers 1..8');this.#limit=maxWorkers;}
++  snapshot():Snapshot{return {generation:this.#snapshot.generation,values:new Map(this.#snapshot.values)};}
++  build(generation:number,jobs:readonly Job[],signal?:AbortSignal):Promise<boolean>{
++    if(this.#closed)return Promise.reject(new Error('publisher closed'));
++    if(!Number.isSafeInteger(generation)||generation<0||generation<=this.#latest)return Promise.reject(new RangeError('generation must increase'));
++    if(new Set(jobs.map(job=>job.id)).size!==jobs.length)return Promise.reject(new RangeError('duplicate job'));
++    if(signal?.aborted)return Promise.resolve(false);
+     this.#latest=generation;
+-    const workers:Worker[]=[];const stop=()=>{for(const worker of workers)void worker.terminate();};
+-    signal?.addEventListener('abort',stop,{once:true});
+-    try{
+-      const values=await Promise.all(jobs.map(job=>new Promise<readonly [string,number]>((resolve,reject)=>{
+-        const worker=new Worker(new URL('./worker.ts',import.meta.url),{workerData:job});workers.push(worker);let result:number|undefined;let error:Error|undefined;
+-        worker.once('message',(value:number)=>{result=value;});worker.once('error',(failure:Error)=>{error=failure;});
+-        worker.once('exit',code=>{if(code===0&&result!==undefined)resolve([job.id,result]);else reject(error??new Error('worker interrupted'));});
+-      })));
 -      if(signal?.aborted)return false;
-+      if(signal?.aborted||generation!==this.#latest)return false;
-       this.#values=new Map(values);this.#generation=generation;return true;
-     }catch(error){await Promise.all(workers.map(worker=>worker.terminate()));if(signal?.aborted)return false;throw error;}
-     finally{signal?.removeEventListener('abort',stop);}
+-      this.#values=new Map(values);this.#generation=generation;return true;
+-    }catch(error){await Promise.all(workers.map(worker=>worker.terminate()));if(signal?.aborted)return false;throw error;}
+-    finally{signal?.removeEventListener('abort',stop);}
++    for(const state of this.#states)this.#stop(state);
++    const result=new Promise<boolean>((resolve,reject)=>{
++      const state:BuildState={generation,jobs:jobs.map(job=>({...job})),next:0,workers:new Set(),values:new Map(),stopped:false,resolve,reject,signal};
++      state.abort=()=>{this.#stop(state);this.#pump();};
++      signal?.addEventListener('abort',state.abort,{once:true});this.#states.add(state);
++    });
++    this.#pump();return result;
++  }
++  #stop(state:BuildState):void{state.stopped=true;for(const worker of state.workers)void worker.terminate();}
++  #finish(state:BuildState):void{
++    if(state.workers.size>0||(!state.stopped&&state.next<state.jobs.length))return;
++    this.#states.delete(state);state.signal?.removeEventListener('abort',state.abort!);
++    if(state.error!==undefined)state.reject(state.error);
++    else if(state.stopped||state.generation!==this.#latest)state.resolve(false);
++    else{this.#snapshot={generation:state.generation,values:new Map(state.values)};state.resolve(true);}
++  }
++  #pump():void{
++    for(const state of this.#states){
++      while(!state.stopped&&state.next<state.jobs.length&&this.#active<this.#limit){
++        const job=state.jobs[state.next++]!;let worker:Worker;
++        try{worker=new Worker(new URL('./worker.ts',import.meta.url),{workerData:job});}
++        catch(error){state.error=error;this.#stop(state);break;}
++        state.workers.add(worker);this.#active++;let value:number|undefined;let error:unknown;
++        worker.once('message',(message:number)=>{value=message;});worker.once('error',failure=>{error=failure;});
++        worker.once('exit',code=>{
++          state.workers.delete(worker);this.#active--;
++          if(!state.stopped){if(code===0&&value!==undefined)state.values.set(job.id,value);else{state.error=error??new Error('worker failed');this.#stop(state);}}
++          this.#finish(state);this.#pump();
++        });
++      }
++      this.#finish(state);
++    }
++    if(this.#closed&&this.#active===0&&this.#states.size===0)this.#drained?.();
++  }
++  close():Promise<void>{
++    if(this.#closing)return this.#closing;this.#closed=true;
++    this.#closing=new Promise(resolve=>{this.#drained=resolve;});
++    for(const state of this.#states)this.#stop(state);
++    this.#pump();return this.#closing;
+   }
+ }

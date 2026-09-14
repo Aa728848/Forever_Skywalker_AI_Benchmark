@@ -1,0 +1,26 @@
+[
+  {
+    "id": "held-only",
+    "description": "只检查当前占用，忽略更早等待组的冲突顺序。",
+    "patch": "graders/CONC-03/mutants/held-only.patch",
+    "expectedFailures": [
+      "hidden/conflict-transitivity-and-disjoint-bypass"
+    ]
+  },
+  {
+    "id": "cancel-no-drain",
+    "description": "移除取消请求但没有重新调度解锁的冲突请求。",
+    "patch": "graders/CONC-03/mutants/cancel-no-drain.patch",
+    "expectedFailures": [
+      "public/cancel-unblocks-overlap"
+    ]
+  },
+  {
+    "id": "repeat-release",
+    "description": "旧释放函数再次运行可释放新持有者。",
+    "patch": "graders/CONC-03/mutants/repeat-release.patch",
+    "expectedFailures": [
+      "hidden/granted-abort-and-idempotent-bundle-release"
+    ]
+  }
+]

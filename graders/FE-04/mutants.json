@@ -1,0 +1,26 @@
+[
+  {
+    "id": "lost-returned-handle",
+    "description": "处理了事件代际，但connect返回后无条件安装旧句柄。",
+    "patch": "graders/FE-04/mutants/lost-returned-handle.patch",
+    "expectedFailures": [
+      "public/connect-synchronous-dispose-reclaims-returned-handle"
+    ]
+  },
+  {
+    "id": "outer-switch-resumes-after-reentry",
+    "description": "旧unsubscribe重入后外层仍继续创建连接覆盖新工作区。",
+    "patch": "graders/FE-04/mutants/outer-switch-resumes-after-reentry.patch",
+    "expectedFailures": [
+      "hidden/unsubscribe-reentry-supersedes-outer-switch"
+    ]
+  },
+  {
+    "id": "silent-connect-failure",
+    "description": "重连错误传播给调用方但没有同步可见视图错误。",
+    "patch": "graders/FE-04/mutants/silent-connect-failure.patch",
+    "expectedFailures": [
+      "hidden/connect-error-keeps-confirmed-window-and-can-retry"
+    ]
+  }
+]

@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "INT-WEB",
-  "taskVersion": "0.1.0",
+  "taskVersion": "0.2.0",
   "title": "插件安装、卸载和失败恢复",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25 (--experimental-transform-types), vendored yaml 2.9.0",
@@ -61,7 +61,8 @@
       "hidden/repeated-module-apply-keeps-one-registration",
       "hidden/reconciliation-preserves-existing-dependency-and-comments",
       "hidden/sibling-tunnels-close-on-alias-deletion-and-new-config-reconnects",
-      "hidden/client-http-error-does-not-leave-progress-stuck"
+      "hidden/client-http-error-does-not-leave-progress-stuck",
+      "hidden/dropping-one-alias-preserves-unrelated-live-tunnels"
     ]
   },
   "limits": {
@@ -166,6 +167,14 @@
       "critical": false,
       "weight": 1,
       "summary": "真实gateway完成记录淘汰到固定100条。"
+    },
+    {
+      "id": "hidden/dropping-one-alias-preserves-unrelated-live-tunnels",
+      "kind": "hidden",
+      "group": "resources",
+      "critical": true,
+      "weight": 2,
+      "summary": "释放目标别名全部兄弟隧道时，不得断开其它别名的真实监听与连接。"
     }
   ]
 }

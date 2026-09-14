@@ -1,8 +1,7 @@
 diff --git a/starter/src/workspace-view.ts b/starter/src/workspace-view.ts
-index 2203443..8dee744 100644
 --- a/starter/src/workspace-view.ts
 +++ b/starter/src/workspace-view.ts
-@@ -11,11 +11,11 @@ export function mount(root:HTMLElement,connect:Connect,limits:Limits):Viewer {
+@@ -11,11 +11,11 @@
    const caches=new Map<string,State>();const elements=new Map<string,HTMLElement>();let current:string|null=null,epoch=0,disposed=false;let unsubscribe:(()=>void)|undefined;
    const add=(row:Row)=>{let node=elements.get(row.id);if(!node){node=document.createElement('article');node.dataset['rowId']=row.id;elements.set(row.id,node);log.append(node);}node.textContent=row.text;};
    const render=(state:State)=>{log.replaceChildren();elements.clear();for(const row of state.rows.values())add(row);};
@@ -10,10 +9,21 @@ index 2203443..8dee744 100644
 +  const trim=(state:State)=>{while(state.rows.size>limits.maxRows){const id=state.rows.keys().next().value!;state.rows.delete(id);elements.get(id)?.remove();elements.delete(id);}};
    return {
 -    switchWorkspace(workspace){if(disposed)return;unsubscribe?.();unsubscribe=undefined;const generation=++epoch;current=workspace;let state=caches.get(workspace);if(!state)state={sequence:0,rows:new Map()};caches.delete(workspace);caches.set(workspace,state);render(state);error.textContent='';const selected=state;
-+    switchWorkspace(workspace){if(disposed)return;unsubscribe?.();unsubscribe=undefined;const generation=++epoch;current=workspace;let state=caches.get(workspace);if(!state)state={sequence:0,rows:new Map()};caches.delete(workspace);caches.set(workspace,state);while(caches.size>limits.maxWorkspaces)caches.delete(caches.keys().next().value!);render(state);error.textContent='';const selected=state;
-       unsubscribe=connect(workspace,state.sequence,event=>{
+-      unsubscribe=connect(workspace,state.sequence,event=>{
 -        void generation;if(disposed)return;
++    switchWorkspace(workspace){if(disposed)return;const generation=++epoch;const previous=unsubscribe;unsubscribe=undefined;previous?.();if(disposed||generation!==epoch)return;current=workspace;let state=caches.get(workspace);if(!state)state={sequence:0,rows:new Map()};caches.delete(workspace);caches.set(workspace,state);while(caches.size>limits.maxWorkspaces)caches.delete(caches.keys().next().value!);render(state);error.textContent='';const selected=state;
++      let release:(()=>void);try{release=connect(workspace,state.sequence,event=>{
 +        if(disposed||generation!==epoch||current!==workspace)return;
          if(event.kind==='error'){error.textContent=event.message;return;}
          if(!Number.isSafeInteger(event.sequence)||event.sequence<0)throw new RangeError('sequence');
          if(event.kind==='snapshot'){
+@@ -26,7 +26,8 @@
+         if(event.sequence<=selected.sequence)return;
+         if(event.sequence!==selected.sequence+1){error.textContent='sequence gap';return;}
+         const row={id:event.id,text:event.text};selected.rows.set(row.id,row);selected.sequence=event.sequence;add(row);trim(selected);
+-      });
++      });}catch(cause){if(!disposed&&generation===epoch)error.textContent=String(cause);throw cause;}
++      if(disposed||generation!==epoch)release();else unsubscribe=release;
+     },
+     dispose(){if(disposed)return;disposed=true;epoch++;unsubscribe?.();unsubscribe=undefined;current=null;caches.clear();elements.clear();root.replaceChildren();},
+     stats(){return {workspace:current,sequence:current===null?0:caches.get(current)!.sequence,retainedRows:[...caches.values()].reduce((count,state)=>count+state.rows.size,0),cachedWorkspaces:caches.size};}

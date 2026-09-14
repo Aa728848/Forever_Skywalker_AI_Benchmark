@@ -1,0 +1,15 @@
+diff --git a/starter/src/projection.ts b/starter/src/projection.ts
+index 6b65aa0..3b8a009 100644
+--- a/starter/src/projection.ts
++++ b/starter/src/projection.ts
+@@ -30,8 +30,8 @@ export class SessionProjection {
+  commit(ticket:ProjectionTicket,persist:(value:ProjectionCheckpoint)=>Promise<void>):Promise<boolean>{const operation=this.#tail.then(async()=>{
+   const prepared=this.#tickets.get(ticket);if(!prepared||prepared.revision!==this.#revision)return false;
+   if(prepared.accepted===0){this.#tickets.delete(ticket);return true;}
+-  await persist(prepared.checkpoint);
+-  this.#rows=prepared.rows;this.#snapshot=prepared.checkpoint;this.#revision++;this.#tickets.delete(ticket);return true;
++  this.#rows=prepared.rows;this.#snapshot=prepared.checkpoint;this.#revision++;
++  await persist(prepared.checkpoint);this.#tickets.delete(ticket);return true;
+  });this.#tail=operation.then(()=>{},()=>{});return operation;}
+ }
+ export async function replayProjection(projection:SessionProjection,source:AsyncIterable<readonly ProjectionEvent[]>,persist:(value:ProjectionCheckpoint)=>Promise<void>):Promise<ProjectionCheckpoint>{

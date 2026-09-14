@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "INT-SUB",
-  "taskVersion": "0.1.0",
+  "taskVersion": "0.2.0",
   "title": "订阅适配器认证与流生命周期",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -45,7 +45,10 @@
       "public/state-logout-blocks-late-refresh",
       "public/resources-consumer-stop-aborts-source",
       "hidden/state-save-in-flight-then-logout",
-      "hidden/boundary-disposed-and-caller-cancel"
+      "hidden/boundary-disposed-and-caller-cancel",
+      "hidden/state-load-is-bound-to-entry-lifecycle",
+      "public/boundary-pre-cancel-never-creates-source",
+      "hidden/state-public-await-handoff-cannot-revive-auth"
     ]
   },
   "limits": {
@@ -101,6 +104,30 @@
       "group": "regression",
       "summary": "真实认证失败不永久缓存rejected刷新，下一次可重试。",
       "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/state-load-is-bound-to-entry-lifecycle",
+      "kind": "hidden",
+      "group": "state",
+      "summary": "读取TokenStore期间注销或dispose阻止旧凭据返回、刷新或保存。",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "public/boundary-pre-cancel-never-creates-source",
+      "kind": "public",
+      "group": "boundary",
+      "summary": "预取消不创建流传输，错误代码为ABORTED。",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/state-public-await-handoff-cannot-revive-auth",
+      "kind": "hidden",
+      "group": "state",
+      "summary": "公开credentials/refresh的Promise交接期间撤销不能开始新刷新或复活凭据。",
+      "weight": 2,
       "critical": true
     }
   ]

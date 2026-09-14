@@ -1,0 +1,13 @@
+diff --git a/starter/src/persistent-cache.ts b/starter/src/persistent-cache.ts
+index 19fa44c..9b846dc 100644
+--- a/starter/src/persistent-cache.ts
++++ b/starter/src/persistent-cache.ts
+@@ -20,7 +20,7 @@ export class PersistentCache {
+   setMany(entries:readonly (readonly [string,string])[]):Promise<void>{
+     const changes=entries.map(row=>[...row]);
+     if(changes.some(row=>row.length!==2||row.some(value=>typeof value!=='string'))||new Set(changes.map(row=>row[0])).size!==changes.length)return Promise.reject(new TypeError('invalid or duplicate entries'));
+-    return this.#enqueue(async()=>{await this.#ready();if(changes.length===0)return;const next=new Map(this.#entries);for(const [key,value] of changes)next.set(this.#key(key!),value!);await this.#storage.writeAtomic(JSON.stringify({schema:1,entries:[...next]}));this.#entries=next;});
++    return this.#enqueue(async()=>{await this.#ready();if(changes.length===0)return;const next=new Map(this.#entries);for(const [key,value] of changes)next.set(this.#key(key!),value!);this.#entries=next;await this.#storage.writeAtomic(JSON.stringify({schema:1,entries:[...next]}));});
+   }
+   refresh():Promise<void>{return this.#enqueue(async()=>{await this.#ready();const loaded=decode(await this.#storage.read());this.#entries=loaded;});}
+   snapshot(keys:readonly string[]):Promise<readonly {readonly key:string;readonly value:string|undefined}[]>{const requested=[...keys];return this.#enqueue(async()=>{await this.#ready();return Object.freeze(requested.map(key=>Object.freeze({key,value:this.#entries.get(this.#key(key))})));});}

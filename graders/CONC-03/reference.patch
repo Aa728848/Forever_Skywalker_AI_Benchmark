@@ -1,46 +1,95 @@
 diff --git a/starter/src/locks.ts b/starter/src/locks.ts
-index 4e86301..477e23a 100644
+index b6d047c..7c90195 100644
 --- a/starter/src/locks.ts
 +++ b/starter/src/locks.ts
-@@ -15,15 +15,14 @@ export class LockManager {
-   }
- 
-   acquire(resource: string): Promise<Release> {
+@@ -1,50 +1,47 @@
+ export type Release = () => void;
+-
+-interface Waiter {
+-  readonly resolve: (release: Release) => void;
+-}
+-
++interface Waiter { keys: Set<string>; resolve(release: Release): void; reject(error: unknown): void; signal?: AbortSignal; abort?: () => void }
+ export class LockManager {
+-  readonly #held = new Set<string>();
+-  readonly #waiting = new Map<string, Waiter[]>();
+-
+-  get queueLength(): number {
+-    let total = 0;
+-    for (const list of this.#waiting.values()) total += list.length;
+-    return total;
+-  }
+-
+-  acquire(resource: string): Promise<Release> {
 -    if (!this.#held.has(resource)) {
 -      // 缺陷：只要资源空闲就直接授予，排队中的请求被后来者插队（饥饿）。
-+    // 只要有人在等同一个资源，新请求就必须排队，保证先来先服务。
-+    const queued = this.#waiting.get(resource) ?? [];
-+    if (!this.#held.has(resource) && queued.length === 0) {
-       this.#held.add(resource);
-       return Promise.resolve(this.#grant(resource));
-     }
-     return new Promise<Release>(resolve => {
+-      this.#held.add(resource);
+-      return Promise.resolve(this.#grant(resource));
+-    }
+-    return new Promise<Release>(resolve => {
 -      const list = this.#waiting.get(resource) ?? [];
 -      list.push({ resolve });
 -      this.#waiting.set(resource, list);
-+      this.#waiting.set(resource, [...queued, { resolve }]);
-     });
+-    });
+-  }
+-
++  #held = new Set<string>();
++  #queue: Waiter[] = [];
++  get queueLength(): number { return this.#queue.length; }
++  acquire(resource: string): Promise<Release> { return this.acquireMany([resource]); }
+   acquireMany(resources: readonly string[], signal?: AbortSignal): Promise<Release> {
+-    void signal;
+-    return Promise.all([...new Set(resources)].map(resource => this.acquire(resource))).then(releases => () => releases.forEach(release => release()));
++    if (signal?.aborted) return Promise.reject(signal.reason);
++    const keys = new Set(resources);
++    return new Promise((resolve, reject) => {
++      const entry: Waiter = { keys, resolve, reject, signal };
++      entry.abort = () => {
++        const index = this.#queue.indexOf(entry);
++        if (index < 0) return;
++        this.#queue.splice(index, 1);
++        signal?.removeEventListener('abort', entry.abort!);
++        reject(signal?.reason);
++        this.#pump();
++      };
++      this.#queue.push(entry);
++      signal?.addEventListener('abort', entry.abort, { once: true });
++      this.#pump();
++    });
    }
- 
-@@ -34,12 +33,15 @@ export class LockManager {
-       released = true;
-       this.#held.delete(resource);
-       const list = this.#waiting.get(resource) ?? [];
+-
+-  #grant(resource: string): Release {
+-    let released = false;
+-    return () => {
+-      if (released) return;
+-      released = true;
+-      this.#held.delete(resource);
+-      const list = this.#waiting.get(resource) ?? [];
 -      // 缺陷：唤醒最后入队者（LIFO），先来的请求被无限推迟。
 -      const next = list.pop();
 -      if (next !== undefined) {
 -        this.#held.add(resource);
 -        next.resolve(this.#grant(resource));
-+      const next = list.shift();
-+      if (next === undefined) {
-+        this.#waiting.delete(resource);
-+        return;
++  #pump(): void {
++    const blocked = new Set<string>();
++    for (let index = 0; index < this.#queue.length;) {
++      const entry = this.#queue[index]!;
++      if ([...entry.keys].some(key => this.#held.has(key) || blocked.has(key))) {
++        for (const key of entry.keys) blocked.add(key);
++        index++;
++        continue;
        }
-+      if (list.length === 0) this.#waiting.delete(resource);
-+      else this.#waiting.set(resource, list);
-+      this.#held.add(resource);
-+      next.resolve(this.#grant(resource));
-     };
+-    };
++      this.#queue.splice(index, 1);
++      entry.signal?.removeEventListener('abort', entry.abort!);
++      for (const key of entry.keys) this.#held.add(key);
++      let released = false;
++      entry.resolve(() => {
++        if (released) return;
++        released = true;
++        for (const key of entry.keys) this.#held.delete(key);
++        this.#pump();
++      });
++    }
    }
  }
-\ No newline at end of file

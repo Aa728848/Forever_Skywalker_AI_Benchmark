@@ -1,6 +1,6 @@
 # LIFE-02 · 流结束、超时和迟到回调
 
-- 难度：中等；题型：独立核心题；能力域：生命周期。运行时：TypeScript on Node.js 24。题目版本：0.1.0。
+- 难度：中等；题型：独立核心题；能力域：生命周期。运行时：TypeScript on Node.js 24。题目版本：0.2.0。
 
 ## 背景
 
@@ -49,3 +49,9 @@ node --test --test-isolation=none --test-reporter=tap "public-tests/**/*.test.ts
 
 - 参考实现通过全部公开与未公开检查；缺陷起始版本只被声明的检出项判失败；替代实现同样通过。
 - 本阶段产出检查结论与可用验证分；代码质量评审接入前总分保持待定。
+
+## 0.2.0 订阅、deadline与终态资源归属
+
+保留 StreamCollector，新增 starter/src/stream-session.ts 的 StreamSession(source,deadline,timeoutMs=5000)，summary与cancel()。StreamSource.subscribe(push)返回取消订阅函数，Deadline.after(ms,run)返回取消deadline函数。
+
+data/end/error遵守原汇总契约。任一终态（含cancel的error="已取消"）立即冻结结果并恰好一次释放已取得的订阅和deadline；迟到回调无效。subscribe可以同步发送终态再返回句柄，迟到返回的句柄也必须释放。deadline也可以同步触发：此时不应再启动source，仍释放其返回的定时器句柄。source.subscribe同步抛错须释放deadline并传播同一错误。取消函数本身不抛错；不使用真实计时器。

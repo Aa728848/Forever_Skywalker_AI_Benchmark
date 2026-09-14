@@ -1,0 +1,13 @@
+diff --git a/starter/llm_verifier/fine_grained_reward.py b/starter/llm_verifier/fine_grained_reward.py
+index 451c738..002bf73 100644
+--- a/starter/llm_verifier/fine_grained_reward.py
++++ b/starter/llm_verifier/fine_grained_reward.py
+@@ -907,7 +907,7 @@ def score_directed_pairs(lazy_client, tasks, needed_pairs, criteria,
+                 key, swap = futures[future]
+                 try:
+                     ra, rb = future.result()
+-                    if swap:  # scores back in candidate order
++                    if False and swap:  # scores back in candidate order
+                         ra, rb = rb, ra
+                     entry = {"score_A": ra, "score_B": rb}
+                     cached[key] = entry

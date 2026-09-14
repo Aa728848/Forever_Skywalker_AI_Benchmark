@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "LSP-04",
-  "taskVersion": "0.1.1",
+  "taskVersion": "0.2.0",
   "title": "并行工作区增量索引与安全发布",
   "runtime": "fsharp",
   "runtimeRange": "dotnet >= 10.0",
@@ -41,7 +41,10 @@
       "public/state-staging-invisible",
       "hidden/state-abort-preserves-snapshot",
       "hidden/resource-parallel-staging",
-      "hidden/boundary-undeclared-and-stale"
+      "hidden/boundary-undeclared-and-stale",
+      "hidden/document-version-and-duplicate-result",
+      "hidden/readers-observe-atomic-versioned-view",
+      "hidden/close-callback-reopen-and-foreign-ticket"
     ]
   },
   "limits": {
@@ -98,6 +101,30 @@
       "weight": 1,
       "critical": true,
       "summary": "hidden/boundary-undeclared-and-stale"
+    },
+    {
+      "id": "hidden/document-version-and-duplicate-result",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "构建代际和文档版本双重门禁，重复结果首次获胜。"
+    },
+    {
+      "id": "hidden/readers-observe-atomic-versioned-view",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": true,
+      "summary": "真实读线程连续读取符号和文档版本的原子快照。"
+    },
+    {
+      "id": "hidden/close-callback-reopen-and-foreign-ticket",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "关闭回调锁外重开，新旧以及外来构建身份隔离。"
     }
   ]
 }

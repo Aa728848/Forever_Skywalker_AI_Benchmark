@@ -28,6 +28,6 @@ export function summarizeRecords(lines: readonly string[]): Record<string, numbe
     totals[parsed.key] = (totals[parsed.key] ?? 0) + parsed.value;
   }
   const result: Record<string, number> = {};
-  for (const key of Object.keys(totals).sort()) result[key] = totals[key] as number;
+  for (const key of Object.keys(totals).sort()) Object.defineProperty(result, key, { value: totals[key], enumerable: true, writable: true, configurable: true });
   return result;
 }

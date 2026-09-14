@@ -1,0 +1,12 @@
+diff --git a/starter/src/shard-merge.ts b/starter/src/shard-merge.ts
+index c4d904f..6c1a63e 100644
+--- a/starter/src/shard-merge.ts
++++ b/starter/src/shard-merge.ts
+@@ -39,6 +39,6 @@ export class ShardMerge {
+   if(this.pending(runId).length>0)return false;
+   const lines=plan.shards.flatMap(entry=>this.#load(runId,entry));writeAtomic(join(this.#root,'visible.json'),{generation:plan.generation,runId,lines});this.#hook?.('snapshot-written');return true;
+  }
+- resume(runId:string):boolean{for(const shard of this.pending(runId))this.completeShard(runId,shard);return this.publish(runId);}
++ resume(runId:string):boolean{return this.publish(runId);}
+  snapshot():MergeSnapshot{const file=join(this.#root,'visible.json');return existsSync(file)?read<MergeSnapshot>(file):{generation:null,runId:null,lines:[]};}
+ }

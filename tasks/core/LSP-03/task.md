@@ -1,6 +1,6 @@
 # LSP-03 · 取消和过期诊断隔离
 
-题目版本：0.1.1；难度：hard；运行时：F# / .NET 10。
+题目版本：0.2.0；难度：hard；运行时：F# / .NET 10。
 
 ## 固定接口与契约
 
@@ -23,3 +23,9 @@ dotnet fsi public-tests/checks.fsx
 ## 评分证据分组
 
 本版按真实断言覆盖行为、边界、状态、回归、资源五组；各检查权重见manifest.json。缺组时不产生完整可用分。
+
+## 0.2.0 取消回调与所有权
+
+Request 包含所属Coordinator的身份，其他实例即使URI、Id、Version相同也不能发布。Start/Close 必须先原子登记新请求或移除旧请求，再在内部锁外执行旧CancellationToken的同步回调。回调可在其它线程读取Published、重新Start或Close，不能死锁；回调重入产生更新请求时，外层Start返回的请求可能已经过期，仍须按身份门禁拒绝晚结果。
+
+取消回调抛错由.NET AggregateException向调用者传播；旧请求退休与新代登记已经生效，不能回滚或复活旧请求。所有取消源最终Dispose。未测试的公平调度顺序不作保证，测试使用真实线程和有界等待，不依赖随机调度。

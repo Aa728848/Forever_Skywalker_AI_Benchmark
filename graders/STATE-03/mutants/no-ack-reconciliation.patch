@@ -1,0 +1,12 @@
+diff --git a/starter/src/transactional-ledger.ts b/starter/src/transactional-ledger.ts
+--- a/starter/src/transactional-ledger.ts
++++ b/starter/src/transactional-ledger.ts
+@@ -36,7 +36,7 @@
+     let next=this.#balance;for(const amount of amounts){next+=amount;if(!Number.isSafeInteger(next))throw new RangeError('balance');}
+     const record:Record={version:1,id,amounts:[...amounts]};
+     try{this.#journal.append(JSON.stringify(record));}
+-    catch(error){this.recover();const persisted=this.#transactions.get(id);if(!persisted)throw error;return {...persisted.receipt};}
++    catch(error){throw error;}
+     this.recover();return {...this.#transactions.get(id)!.receipt};
+   }
+ }

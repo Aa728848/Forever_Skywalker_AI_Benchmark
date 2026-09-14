@@ -1,3 +1,25 @@
+diff --git a/starter/src/graph-index.ts b/starter/src/graph-index.ts
+index 3e9b353..afdbf6e 100644
+--- a/starter/src/graph-index.ts
++++ b/starter/src/graph-index.ts
+@@ -6,14 +6,14 @@ export class GraphIndex {
+  constructor(ids:readonly string[],reader:(id:string)=>readonly string[]){this.#reader=reader;if(new Set(ids).size!==ids.length)throw new RangeError('duplicate vertex');this.apply(ids.map(id=>({kind:'put',id})));this.#generation=0;}
+  apply(changes:readonly GraphChange[]):number {
+   const batch=changes.map(change=>({...change}));if(batch.length===0)return this.#generation;
+-  this.#generation++;const unique=new Set<string>();
++  const unique=new Set<string>();
+   for(const change of batch){if(unique.has(change.id)||!['put','delete'].includes(change.kind))throw new RangeError('invalid batch');unique.add(change.id);if(change.kind==='delete'&&!this.#out.has(change.id))throw new RangeError('unknown vertex');}
+   const loaded=new Map<string,Set<string>>();for(const change of batch)if(change.kind==='put'){const values=this.#reader(change.id);if(!Array.isArray(values)||values.some(value=>typeof value!=='string'))throw new TypeError('invalid dependencies');loaded.set(change.id,new Set(values));}
+   const nextOut=new Map(this.#out);const nextIncoming=new Map(this.#incoming);
+   const edge=(target:string,source:string,add:boolean)=>{const bucket=new Set(nextIncoming.get(target));if(add)bucket.add(source);else bucket.delete(source);if(bucket.size)nextIncoming.set(target,bucket);else nextIncoming.delete(target);};
+-  for(const change of batch){nextOut.delete(change.id);if(change.kind==='delete')nextIncoming.delete(change.id);}
++  for(const change of batch){for(const target of nextOut.get(change.id)??[])edge(target,change.id,false);nextOut.delete(change.id);}
+   for(const [id,deps] of loaded){nextOut.set(id,deps);for(const target of deps)edge(target,id,true);}
+-  this.#out=nextOut;this.#incoming=nextIncoming;
++  this.#out=nextOut;this.#incoming=nextIncoming;this.#generation++;
+   return this.#generation;
+  }
+  snapshot():IndexedStats {
 diff --git a/starter/src/graph-stats.ts b/starter/src/graph-stats.ts
 index 6d878ef..557c5fe 100644
 --- a/starter/src/graph-stats.ts

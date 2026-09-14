@@ -20,8 +20,8 @@ def alias_distribution_and_last_tag():
 def directional_cache_hit_never_creates_client():
     with tempfile.TemporaryDirectory(prefix="fsa-python-hit-") as directory:
         cache = str(pathlib.Path(directory) / "cache.json")
-        data = {fine.cache_key("correct", "task", 0, 1, 0): {"score_A": 1, "score_B": 0},
-                fine.cache_key("correct", "task", 1, 0, 0): {"score_A": 0, "score_B": 1}}
+        data = {"correct|task|0,1|0": {"score_A": 1, "score_B": 0},
+                "correct|task|1,0|0": {"score_A": 0, "score_B": 1}}
         pathlib.Path(cache).write_text(json.dumps(data))
         previous = fine.create_client
         def forbidden():
@@ -32,6 +32,8 @@ def directional_cache_hit_never_creates_client():
         finally:
             fine.create_client = previous
         assert actual == data
+        assert fine.directed_reward(actual, "task", 0, 1, ["correct"], 1) == (1, 0)
+        assert fine.directed_reward(actual, "task", 1, 0, ["correct"], 1) == (0, 1)
 
 
 def real_thread_pool_is_bounded_and_overlaps():

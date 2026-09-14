@@ -1,0 +1,13 @@
+diff --git a/starter/packages/api/session-controller/src/client/sessions/assistant-stream.ts b/starter/packages/api/session-controller/src/client/sessions/assistant-stream.ts
+index b29643e..54f0ea3 100644
+--- a/starter/packages/api/session-controller/src/client/sessions/assistant-stream.ts
++++ b/starter/packages/api/session-controller/src/client/sessions/assistant-stream.ts
+@@ -153,7 +153,7 @@ export class ClientAssistantStream {
+         // frame to reconstruct. Its durable settlement publishes directly;
+         // ignore the transient suffix until the next known start.
+         if (attempt === undefined || attempt.attemptId !== frame.attemptId) return undefined
+-        if (frame.index !== attempt.nextIndex) return { type: 'rebaseline' }
++        if (frame.index !== attempt.nextIndex) { attempt.nextIndex += 1; return { type: 'rebaseline' } }
+         attempt.nextIndex += 1
+         this.transientInGap += 1
+         return {

@@ -1,0 +1,13 @@
+diff --git a/starter/src/bounded.ts b/starter/src/bounded.ts
+index 9556352..d04f25a 100644
+--- a/starter/src/bounded.ts
++++ b/starter/src/bounded.ts
+@@ -6,7 +6,7 @@ const numeric=/-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/y;
+ function scalarEnd(text:string,index:number):number{if(text[index]==='"')return stringEnd(text,index);for(const literal of ['true','false','null'])if(text.startsWith(literal,index))return index+literal.length;numeric.lastIndex=index;const number=numeric.exec(text);if(!number)throw new SyntaxError('expected value');return numeric.lastIndex;}
+ export function parseBounded(text:string,limits:Limits):unknown{
+  prepare(text,limits);let index=0,nodes=0;const stack:{kind:'array'|'object';state:string}[]=[];let rootDone=false;
+- const charge=(at:number,depth:number)=>{if(++nodes>limits.maxNodes)throw new ParseLimitError('nodes',at);if(depth>limits.maxDepth)throw new ParseLimitError('depth',at);};
++ const charge=(at:number,depth:number)=>{if(depth>limits.maxDepth)throw new ParseLimitError('depth',at);if(++nodes>limits.maxNodes)throw new ParseLimitError('nodes',at);};
+  const value=()=>{const token=text[index];charge(index,(token==='['||token==='{')?stack.length+1:0);if(token==='['||token==='{'){index++;stack.push({kind:token==='['?'array':'object',state:token==='['?'first':'keyFirst'});}else index=scalarEnd(text,index);};
+  while(true){while(index<text.length&&' \t\r\n'.includes(text[index]!))index++;
+   if(stack.length===0){if(rootDone){if(index!==text.length)throw new SyntaxError('trailing input');break;}rootDone=true;value();continue;}

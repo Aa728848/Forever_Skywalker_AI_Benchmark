@@ -9,3 +9,6 @@ SOURCE.json记录固定提交和原始源码摘要；参考补丁、替代实现
 缺陷来源：固定上游版本中的真实缺陷：TasksLedger.commit 在 fsync/rename 确认之前更新 this.document，写失败留下幽灵任务与已消费的幂等键。参考改为确认后发布，替代采用失败回滚。
 
 全部检查均运行真实源模块。运行 node scripts/task.ts verify INT-TRADING 验证三向对照。
+# 近似错误修复验证
+
+保留 0.1.0 题面与原模块集成范围。新增四个受信反例：内存在 rename 前发布、请求去重缺失指纹、磁盘提交前通知、重启错误取消已绑定会话的执行。既有公开/隐藏链路能够检出，运行 `pnpm task:mutants INT-TRADING`；这只是对列举反例的验证，不表示所有错误均被覆盖。

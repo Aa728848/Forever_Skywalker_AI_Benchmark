@@ -1,0 +1,13 @@
+diff --git a/starter/src/locks.ts b/starter/src/locks.ts
+index 7c90195..39014af 100644
+--- a/starter/src/locks.ts
++++ b/starter/src/locks.ts
+@@ -37,7 +37,7 @@ export class LockManager {
+       for (const key of entry.keys) this.#held.add(key);
+       let released = false;
+       entry.resolve(() => {
+-        if (released) return;
++        if (released) { for (const key of entry.keys) this.#held.delete(key); this.#pump(); return; }
+         released = true;
+         for (const key of entry.keys) this.#held.delete(key);
+         this.#pump();

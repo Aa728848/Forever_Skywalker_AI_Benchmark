@@ -29,6 +29,8 @@ val parseFrames: buffer: byte[] -> Result<string list * byte[], string>
 6. 头部尚未以空行结束、或正文尚未收全时，不得报错：返回已经解析出的消息与剩余字节。
 7. 长度为 0 的正文合法。
 
+本题覆盖消息分帧，不检查正文中的 JSON-RPC 字段或握手语义。输入头部包含至多一条 Content-Length；重复长度字段和超出 Int32 范围的扩展帧不在本版合法输入域。原始字节剩余前缀与完整消息顺序是本题的判定边界。
+
 ## 限制
 
 - 答案范围限于 `starter/`；不要修改 `public-tests/`。

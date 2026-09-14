@@ -1,0 +1,12 @@
+diff --git a/starter/src/supervisor.ts b/starter/src/supervisor.ts
+--- a/starter/src/supervisor.ts
++++ b/starter/src/supervisor.ts
+@@ -7,7 +7,7 @@
+   get phase():Phase{return this.#phase;}
+   get startCount():number{return this.#starts;}
+   async start():Promise<void>{
+-    if(this.#stopping!==null)await this.#stopping;
++    if(this.#stopping!==null)return;
+     if(this.#phase==='running'||this.#phase==='starting')return;
+     const controller=new AbortController();const done=Promise.withResolvers<void>();
+     this.#controller=controller;this.#current=done.promise;this.#phase='starting';this.#starts++;

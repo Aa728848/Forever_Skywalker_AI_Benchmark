@@ -1,0 +1,13 @@
+diff --git a/starter/src/Diagnostics.fsx b/starter/src/Diagnostics.fsx
+index b96405b..9a953e1 100644
+--- a/starter/src/Diagnostics.fsx
++++ b/starter/src/Diagnostics.fsx
+@@ -27,7 +27,7 @@ type Coordinator() =
+         request
+     member _.Complete(request: Request, diagnostics) = lock gate (fun () ->
+         match active.TryGetValue(request.Uri) with
+-        | true, (current,source) when current = request ->
++        | true, (current,source) when current.Id = request.Id ->
+             published.[request.Uri] <- diagnostics
+             active.Remove(request.Uri) |> ignore
+             source.Dispose()

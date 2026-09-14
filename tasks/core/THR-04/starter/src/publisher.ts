@@ -3,6 +3,8 @@ export interface Job { readonly id:string; readonly value:number; readonly gate?
 export interface Snapshot { readonly generation:number|null; readonly values:ReadonlyMap<string,number> }
 
 export class Publisher {
+  constructor(maxWorkers=4){void maxWorkers;}
+  close():Promise<void>{return Promise.resolve();}
   #latest=-1; #generation:number|null=null; #values=new Map<string,number>();
   snapshot():Snapshot{return {generation:this.#generation,values:new Map(this.#values)};}
   async build(generation:number,jobs:readonly Job[],signal?:AbortSignal):Promise<boolean>{

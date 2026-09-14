@@ -1,0 +1,34 @@
+[
+  {
+    "id": "publish-memory-before-rename",
+    "description": "临时文件写成后即发布内存，rename失败仍显示未确认任务",
+    "patch": "graders/INT-TRADING/mutants/publish-memory-before-rename.patch",
+    "expectedFailures": [
+      "public/state-failed-write-is-not-visible"
+    ]
+  },
+  {
+    "id": "request-id-without-fingerprint",
+    "description": "只按请求ID去重，接受同ID异内容冲突",
+    "patch": "graders/INT-TRADING/mutants/request-id-without-fingerprint.patch",
+    "expectedFailures": [
+      "public/boundary-protocol-and-idempotent-conflict"
+    ]
+  },
+  {
+    "id": "notify-before-durable-commit",
+    "description": "磁盘写入前先广播，失败动作仍通知界面",
+    "patch": "graders/INT-TRADING/mutants/notify-before-durable-commit.patch",
+    "expectedFailures": [
+      "public/state-failed-write-is-not-visible"
+    ]
+  },
+  {
+    "id": "cancel-confirmed-session-on-restart",
+    "description": "启动恢复把已绑定真实会话的在途执行也取消",
+    "patch": "graders/INT-TRADING/mutants/cancel-confirmed-session-on-restart.patch",
+    "expectedFailures": [
+      "hidden/regression-startup-reconciliation"
+    ]
+  }
+]

@@ -1,0 +1,12 @@
+diff --git a/starter/src/projection.ts b/starter/src/projection.ts
+index 6b65aa0..2222866 100644
+--- a/starter/src/projection.ts
++++ b/starter/src/projection.ts
+@@ -35,6 +35,6 @@ export class SessionProjection {
+  });this.#tail=operation.then(()=>{},()=>{});return operation;}
+ }
+ export async function replayProjection(projection:SessionProjection,source:AsyncIterable<readonly ProjectionEvent[]>,persist:(value:ProjectionCheckpoint)=>Promise<void>):Promise<ProjectionCheckpoint>{
+- for await(const events of source){const ticket=projection.prepare(events);if(!await projection.commit(ticket,persist))throw new ProjectionError('stale');}
++ const pending:Promise<boolean>[]=[];for await(const events of source){const ticket=projection.prepare(events);pending.push(projection.commit(ticket,persist));}if((await Promise.all(pending)).some(ok=>!ok))throw new ProjectionError('stale');
+  return projection.snapshot();
+ }

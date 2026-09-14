@@ -1,8 +1,29 @@
+diff --git a/starter/src/stream-session.ts b/starter/src/stream-session.ts
+--- a/starter/src/stream-session.ts
++++ b/starter/src/stream-session.ts
+@@ -3,8 +3,15 @@
+ export interface Deadline {after(milliseconds:number,run:()=>void):()=>void}
+ 
+ export class StreamSession {
+-  #collector:StreamCollector;#release:()=>void;
+-  constructor(source:StreamSource,deadline:Deadline,timeoutMs=5000){this.#collector=new StreamCollector({timeoutMs});deadline.after(timeoutMs,()=>this.#collector.timeout());this.#release=source.subscribe(event=>this.#collector.push(event));}
++  readonly #collector:StreamCollector;#closed=false;#release:(()=>void)|undefined;#cancelTimer:(()=>void)|undefined;
++  constructor(source:StreamSource,deadline:Deadline,timeoutMs=5000){
++    this.#collector=new StreamCollector({timeoutMs});
++    const cancel=deadline.after(timeoutMs,()=>{if(this.#closed)return;this.#collector.timeout();this.#finish();});
++    if(this.#closed){cancel();return;}this.#cancelTimer=cancel;
++    try{const release=source.subscribe(event=>{if(this.#closed)return;this.#collector.push(event);if(event.kind!=='data')this.#finish();});if(this.#closed)release();else this.#release=release;}
++    catch(error){this.#finish();throw error;}
++  }
+   get summary():StreamSummary{return this.#collector.summary;}
+-  cancel():void{this.#release();this.#collector.push({kind:'error',message:'已取消'});}
++  #finish():void{if(this.#closed)return;this.#closed=true;const release=this.#release,cancel=this.#cancelTimer;this.#release=undefined;this.#cancelTimer=undefined;cancel?.();release?.();}
++  cancel():void{if(this.#closed)return;this.#collector.push({kind:'error',message:'已取消'});this.#finish();}
+ }
 diff --git a/starter/src/stream.ts b/starter/src/stream.ts
-index 06ef746..c0a6cf2 100644
 --- a/starter/src/stream.ts
 +++ b/starter/src/stream.ts
-@@ -14,11 +14,13 @@ export interface CollectorOptions {
+@@ -14,11 +14,13 @@
    readonly timeoutMs?: number;
  }
  
@@ -17,7 +38,7 @@ index 06ef746..c0a6cf2 100644
    #error: string | null = null;
  
    constructor(options: CollectorOptions = {}) {
-@@ -26,26 +28,29 @@ export class StreamCollector {
+@@ -26,26 +28,29 @@
    }
  
    push(event: StreamEvent): void {

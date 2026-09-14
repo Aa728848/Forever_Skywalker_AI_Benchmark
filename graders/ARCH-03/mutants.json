@@ -1,0 +1,26 @@
+[
+  {
+    "id": "cancel-one-aborts-all",
+    "description": "实现了读者取消但错误地中止仍被其它读者使用的请求。",
+    "patch": "graders/ARCH-03/mutants/cancel-one-aborts-all.patch",
+    "expectedFailures": [
+      "public/subscriber-cancel-does-not-abort-other-readers"
+    ]
+  },
+  {
+    "id": "stale-finally-clears-new-call",
+    "description": "结束时仅按id删除，旧代迟到结算清除了新代合并记录。",
+    "patch": "graders/ARCH-03/mutants/stale-finally-clears-new-call.patch",
+    "expectedFailures": [
+      "public/old-adapter-completion-cannot-clear-new-inflight"
+    ]
+  },
+  {
+    "id": "router-unit-drift",
+    "description": "适配器替换路径漏掉秒到毫秒的单位归一。",
+    "patch": "graders/ARCH-03/mutants/router-unit-drift.patch",
+    "expectedFailures": [
+      "public/subscriber-cancel-does-not-abort-other-readers"
+    ]
+  }
+]

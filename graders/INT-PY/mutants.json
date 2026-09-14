@@ -1,0 +1,35 @@
+[
+  {
+    "id": "merge-directed-cache-keys",
+    "description": "把有向对排序成无向缓存键，反向评分误读前向数据",
+    "patch": "graders/INT-PY/mutants/merge-directed-cache-keys.patch",
+    "expectedFailures": [
+      "hidden/directional-cache-hit-without-credentials"
+    ]
+  },
+  {
+    "id": "persist-failure-tie",
+    "description": "临时调用失败的平局写入缓存，重试被永久跳过",
+    "patch": "graders/INT-PY/mutants/persist-failure-tie.patch",
+    "expectedFailures": [
+      "public/transient-tie-does-not-poison-cache"
+    ]
+  },
+  {
+    "id": "forget-repetition-slot-restoration",
+    "description": "奇数rep交换提示但没有恢复候选身份",
+    "patch": "graders/INT-PY/mutants/forget-repetition-slot-restoration.patch",
+    "expectedFailures": [
+      "public/odd-repetition-candidate-order"
+    ]
+  },
+  {
+    "id": "sum-scalar-token-aliases",
+    "description": "同标量token别名概率相加而不是取最大",
+    "patch": "graders/INT-PY/mutants/sum-scalar-token-aliases.patch",
+    "expectedFailures": [
+      "public/scalar-alias-probability-dedup",
+      "hidden/scalar-alias-and-final-tag-semantics"
+    ]
+  }
+]

@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "STATE-02",
-  "taskVersion": "0.1.0",
+  "taskVersion": "0.2.0",
   "title": "状态迁移与旧版本契约",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -49,7 +49,11 @@
       "public/migrates-v1-status-names",
       "public/migration-is-idempotent",
       "public/rejects-invalid-snapshots",
-      "public/rejects-unknown-version"
+      "public/rejects-unknown-version",
+      "public/batch-failure-preserves-confirmed-snapshot",
+      "public/duplicate-key-is-atomic-domain-error",
+      "hidden/mixed-version-batch-preserves-order-and-is-idempotent",
+      "hidden/batch-input-and-output-do-not-alias-state"
     ]
   },
   "limits": {
@@ -138,6 +142,38 @@
       "weight": 1,
       "critical": false,
       "summary": "隐藏样本下的幂等。"
+    },
+    {
+      "id": "public/batch-failure-preserves-confirmed-snapshot",
+      "kind": "public",
+      "group": "state",
+      "weight": 2,
+      "critical": true,
+      "summary": "迁移中途失败定位原条目，全部确认状态保持不变。"
+    },
+    {
+      "id": "public/duplicate-key-is-atomic-domain-error",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 2,
+      "critical": true,
+      "summary": "同批次重复键（含原型名）不能覆盖或部分发布。"
+    },
+    {
+      "id": "hidden/mixed-version-batch-preserves-order-and-is-idempotent",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 2,
+      "critical": true,
+      "summary": "混合历史版本顺序迁移，重新加载当前版本不会改变结果。"
+    },
+    {
+      "id": "hidden/batch-input-and-output-do-not-alias-state",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 2,
+      "critical": true,
+      "summary": "调用方修改输入或输出快照不能改写确认状态。"
     }
   ]
 }

@@ -1,0 +1,26 @@
+[
+  {
+    "id": "old-failure-deletes-current",
+    "description": "旧代失败按键清理，错误删除新代在途",
+    "patch": "graders/CACHE-03/mutants/old-failure-deletes-current.patch",
+    "expectedFailures": [
+      "hidden/old-rejection-preserves-new-flight"
+    ]
+  },
+  {
+    "id": "mixed-generation-snapshot",
+    "description": "一次Promise.all返回混合代际数据",
+    "patch": "graders/CACHE-03/mutants/mixed-generation-snapshot.patch",
+    "expectedFailures": [
+      "hidden/multikey-retries-invalidated-cut"
+    ]
+  },
+  {
+    "id": "retained-failure",
+    "description": "当前代失败永久保留拒绝Promise",
+    "patch": "graders/CACHE-03/mutants/retained-failure.patch",
+    "expectedFailures": [
+      "hidden/rejected-current-generation-is-retryable"
+    ]
+  }
+]

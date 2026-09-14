@@ -1,6 +1,6 @@
 # BND-04 · 超深、超大和畸形输入的有界解析
 
-题目版本：0.1.1；难度：extreme；运行时：Node.js 24 原生 TypeScript 类型剥离。
+题目版本：0.2.0；难度：extreme；运行时：Node.js 24 原生 TypeScript 类型剥离。
 
 ## 固定接口与契约
 
@@ -24,3 +24,7 @@ node --test --test-isolation=none --test-reporter=tap "public-tests/**/*.test.ts
 
 本版按真实断言覆盖行为、边界、状态、回归、资源五组；各检查权重见manifest.json。缺组时不产生完整可用分。
 解析拒绝后不得保留影响下一次调用的扫描状态。
+
+## 0.2.0 语法驱动的有界入口
+
+先校验limits，再校验完整UTF-8字节预算。随后按JSON语法从左至右检查：需要key/colon/comma/结束符的位置不合法时立即SyntaxError，不能把缺少标点后的字符当作后续值消耗预算。合法值/键的token起点先计节点，再对容器计深度，随后检查token本身；在同一点同时超限时nodes优先depth。所有语法/预算检查完成前不得调用JSON.parse；非法输入亦不得先物化再验证。只允许JSON的空格、tab、CR、LF，数字/转义严格采用JSON语法，偏移仍是UTF-16下标。

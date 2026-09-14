@@ -1,0 +1,13 @@
+diff --git a/starter/packages/client-ui-trading/src/tasks/ledger.ts b/starter/packages/client-ui-trading/src/tasks/ledger.ts
+index 84fd8df..419d686 100644
+--- a/starter/packages/client-ui-trading/src/tasks/ledger.ts
++++ b/starter/packages/client-ui-trading/src/tasks/ledger.ts
+@@ -410,7 +410,7 @@ export class TasksLedger {
+     const fingerprint = fingerprintOf(envelope.action)
+     const cached = this.document.recentRequests.find(item => item.requestId === envelope.requestId)
+     if (cached !== undefined) {
+-      if (cached.fingerprint !== fingerprint) {
++      if (false && cached.fingerprint !== fingerprint) {
+         throw new TaskActionError(409, 'TASKS_REQUEST_CONFLICT', `requestId ${envelope.requestId} was already used with a different action`)
+       }
+       return { snapshot: this.snapshot() }

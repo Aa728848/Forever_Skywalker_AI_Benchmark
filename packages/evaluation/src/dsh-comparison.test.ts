@@ -8,7 +8,7 @@ import { readRunStatus, verifySubmission } from '@fsa/executor';
 import { applyReferencePatch, readManifest } from '@fsa/tasks';
 import { inspectRunSelection } from './suite.ts';
 import { DshCleanupError, type DshRunOptions, type DshRunResult } from './dsh.ts';
-import { comparisonGroups, runDshComparison, type DshComparisonOptions } from './dsh-comparison.ts';
+import { comparisonGroups, renderComparison, runDshComparison, type DshComparisonOptions } from './dsh-comparison.ts';
 
 function setup() {
   const scratch = mkdtempSync(join(tmpdir(), 'fsa-dsh-comparison-test-'));
@@ -27,7 +27,7 @@ function setup() {
 
 function solverResult(options: DshRunOptions, finishReason = 'completed'): DshRunResult {
   return { finishReason, durationMs: 1, finalResponse: '模拟作答，仅测试编排', usage: null,
-    requestedModel: { provider: options.provider, model: options.model, reasoningEffort: options.reasoningEffort, maxTokens: options.maxTokens },
+    requestedModel: { provider: options.provider, model: options.model, reasoningEffort: options.reasoningEffort === 'default' ? null : options.reasoningEffort, maxTokens: options.maxTokens },
     requestedPreset: options.agentPreset ?? 'standard', observedPresets: [options.agentPreset ?? 'standard'], presetFingerprint: 'f'.repeat(64),
     observedRoutes: [], responseModels: [], dshVersion: 'scripted-test-only', runtimeClosed: true, cleanupScope: 'sdk-runtime' };
 }
@@ -81,6 +81,15 @@ it('独立导出、反转重复顺序，模拟作答经真实验证，并保留�
     const presetDrift = structuredClone(report);
     presetDrift.rows[0]!.solver!.presetFingerprint = 'changed';
     expect(comparisonGroups(presetDrift).drift).toContain('DSH standard 预设内容发生变化');
+    const providerDefault = structuredClone(report);
+    providerDefault.settings.modes = ['off', 'default'];
+    for (const row of providerDefault.rows) if (row.mode === 'high') {
+      row.mode = 'default'; row.solver!.requestedModel.reasoningEffort = null;
+    }
+    expect(comparisonGroups(providerDefault).drift).toEqual([]);
+    expect(comparisonGroups(providerDefault).groups.find(group => group.mode === 'default')).toMatchObject({ functional: 50, planned: 2 });
+    expect(comparisonGroups(providerDefault).groups.find(group => group.mode === 'off')!.functional).toBeLessThan(50);
+    expect(renderComparison(providerDefault)).toContain('default 表示未向 DSH 指定思考等级');
   } finally { context.clean(); }
 }, 30_000);
 

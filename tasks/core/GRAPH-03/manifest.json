@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "GRAPH-03",
-  "taskVersion": "0.1.0",
+  "taskVersion": "0.2.0",
   "title": "深层 AST 遍历与栈安全",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -46,7 +46,14 @@
       "public/max-depth-honours-limit",
       "hidden/deep-chain-postorder-matches-differential",
       "hidden/deep-chain-preorder-order",
-      "hidden/max-depth-large-tree-limit"
+      "hidden/max-depth-large-tree-limit",
+      "public/rewrite-parent-observes-new-child",
+      "hidden/rewrite-unchanged-identity",
+      "hidden/rewrite-shared-child-and-parent-view",
+      "hidden/rewrite-input-view-is-frozen",
+      "hidden/rewrite-validates-before-callback-and-recovers",
+      "hidden/rewrite-deep-path-and-callback-errors",
+      "hidden/original-traversal-rejects-empty-type"
     ]
   },
   "limits": {
@@ -151,6 +158,62 @@
       "weight": 1,
       "critical": false,
       "summary": "空 children 与缺省 children 行为一致。"
+    },
+    {
+      "id": "public/rewrite-parent-observes-new-child",
+      "kind": "public",
+      "group": "behavior",
+      "summary": "后序转换的父节点消费新子节点",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/rewrite-unchanged-identity",
+      "kind": "hidden",
+      "group": "resources",
+      "summary": "无变化保留节点身份",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/rewrite-shared-child-and-parent-view",
+      "kind": "hidden",
+      "group": "state",
+      "summary": "共享子图只转换一次且结构复用",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/rewrite-input-view-is-frozen",
+      "kind": "hidden",
+      "group": "boundary",
+      "summary": "转换视图不可变",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/rewrite-validates-before-callback-and-recovers",
+      "kind": "hidden",
+      "group": "regression",
+      "summary": "全树验证先于回调与错误恢复",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/rewrite-deep-path-and-callback-errors",
+      "kind": "hidden",
+      "group": "resources",
+      "summary": "深层转换和异常停止",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/original-traversal-rejects-empty-type",
+      "kind": "hidden",
+      "group": "boundary",
+      "summary": "原遍历非空类型约束",
+      "weight": 1,
+      "critical": true
     }
   ]
 }

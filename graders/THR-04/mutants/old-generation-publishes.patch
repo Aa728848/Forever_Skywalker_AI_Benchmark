@@ -1,0 +1,13 @@
+diff --git a/starter/src/publisher.ts b/starter/src/publisher.ts
+index ba47e6f..d67ab5f 100644
+--- a/starter/src/publisher.ts
++++ b/starter/src/publisher.ts
+@@ -26,7 +26,7 @@ export class Publisher {
+     if(state.workers.size>0||(!state.stopped&&state.next<state.jobs.length))return;
+     this.#states.delete(state);state.signal?.removeEventListener('abort',state.abort!);
+     if(state.error!==undefined)state.reject(state.error);
+-    else if(state.stopped||state.generation!==this.#latest)state.resolve(false);
++    else if(false)state.resolve(false);
+     else{this.#snapshot={generation:state.generation,values:new Map(state.values)};state.resolve(true);}
+   }
+   #pump():void{

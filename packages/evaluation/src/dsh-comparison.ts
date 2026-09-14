@@ -127,6 +127,7 @@ export function renderComparison(report: DshComparisonReport): string {
     `实验：${report.id} · 状态：${report.state}`, '',
     `作答：${cell(report.settings.provider)} / ${cell(report.settings.model)} · DSH profile：${cell(report.settings.profile)}`,
     `每题 ${report.settings.repeats} 次；每次限时 ${report.settings.timeoutMs / 60_000} 分钟；每次模型请求输出上限 ${report.settings.maxTokens} Token（不是整题总预算）。`, '',
+    ...report.settings.modes.includes('default') ? ['default 表示未向 DSH 指定思考等级，沿用供应商/模型配置；不等同于 off，也不代表已测得实际思考深度。', ''] : [],
     '以下为所选题目的试评均分，核心题与来源集成题的分级汇总另存；缺测不补分。', '',
     '| 赛道 | DSH 预设 | 思考等级 | 完成/计划 | 已评分 | 验证通过 | 可用均分 /50 | 质量均分 /50 | 总均分 /100 |',
     '| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
@@ -173,7 +174,7 @@ export async function runDshComparison(options: DshComparisonOptions, services: 
   const evaluate = services.evaluate ?? (async (taskId, workspace, row) => {
     const envelope = createEnvelope(taskId, workspace, { idempotencyKey: row.sessionId, reason: 'agent-completed' });
     const outcome = await verifySubmission({ store, taskId, envelope, candidateDirectory: workspace,
-      submittedBy: `dsh:${options.model}:${row.preset}:${row.mode}:r${row.repetition}`, profile: 'linux-container',
+      submittedBy: `dsh:${options.provider}:${options.model}:${row.preset}:${row.mode}:r${row.repetition}`, profile: 'linux-container',
       image: options.image, imageDigest: options.imageDigest, qualityProvider,
       ...(services.signal ? { signal: services.signal } : {}) });
     const { runId, attemptId } = outcome.submission.attempt;

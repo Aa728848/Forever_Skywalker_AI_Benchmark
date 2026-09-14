@@ -1,0 +1,13 @@
+diff --git a/starter/src/cache.ts b/starter/src/cache.ts
+index e75e254..f377af5 100644
+--- a/starter/src/cache.ts
++++ b/starter/src/cache.ts
+@@ -63,7 +63,7 @@ export class VersionedCache {
+     for (;;) {
+       const versions = requested.map(key => this.version(key));
+       const values = await Promise.all(requested.map(key => this.get(key)));
+-      if (requested.every((key, index) => this.version(key) === versions[index])) return Object.freeze(values);
++      return Object.freeze(values);
+     }
+   }
+ }

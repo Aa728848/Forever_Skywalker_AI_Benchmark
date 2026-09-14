@@ -26,6 +26,8 @@ export function runCancelable<T>(work: (signal: AbortSignal) => Promise<T>, opti
 4. 无论成功、失败、取消还是超时，结算之后都不得留下存活的定时器（`TimerHandle.cancel()` 必须被调用）。
 5. Promise 只结算一次：结算之后再调用 `cancel()` 或触发超时都不得改变结果。
 
+注入的 Scheduler.after 先返回 TimerHandle，回调之后才可能触发；after 和 TimerHandle.cancel 本身不抛异常。本题不把调度器实现故障与被测异步工作的失败混为一类。
+
 ## 限制
 
 - 只改 `starter/`；不得引入第三方依赖、不得使用真实计时器（时间行为只通过注入的 `Scheduler`）；

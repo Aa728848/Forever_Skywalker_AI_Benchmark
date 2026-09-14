@@ -1,0 +1,13 @@
+diff --git a/starter/src/publisher.ts b/starter/src/publisher.ts
+index ba47e6f..fb73aa1 100644
+--- a/starter/src/publisher.ts
++++ b/starter/src/publisher.ts
+@@ -31,7 +31,7 @@ export class Publisher {
+   }
+   #pump():void{
+     for(const state of this.#states){
+-      while(!state.stopped&&state.next<state.jobs.length&&this.#active<this.#limit){
++      while(!state.stopped&&state.next<state.jobs.length&&state.workers.size<this.#limit){
+         const job=state.jobs[state.next++]!;let worker:Worker;
+         try{worker=new Worker(new URL('./worker.ts',import.meta.url),{workerData:job});}
+         catch(error){state.error=error;this.#stop(state);break;}

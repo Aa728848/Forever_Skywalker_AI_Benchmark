@@ -1,0 +1,13 @@
+diff --git a/starter/packages/api/session-controller/src/client/sessions/assistant-stream.ts b/starter/packages/api/session-controller/src/client/sessions/assistant-stream.ts
+index b29643e..ad738e6 100644
+--- a/starter/packages/api/session-controller/src/client/sessions/assistant-stream.ts
++++ b/starter/packages/api/session-controller/src/client/sessions/assistant-stream.ts
+@@ -17,7 +17,7 @@ import type {
+ /** Decode only the selected prefix of an already validated durable stream. */
+ function reconnectPrefix(stream: readonly AssistantStreamRecord[], limit: number): ReturnType<typeof expandAssistantStream> {
+   const selected: AssistantStreamRecord[] = []
+-  let remaining = limit
++  let remaining = Math.max(0, limit - 1)
+   for (let i = 0; remaining > 0 && i < stream.length; i += 1) {
+     const record = stream[i]!
+     if (record.type === 'chunk') { selected.push(record); remaining -= 1; continue }

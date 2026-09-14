@@ -3,6 +3,8 @@ export interface RefreshedTokens { readonly accessToken: string; readonly refres
 export type RefreshPort = (refreshToken: string) => Promise<RefreshedTokens>;
 export class SignedOutError extends Error { constructor() { super('已注销'); } }
 export class TokenSession {
+  close():Promise<void>{this.logout();return Promise.resolve();}
+  authorized<T>(id:string,work:(accessToken:string,signal:AbortSignal)=>Promise<T>):Promise<T>{void id;return this.refresh().then(tokens=>work(tokens.accessToken,new AbortController().signal));}
   #tokens: Tokens | null;
   #refreshPort: RefreshPort;
   constructor(tokens: Tokens, refreshPort: RefreshPort) { this.#tokens = { ...tokens }; this.#refreshPort = refreshPort; }

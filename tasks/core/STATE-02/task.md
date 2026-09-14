@@ -1,6 +1,6 @@
 # STATE-02 · 状态迁移与旧版本契约
 
-- 难度：中等；题型：独立核心题；能力域：持久化与故障恢复。运行时：TypeScript on Node.js 24。题目版本：0.1.0。
+- 难度：中等；题型：独立核心题；能力域：持久化与故障恢复。运行时：TypeScript on Node.js 24。题目版本：0.2.0。
 
 ## 背景
 
@@ -43,3 +43,9 @@ node --test --test-isolation=none --test-reporter=tap "public-tests/**/*.test.ts
 
 - 参考实现通过全部公开与未公开检查；缺陷起始版本只被声明的检出项判失败；替代实现同样通过。
 - 本阶段产出检查结论与可用验证分；代码质量评审接入前总分保持待定。
+
+## 0.2.0 成组快照的原子迁移
+
+保留 migrate，新增 starter/src/snapshot-batch.ts：SnapshotBatch，getter items 和 replace(input:readonly {key:string,value:unknown}[])，结果为readonly {key,value:Snapshot}[]。
+
+批次可以混合v1/v2。按输入顺序迁移，整批验证成功才替换确认列表；任一失败保持原列表。key非空白且批内唯一（原型名也是普通键）。错误为SnapshotBatchError，index/key标明第一个失败项，cause保留原迁移错误；键错误的cause为RangeError。返回的列表和嵌套Snapshot均为快照，修改输入或返回值不得污染确认状态。空批次清空列表，迁移已迁移结果应幂等。

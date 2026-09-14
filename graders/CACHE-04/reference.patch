@@ -1,25 +1,76 @@
+diff --git a/starter/src/file-storage.ts b/starter/src/file-storage.ts
+index 400abec..1920cd3 100644
+--- a/starter/src/file-storage.ts
++++ b/starter/src/file-storage.ts
+@@ -1,4 +1,4 @@
+-import {open,readFile,unlink} from 'node:fs/promises';
++import {open,readFile,rename,unlink} from 'node:fs/promises';
+ import type {Storage} from './persistent-cache.ts';
+ export type FileCheckpoint='temporary-written'|'before-rename';
+ export class AtomicFileStorage implements Storage {
+@@ -8,10 +8,10 @@ export class AtomicFileStorage implements Storage {
+  writeAtomic(text:string):Promise<void>{const pending=this.#tail.then(async()=>{
+   const temporary=this.#path+'.pending';
+   try{
+-   const handle=await open(this.#path,'w');
++   const handle=await open(temporary,'w');
+    try{await handle.writeFile(text,'utf8');this.#checkpoint?.('temporary-written');await handle.sync();}finally{await handle.close();}
+    this.#checkpoint?.('before-rename');
+-   // Published by the direct write above.
++   await rename(temporary,this.#path);
+   }finally{try{await unlink(temporary);}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}}
+  });this.#tail=pending.then(()=>{},()=>{});return pending;}
+ }
 diff --git a/starter/src/persistent-cache.ts b/starter/src/persistent-cache.ts
-index cc18843..d4aa098 100644
+index 0bd6eda..19fa44c 100644
 --- a/starter/src/persistent-cache.ts
 +++ b/starter/src/persistent-cache.ts
-@@ -5,9 +5,9 @@ export class PersistentCache {
-   readonly #storage: Storage; readonly #scope: Scope;
-   #entries=new Map<string,string>(); #loading: Promise<void> | undefined; #tail=Promise.resolve();
-   constructor(storage: Storage, scope: Scope) {this.#storage=storage;this.#scope={...scope};}
+@@ -1,28 +1,27 @@
+ export interface Storage { read(): Promise<string | null>; writeAtomic(text: string): Promise<void> }
+ export interface Scope { readonly workspace: string; readonly model: string; readonly rules: string }
+-
++function decode(text:string|null):Map<string,string> {
++  if(text===null)return new Map();
++  let data;try{data=JSON.parse(text);}catch(error){if(error instanceof SyntaxError)return new Map();throw error;}
++  return data?.schema===1&&Array.isArray(data.entries)&&data.entries.every((row:unknown)=>Array.isArray(row)&&row.length===2&&row.every(value=>typeof value==='string'))?new Map(data.entries):new Map();
++}
+ export class PersistentCache {
+-  readonly #storage: Storage; readonly #scope: Scope;
+-  #entries=new Map<string,string>(); #loading: Promise<void> | undefined; #tail=Promise.resolve();
+-  constructor(storage: Storage, scope: Scope) {this.#storage=storage;this.#scope={...scope};}
 -  #key(key: string): string {return JSON.stringify([this.#scope.workspace,key]);}
-+  #key(key: string): string {return JSON.stringify([this.#scope.workspace,this.#scope.model,this.#scope.rules,key]);}
-   #ready(): Promise<void> {
+-  #ready(): Promise<void> {
 -    // 缺陷：每个并发请求都重新加载文件，较晚的冷启动还会覆盖已确认数据。
-+    if(this.#loading)return this.#loading;
-     this.#loading=this.#storage.read().then(text=>{
-       if(text===null)return;
-       try {const parsed=JSON.parse(text);if(parsed?.schema!==1||!Array.isArray(parsed.entries)||!parsed.entries.every((row:unknown)=>Array.isArray(row)&&row.length===2&&row.every(x=>typeof x==='string')))throw new SyntaxError('corrupt cache');this.#entries=new Map(parsed.entries);}
-@@ -17,7 +17,7 @@ export class PersistentCache {
+-    this.#loading=this.#storage.read().then(text=>{
+-      if(text===null)return;
+-      try {const parsed=JSON.parse(text);if(parsed?.schema!==1||!Array.isArray(parsed.entries)||!parsed.entries.every((row:unknown)=>Array.isArray(row)&&row.length===2&&row.every(x=>typeof x==='string')))throw new SyntaxError('corrupt cache');this.#entries=new Map(parsed.entries);}
+-      catch(error){if(!(error instanceof SyntaxError))throw error;this.#entries=new Map();}
+-    }).catch(error=>{this.#loading=undefined;throw error;});
++  readonly #storage:Storage;readonly #scope:Scope;
++  #entries=new Map<string,string>();#loading:Promise<void>|undefined;#tail=Promise.resolve();
++  constructor(storage:Storage,scope:Scope){this.#storage=storage;this.#scope={...scope};}
++  #key(key:string):string{return JSON.stringify([this.#scope.workspace,this.#scope.model,this.#scope.rules,key]);}
++  #ready():Promise<void>{
++    if(!this.#loading)this.#loading=this.#storage.read().then(text=>{this.#entries=decode(text);}).catch(error=>{this.#loading=undefined;throw error;});
+     return this.#loading;
    }
-   async get(key: string): Promise<string | undefined> {await this.#ready();await this.#tail;return this.#entries.get(this.#key(key));}
-   set(key: string,value: string): Promise<void> {
+-  async get(key: string): Promise<string | undefined> {await this.#ready();await this.#tail;return this.#entries.get(this.#key(key));}
+-  set(key: string,value: string): Promise<void> {
 -    const operation=this.#tail.then(async()=>{await this.#ready();const next=new Map(this.#entries);next.set(this.#key(key),value);this.#entries=next;await this.#storage.writeAtomic(JSON.stringify({schema:1,entries:[...next]}));});
-+    const operation=this.#tail.then(async()=>{await this.#ready();const next=new Map(this.#entries);next.set(this.#key(key),value);await this.#storage.writeAtomic(JSON.stringify({schema:1,entries:[...next]}));this.#entries=next;});
-     this.#tail=operation.catch(()=>{});
-     return operation;
+-    this.#tail=operation.catch(()=>{});
+-    return operation;
++  #enqueue<T>(action:()=>Promise<T>):Promise<T>{const operation=this.#tail.then(action);this.#tail=operation.then(()=>{},()=>{});return operation;}
++  async get(key:string):Promise<string|undefined>{await this.#ready();await this.#tail;return this.#entries.get(this.#key(key));}
++  set(key:string,value:string):Promise<void>{return this.setMany([[key,value]]);}
++  setMany(entries:readonly (readonly [string,string])[]):Promise<void>{
++    const changes=entries.map(row=>[...row]);
++    if(changes.some(row=>row.length!==2||row.some(value=>typeof value!=='string'))||new Set(changes.map(row=>row[0])).size!==changes.length)return Promise.reject(new TypeError('invalid or duplicate entries'));
++    return this.#enqueue(async()=>{await this.#ready();if(changes.length===0)return;const next=new Map(this.#entries);for(const [key,value] of changes)next.set(this.#key(key!),value!);await this.#storage.writeAtomic(JSON.stringify({schema:1,entries:[...next]}));this.#entries=next;});
    }
+-
+-  async setMany(entries:readonly (readonly [string,string])[]):Promise<void>{for(const [key,value] of entries)await this.set(key,value);}
+-  async refresh():Promise<void>{const text=await this.#storage.read();this.#entries=text===null?new Map():new Map(JSON.parse(text).entries);}
+-  async snapshot(keys:readonly string[]):Promise<readonly {readonly key:string;readonly value:string|undefined}[]>{return Object.freeze(await Promise.all(keys.map(async key=>Object.freeze({key,value:await this.get(key)}))));}
++  refresh():Promise<void>{return this.#enqueue(async()=>{await this.#ready();const loaded=decode(await this.#storage.read());this.#entries=loaded;});}
++  snapshot(keys:readonly string[]):Promise<readonly {readonly key:string;readonly value:string|undefined}[]>{const requested=[...keys];return this.#enqueue(async()=>{await this.#ready();return Object.freeze(requested.map(key=>Object.freeze({key,value:this.#entries.get(this.#key(key))})));});}
+ }

@@ -1,0 +1,13 @@
+diff --git a/starter/src/host/oauth-service.ts b/starter/src/host/oauth-service.ts
+index 592eb7f..e5bd3b6 100644
+--- a/starter/src/host/oauth-service.ts
++++ b/starter/src/host/oauth-service.ts
+@@ -172,7 +172,7 @@ export class OAuthService {
+     if (this.activeLogin !== null) {
+       this.cancelActive(new OAuthServiceError('login-cancelled', 'ChatGPT sign-in was cancelled.'), 'cancelled')
+     }
+-    await this.mutateCredentials(() => this.store.clear()).catch(() => {
++    await this.store.clear().catch(() => {
+       throw new OAuthServiceError('storage-failed', 'Secure credentials could not be deleted.')
+     })
+     this.lastLoginError = undefined

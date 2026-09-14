@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "CACHE-03",
-  "taskVersion": "0.1.0",
+  "taskVersion": "0.2.0",
   "title": "失效期间的在途旧结果",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -45,7 +45,11 @@
       "hidden/discards-inflight-result-invalidated-before-settle",
       "hidden/second-invalidate-during-flight-keeps-latest-request",
       "public/discards-inflight-result-invalidated-before-settle",
-      "public/second-invalidate-during-flight-keeps-latest-request"
+      "public/second-invalidate-during-flight-keeps-latest-request",
+      "hidden/multikey-retries-invalidated-cut",
+      "hidden/rejected-current-generation-is-retryable",
+      "hidden/synchronous-source-error-is-a-rejection",
+      "hidden/new-success-survives-late-old-success"
     ]
   },
   "limits": {
@@ -134,6 +138,54 @@
       "weight": 1,
       "critical": false,
       "summary": "隐藏样本下的跨 key 独立。"
+    },
+    {
+      "id": "public/many-preserves-order-and-coalesces",
+      "kind": "public",
+      "group": "behavior",
+      "summary": "多键顺序、重复合并与冻结",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/multikey-retries-invalidated-cut",
+      "kind": "hidden",
+      "group": "state",
+      "summary": "多键读取期间失效重取一致视图",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/old-rejection-preserves-new-flight",
+      "kind": "hidden",
+      "group": "state",
+      "summary": "旧失败不能清理新在途",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/rejected-current-generation-is-retryable",
+      "kind": "hidden",
+      "group": "regression",
+      "summary": "当前代失败可显式重试",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/synchronous-source-error-is-a-rejection",
+      "kind": "hidden",
+      "group": "boundary",
+      "summary": "同步错误转换拒绝",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/new-success-survives-late-old-success",
+      "kind": "hidden",
+      "group": "state",
+      "summary": "旧成功晚到不能覆盖新值",
+      "weight": 1,
+      "critical": true
     }
   ]
 }

@@ -76,3 +76,60 @@ index 39d061c..6d25bf9 100644
 +  }
  }
  
+diff --git a/starter/src/shard-merge.ts b/starter/src/shard-merge.ts
+index 2449296..c4d904f 100644
+--- a/starter/src/shard-merge.ts
++++ b/starter/src/shard-merge.ts
+@@ -1,13 +1,44 @@
++import {createHash,randomUUID} from 'node:crypto';
++import {mkdirSync,readFileSync,writeFileSync,renameSync,existsSync,unlinkSync} from 'node:fs';
++import {join,dirname,resolve} from 'node:path';
+ export interface Shard {readonly id:string;readonly lines:readonly string[]}
+ export interface MergeSnapshot {readonly generation:number|null;readonly runId:string|null;readonly lines:readonly string[]}
+ export type FailurePoint='plan-written'|'shard-written'|'snapshot-written';
++interface Entry {id:string;lines:string[];hash:string}
++interface Plan {generation:number;runId:string;shards:Entry[]}
++const hash=(value:string)=>createHash('sha256').update(value).digest('hex');
++function read<T>(path:string):T{return JSON.parse(readFileSync(path,'utf8')) as T;}
++function writeAtomic(path:string,value:unknown):void{mkdirSync(dirname(path),{recursive:true});const temporary=path+'.'+randomUUID()+'.tmp';try{writeFileSync(temporary,JSON.stringify(value),{flag:'wx'});renameSync(temporary,path);}finally{if(existsSync(temporary))unlinkSync(temporary);}}
+ export class ShardMerge {
+- #plans=new Map<string,{generation:number;shards:readonly Shard[]}>();#visible:MergeSnapshot={generation:null,runId:null,lines:[]};
+- constructor(root:string,hook?:(point:FailurePoint)=>void){void root;void hook;}
+- prepare(generation:number,runId:string,shards:readonly Shard[]):void{this.#plans.set(runId,{generation,shards});}
+- completeShard(runId:string,shardId:string):void{void runId;void shardId;}
+- pending(runId:string):string[]{void runId;return [];}
+- publish(runId:string):boolean{const plan=this.#plans.get(runId);if(!plan)return false;this.#visible={generation:plan.generation,runId,lines:plan.shards.flatMap(shard=>[...shard.lines])};return true;}
+- resume(runId:string):boolean{return this.publish(runId);}
+- snapshot():MergeSnapshot{return this.#visible;}
++ #root:string;#hook:((point:FailurePoint)=>void)|undefined;
++ constructor(root:string,hook?:(point:FailurePoint)=>void){this.#root=resolve(root);this.#hook=hook;mkdirSync(this.#root,{recursive:true});}
++ #directory(runId:string):string{return join(this.#root,'runs',hash(runId));}
++ #plan(runId:string):Plan{const plan=read<Plan>(join(this.#directory(runId),'plan.json'));if(plan.runId!==runId)throw new Error('corrupt plan');return plan;}
++ #shard(runId:string,id:string):string{return join(this.#directory(runId),'shards',hash(id)+'.json');}
++ #load(runId:string,entry:Entry):string[]{const lines=read<string[]>(this.#shard(runId,entry.id));if(hash(JSON.stringify(lines))!==entry.hash)throw new Error('corrupt shard');return lines;}
++ prepare(generation:number,runId:string,shards:readonly Shard[]):void{
++  if(!Number.isSafeInteger(generation)||generation<0||!runId||shards.some(shard=>!shard.id)||new Set(shards.map(shard=>shard.id)).size!==shards.length)throw new RangeError('invalid plan');
++  const plan:Plan={generation,runId,shards:shards.map(shard=>({id:shard.id,lines:[...shard.lines],hash:hash(JSON.stringify(shard.lines))}))};
++  const location=join(this.#directory(runId),'plan.json'),headPath=join(this.#root,'head.json');
++  const existing=existsSync(location)?read<Plan>(location):undefined;
++  if(existing&&JSON.stringify(existing)!==JSON.stringify(plan))throw new Error('run content conflict');
++  const head=existsSync(headPath)?read<{generation:number;runId:string}>(headPath):undefined;
++  if(head&&head.generation>=generation){if(head.runId===runId||existing)return;throw new RangeError('generation must increase');}
++  if(!existing){writeAtomic(location,plan);this.#hook?.('plan-written');}
++  writeAtomic(headPath,{generation,runId});
++ }
++ completeShard(runId:string,shardId:string):void{
++  const plan=this.#plan(runId),entry=plan.shards.find(entry=>entry.id===shardId);if(!entry)throw new RangeError('unknown shard');
++  const location=this.#shard(runId,shardId);if(existsSync(location)){this.#load(runId,entry);return;}
++  writeAtomic(location,entry.lines);this.#hook?.('shard-written');
++ }
++ pending(runId:string):string[]{return this.#plan(runId).shards.filter(entry=>!existsSync(this.#shard(runId,entry.id))).map(entry=>entry.id);}
++ publish(runId:string):boolean{
++  const plan=this.#plan(runId),headPath=join(this.#root,'head.json');const head=existsSync(headPath)?read<{runId:string}>(headPath):undefined;
++  if(head?.runId!==runId)return false;
++  if(this.pending(runId).length>0)return false;
++  const lines=plan.shards.flatMap(entry=>this.#load(runId,entry));writeAtomic(join(this.#root,'visible.json'),{generation:plan.generation,runId,lines});this.#hook?.('snapshot-written');return true;
++ }
++ resume(runId:string):boolean{for(const shard of this.pending(runId))this.completeShard(runId,shard);return this.publish(runId);}
++ snapshot():MergeSnapshot{const file=join(this.#root,'visible.json');return existsSync(file)?read<MergeSnapshot>(file):{generation:null,runId:null,lines:[]};}
+ }

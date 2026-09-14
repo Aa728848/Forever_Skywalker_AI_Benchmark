@@ -1,0 +1,12 @@
+diff --git a/starter/upstream/packages/dsh-ssh/src/engine.ts b/starter/upstream/packages/dsh-ssh/src/engine.ts
+--- a/starter/upstream/packages/dsh-ssh/src/engine.ts
++++ b/starter/upstream/packages/dsh-ssh/src/engine.ts
+@@ -147,7 +147,7 @@
+    * connection — the next operation re-connects from the current config.
+    */
+   dropAlias(alias: string): void {
+-    stopAllTunnels(this, alias)
++    stopAllTunnels(this)
+     disposeRecord(this, alias)
+   }
+ 

@@ -1,0 +1,12 @@
+diff --git a/starter/src/async-plugins.ts b/starter/src/async-plugins.ts
+--- a/starter/src/async-plugins.ts
++++ b/starter/src/async-plugins.ts
+@@ -30,7 +30,7 @@
+     const closing=Promise.withResolvers<void>();this.#closing=closing.promise;
+     this.controller.abort();
+     void (async()=>{
+-      await this.done.catch(()=>undefined);
++      await Promise.resolve();
+       const errors:unknown[]=[];
+       while(this.#cleanups.length){try{await this.#cleanups.pop()!();}catch(error){errors.push(error);}}
+       if(errors.length)throw new AggregateError(errors,'资源清理失败');

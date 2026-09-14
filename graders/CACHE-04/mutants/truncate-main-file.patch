@@ -1,0 +1,17 @@
+diff --git a/starter/src/file-storage.ts b/starter/src/file-storage.ts
+index 1920cd3..cd0db75 100644
+--- a/starter/src/file-storage.ts
++++ b/starter/src/file-storage.ts
+@@ -8,10 +8,10 @@ export class AtomicFileStorage implements Storage {
+  writeAtomic(text:string):Promise<void>{const pending=this.#tail.then(async()=>{
+   const temporary=this.#path+'.pending';
+   try{
+-   const handle=await open(temporary,'w');
++   const handle=await open(this.#path,'w');
+    try{await handle.writeFile(text,'utf8');this.#checkpoint?.('temporary-written');await handle.sync();}finally{await handle.close();}
+    this.#checkpoint?.('before-rename');
+-   await rename(temporary,this.#path);
++   // Direct write already published.
+   }finally{try{await unlink(temporary);}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}}
+  });this.#tail=pending.then(()=>{},()=>{});return pending;}
+ }

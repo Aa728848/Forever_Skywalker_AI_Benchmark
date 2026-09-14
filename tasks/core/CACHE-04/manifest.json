@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "CACHE-04",
-  "taskVersion": "0.1.1",
+  "taskVersion": "0.2.0",
   "title": "并发冷启动、持久化和版本隔离",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -44,7 +44,13 @@
     "defectDetectors": [
       "public/cold-start-single-read",
       "public/domain-isolation",
-      "hidden/resource-real-file-restart"
+      "hidden/resource-real-file-restart",
+      "public/batch-is-one-atomic-write",
+      "hidden/failed-batch-does-not-publish-partial-state",
+      "hidden/batch-validation-and-call-time-copy",
+      "hidden/refresh-and-snapshot-keep-queue-cut",
+      "hidden/file-failure-preserves-confirmed-and-cleans",
+      "hidden/file-process-crash-boundaries"
     ]
   },
   "limits": {
@@ -101,6 +107,62 @@
       "weight": 1,
       "critical": true,
       "summary": "hidden/resource-real-file-restart"
+    },
+    {
+      "id": "public/batch-is-one-atomic-write",
+      "kind": "public",
+      "group": "behavior",
+      "summary": "多键批次单次原子提交",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/failed-batch-does-not-publish-partial-state",
+      "kind": "hidden",
+      "group": "state",
+      "summary": "失败批次不发布部分内存",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/batch-validation-and-call-time-copy",
+      "kind": "hidden",
+      "group": "boundary",
+      "summary": "重复键拒绝及调用时副本",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/refresh-and-snapshot-keep-queue-cut",
+      "kind": "hidden",
+      "group": "state",
+      "summary": "刷新与快照保持队列切面",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/refresh-error-preserves-memory-and-queue",
+      "kind": "hidden",
+      "group": "regression",
+      "summary": "刷新IO失败保留确认态",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/file-failure-preserves-confirmed-and-cleans",
+      "kind": "hidden",
+      "group": "resources",
+      "summary": "真实文件失败不截断且无临时残留",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/file-process-crash-boundaries",
+      "kind": "hidden",
+      "group": "regression",
+      "summary": "真实进程在持久屏障中断恢复",
+      "weight": 1,
+      "critical": true
     }
   ]
 }

@@ -1,26 +1,54 @@
 diff --git a/starter/packages/api/session-controller/src/client/sessions/assistant-stream.ts b/starter/packages/api/session-controller/src/client/sessions/assistant-stream.ts
-index 1e7e669..2cffbb7 100644
+index 1e7e669..b29643e 100644
 --- a/starter/packages/api/session-controller/src/client/sessions/assistant-stream.ts
 +++ b/starter/packages/api/session-controller/src/client/sessions/assistant-stream.ts
-@@ -72,7 +72,7 @@ export class ClientAssistantStream {
+@@ -14,6 +14,24 @@ import type {
+   SessionTransientEventEntry,
+ } from '../contract/events.ts'
+ 
++/** Decode only the selected prefix of an already validated durable stream. */
++function reconnectPrefix(stream: readonly AssistantStreamRecord[], limit: number): ReturnType<typeof expandAssistantStream> {
++  const selected: AssistantStreamRecord[] = []
++  let remaining = limit
++  for (let i = 0; remaining > 0 && i < stream.length; i += 1) {
++    const record = stream[i]!
++    if (record.type === 'chunk') { selected.push(record); remaining -= 1; continue }
++    const members = record.type === 'tool-call-chunks' ? record.args : record.texts
++    const count = Math.min(remaining, members.length)
++    const dt = record.dt.slice(0, count - 1)
++    selected.push(record.type === 'tool-call-chunks'
++      ? { ...record, dt, args: record.args.slice(0, count) }
++      : { ...record, dt, texts: record.texts.slice(0, count) })
++    remaining -= count
++  }
++  return expandAssistantStream(selected)
++}
++
+ interface ActiveAttempt {
+   readonly attemptId: LlmAttemptId
+   readonly startedAfterSeq: number
+@@ -70,9 +88,9 @@ export class ClientAssistantStream {
+     this.publishedSeqs = new Set(visible.map(entry => entry.event.seq))
+     this.durableCursor = visible.reduce((cursor, entry) => Math.max(cursor, entry.event.seq), -1)
      if (opening !== undefined) {
-       for (const [index, member] of expandAssistantStream(
-         opening.stream as unknown as readonly AssistantStreamRecord[],
+-      for (const [index, member] of expandAssistantStream(
+-        opening.stream as unknown as readonly AssistantStreamRecord[],
 -      ).entries()) {
-+      ).slice(0, opening.nextIndex).entries()) {
++      for (const member of reconnectPrefix(
++        opening.stream as unknown as readonly AssistantStreamRecord[], opening.nextIndex,
++      )) {
          this.transientInGap += 1
          visible.push({
            type: 'transient',
-@@ -88,7 +88,7 @@ export class ClientAssistantStream {
+@@ -88,7 +106,6 @@ export class ClientAssistantStream {
              },
            },
          })
 -        void index
-+        if (index + 1 >= opening.nextIndex) break
        }
      }
      return visible
-@@ -136,6 +136,7 @@ export class ClientAssistantStream {
+@@ -136,6 +153,7 @@ export class ClientAssistantStream {
          // frame to reconstruct. Its durable settlement publishes directly;
          // ignore the transient suffix until the next known start.
          if (attempt === undefined || attempt.attemptId !== frame.attemptId) return undefined

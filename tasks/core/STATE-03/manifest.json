@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "STATE-03",
-  "taskVersion": "0.1.0",
+  "taskVersion": "0.2.0",
   "title": "检查点恢复和不可重复入账",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -47,7 +47,14 @@
       "hidden/replays-entries-appended-by-others",
       "public/crash-recovery-replays-journal-once",
       "public/recover-does-not-double-count",
-      "public/replays-entries-appended-by-others"
+      "public/replays-entries-appended-by-others",
+      "public/transaction-identity-preserves-original-receipt",
+      "public/acknowledgement-loss-reconciles-persisted-transaction",
+      "public/recovery-publishes-only-completely-valid-snapshot",
+      "hidden/safe-integer-transaction-validates-before-write",
+      "hidden/confirmed-prefix-is-append-only",
+      "hidden/process-exit-after-journal-append-is-idempotent",
+      "hidden/seeded-replay-matches-independent-balance"
     ]
   },
   "limits": {
@@ -136,6 +143,70 @@
       "weight": 1,
       "critical": false,
       "summary": "隐藏样本下的非法条目。"
+    },
+    {
+      "id": "public/transaction-identity-preserves-original-receipt",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 2,
+      "critical": true,
+      "summary": "跨后续交易重试返回原回执，同键不同金额不能被静默复用。"
+    },
+    {
+      "id": "public/acknowledgement-loss-reconciles-persisted-transaction",
+      "kind": "public",
+      "group": "state",
+      "weight": 2,
+      "critical": true,
+      "summary": "append持久化后抛错，重新读取事实确认该事务而不重复入账。"
+    },
+    {
+      "id": "public/recovery-publishes-only-completely-valid-snapshot",
+      "kind": "public",
+      "group": "state",
+      "weight": 2,
+      "critical": true,
+      "summary": "恢复遇到坏尾记录时余额、checkpoint与去重信息都不得部分推进。"
+    },
+    {
+      "id": "hidden/safe-integer-transaction-validates-before-write",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 2,
+      "critical": true,
+      "summary": "无效金额、累计溢出和空白键在任何写入之前拒绝。"
+    },
+    {
+      "id": "hidden/confirmed-prefix-is-append-only",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 2,
+      "critical": true,
+      "summary": "已确认日志前缀被改写或截断必须拒绝，保留最后确认快照。"
+    },
+    {
+      "id": "hidden/journal-rejection-without-write-retains-error-and-state",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 2,
+      "critical": false,
+      "summary": "写入前失败不泄漏内存账务状态，下一次请求仍可成功。"
+    },
+    {
+      "id": "hidden/process-exit-after-journal-append-is-idempotent",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 2,
+      "critical": true,
+      "summary": "真实子进程追加落盘后退出，重启恢复并重试只存在一条交易。"
+    },
+    {
+      "id": "hidden/seeded-replay-matches-independent-balance",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 2,
+      "critical": true,
+      "summary": "保留种子交易序列随机重启与重复恢复，独立整数oracle核对。"
     }
   ]
 }

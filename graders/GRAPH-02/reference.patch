@@ -1,8 +1,8 @@
 diff --git a/starter/src/graph.ts b/starter/src/graph.ts
-index d614ff1..671d38f 100644
+index b2cff4b..e750d49 100644
 --- a/starter/src/graph.ts
 +++ b/starter/src/graph.ts
-@@ -48,6 +48,12 @@ function findCycle(nodes: readonly string[], successors: Map<string, string[]>):
+@@ -48,8 +48,14 @@ function findCycle(nodes: readonly string[], successors: Map<string, string[]>):
    return [];
  }
  
@@ -13,8 +13,11 @@ index d614ff1..671d38f 100644
 +}
 +
  export function topologicalOrder(nodes: readonly string[], edges: readonly Edge[]): readonly string[] {
-   const unique = [...new Set(nodes)];
+-  const unique = [...new Set(nodes)];
++  const unique = [...new Set(nodes)].sort();
    const successors = new Map<string, string[]>();
+   const inDegree = new Map<string, number>();
+   for (const node of unique) {
 @@ -59,12 +65,14 @@ export function topologicalOrder(nodes: readonly string[], edges: readonly Edge[
    for (const edge of edges) {
      if (!successors.has(edge.from)) throw new UnknownNodeError(edge.from);

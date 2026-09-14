@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "LIFE-03",
-  "taskVersion": "0.1.0",
+  "taskVersion": "0.2.0",
   "title": "启动、停止和重启竞争",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -45,7 +45,12 @@
       "hidden/start-during-stop-waits-and-uses-fresh-signal",
       "hidden/stop-then-start-restarts-cleanly",
       "public/start-during-stop-waits-and-uses-fresh-signal",
-      "public/stop-then-start-restarts-cleanly"
+      "public/stop-then-start-restarts-cleanly",
+      "public/natural-completion-releases-generation",
+      "public/synchronous-runner-failure-is-retryable",
+      "hidden/concurrent-restarts-join-one-stopping-generation",
+      "hidden/async-runner-rejection-releases-resources",
+      "hidden/seeded-natural-and-controlled-stops-remain-independent"
     ]
   },
   "limits": {
@@ -134,6 +139,46 @@
       "weight": 1,
       "critical": false,
       "summary": "隐藏样本下的停止后重启。"
+    },
+    {
+      "id": "public/natural-completion-releases-generation",
+      "kind": "public",
+      "group": "state",
+      "weight": 2,
+      "critical": true,
+      "summary": "runner自然结束回到idle，后续启动使用独立未中止signal。"
+    },
+    {
+      "id": "public/synchronous-runner-failure-is-retryable",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 2,
+      "critical": true,
+      "summary": "同步启动异常以原错误拒绝并释放启动状态。"
+    },
+    {
+      "id": "hidden/concurrent-restarts-join-one-stopping-generation",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 2,
+      "critical": true,
+      "summary": "停止屏障未完成时多个start等待且合并为一次新启动。"
+    },
+    {
+      "id": "hidden/async-runner-rejection-releases-resources",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 2,
+      "critical": true,
+      "summary": "后台运行拒绝后结束生命周期，不保留已死运行实例阻塞重启。"
+    },
+    {
+      "id": "hidden/seeded-natural-and-controlled-stops-remain-independent",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 2,
+      "critical": true,
+      "summary": "混合自然退出与控制停止的固定序列验证代际不会复用。"
     }
   ]
 }

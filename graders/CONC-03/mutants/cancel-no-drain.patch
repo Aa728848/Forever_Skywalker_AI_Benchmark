@@ -1,0 +1,12 @@
+diff --git a/starter/src/locks.ts b/starter/src/locks.ts
+index 7c90195..13933d5 100644
+--- a/starter/src/locks.ts
++++ b/starter/src/locks.ts
+@@ -16,7 +16,6 @@ export class LockManager {
+         this.#queue.splice(index, 1);
+         signal?.removeEventListener('abort', entry.abort!);
+         reject(signal?.reason);
+-        this.#pump();
+       };
+       this.#queue.push(entry);
+       signal?.addEventListener('abort', entry.abort, { once: true });

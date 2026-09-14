@@ -1,0 +1,15 @@
+diff --git a/starter/Pipeline.fs b/starter/Pipeline.fs
+index f0e64d5..a96f5c1 100644
+--- a/starter/Pipeline.fs
++++ b/starter/Pipeline.fs
+@@ -84,9 +84,8 @@ type Pipeline(onPublished: string -> unit) =
+                 symbols <- Map.add plan.Path plan.Symbols symbols
+                 diagnostics <- Map.add plan.Path plan.Errors diagnostics
+                 plan.Admission |> Option.iter (fun admission -> tracker.Complete(true, admission))
++            if current then onPublished plan.Path
+             current)
+-        if published then
+-            timings.Measure { Phase = FollowupOutsideLock; Kind = ExpensiveCallback; Run = fun () -> onPublished plan.Path }
+         published
+ 
+     member _.Text(path: string) = documents.GetTextByPath(path)

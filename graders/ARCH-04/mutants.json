@@ -1,0 +1,26 @@
+[
+  {
+    "id": "stale-activation",
+    "description": "只对关闭做检查，较早setup晚到可覆盖最新插件。",
+    "patch": "graders/ARCH-04/mutants/stale-activation.patch",
+    "expectedFailures": [
+      "public/latest-intent-fences-out-of-order-setup"
+    ]
+  },
+  {
+    "id": "fifo-cleanup",
+    "description": "已实现等待与异常收集，但以登记正序释放相互依赖资源。",
+    "patch": "graders/ARCH-04/mutants/fifo-cleanup.patch",
+    "expectedFailures": [
+      "public/cleanup-lifo-continues-after-failure"
+    ]
+  },
+  {
+    "id": "close-before-setup",
+    "description": "关闭仅清理当前已登记项，跳过尚在获取资源的setup。",
+    "patch": "graders/ARCH-04/mutants/close-before-setup.patch",
+    "expectedFailures": [
+      "hidden/reentrant-dispose-joins-unpublished-setup"
+    ]
+  }
+]

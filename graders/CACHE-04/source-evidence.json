@@ -1,0 +1,14 @@
+{
+  "source": "deepseek-harness",
+  "commit": "2377c272a8e839e0a84c9f0e623b867a1dce2014",
+  "files": [
+    "packages/session/session-projection-cache/src/index.ts",
+    "packages/session/session-projection-cache/src/spec.ts"
+  ],
+  "observedMechanisms": [
+    "durability first then memory",
+    "domain write chain",
+    "complete checkpoint cut and lifecycle identity"
+  ],
+  "adaptation": "独立缩编题；真实文件屏障和批量/刷新接口为基于这些不变量设计的故障复现，不是复制上游缺陷。"
+}

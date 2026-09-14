@@ -1,8 +1,32 @@
+diff --git a/starter/src/provider-registry.ts b/starter/src/provider-registry.ts
+--- a/starter/src/provider-registry.ts
++++ b/starter/src/provider-registry.ts
+@@ -1,9 +1,16 @@
+-import type {Provider} from './providers.ts';
++import {resolveProviders,type Provider} from './providers.ts';
+ export interface LoadableProvider extends Provider {load():Promise<unknown>}
+ 
+ export class ProviderRegistry {
+-  #catalog:readonly LoadableProvider[];
+-  constructor(catalog:readonly LoadableProvider[]){this.#catalog=catalog;}
+-  list(_runtime:'browser'|'node'):readonly Provider[]{return this.#catalog;}
+-  load(id:string,_runtime:'browser'|'node'):Promise<unknown>{return this.#catalog.find(item=>item.id===id)!.load();}
++  readonly #catalog:readonly LoadableProvider[];readonly #loading=new Map<string,Promise<unknown>>();
++  constructor(catalog:readonly LoadableProvider[]){resolveProviders(catalog,'node');this.#catalog=[...catalog];}
++  list(runtime:'browser'|'node'):readonly Provider[]{return resolveProviders(this.#catalog,runtime).usable.map(({id,runtime,label})=>({id,runtime,label}));}
++  load(id:string,runtime:'browser'|'node'):Promise<unknown>{
++    const provider=this.#catalog.find(item=>item.id===id);
++    if(!provider||(provider.runtime!=='shared'&&provider.runtime!==runtime))return Promise.reject(new RangeError('provider unavailable'));
++    let pending=this.#loading.get(id);if(pending)return pending;
++    pending=Promise.resolve().then(()=>provider.load());this.#loading.set(id,pending);
++    void pending.catch(()=>{if(this.#loading.get(id)===pending)this.#loading.delete(id);});
++    return pending;
++  }
+ }
 diff --git a/starter/src/providers.ts b/starter/src/providers.ts
-index 5dc6481..a27049c 100644
 --- a/starter/src/providers.ts
 +++ b/starter/src/providers.ts
-@@ -41,16 +41,12 @@ function assertCatalog(catalog: readonly Provider[]): void {
+@@ -41,16 +41,12 @@
    }
  }
  

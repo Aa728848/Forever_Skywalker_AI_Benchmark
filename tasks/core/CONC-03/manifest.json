@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "CONC-03",
-  "taskVersion": "0.1.0",
+  "taskVersion": "0.2.0",
   "title": "多资源锁顺序和饥饿控制",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -45,7 +45,11 @@
       "hidden/first-come-first-served",
       "hidden/newcomers-cannot-jump-the-queue",
       "public/first-come-first-served",
-      "public/newcomers-cannot-jump-the-queue"
+      "public/newcomers-cannot-jump-the-queue",
+      "public/atomic-bundle-and-disjoint-progress",
+      "public/cancel-unblocks-overlap",
+      "hidden/conflict-transitivity-and-disjoint-bypass",
+      "hidden/preaborted-and-empty-request"
     ]
   },
   "limits": {
@@ -134,6 +138,46 @@
       "weight": 1,
       "critical": false,
       "summary": "隐藏样本下的资源独立。"
+    },
+    {
+      "id": "public/atomic-bundle-and-disjoint-progress",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "多资源整体交接，互不冲突资源继续前进。"
+    },
+    {
+      "id": "public/cancel-unblocks-overlap",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "取消等待请求同步释放排队约束。"
+    },
+    {
+      "id": "hidden/conflict-transitivity-and-disjoint-bypass",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": true,
+      "summary": "冲突传递公平与无关请求无队首阻塞。"
+    },
+    {
+      "id": "hidden/granted-abort-and-idempotent-bundle-release",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": true,
+      "summary": "授予后取消无效，重复释放不释放下一位。"
+    },
+    {
+      "id": "hidden/preaborted-and-empty-request",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "预取消不占资源，空集合与重复资源合法。"
     }
   ]
 }

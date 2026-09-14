@@ -1,0 +1,26 @@
+[
+  {
+    "id": "identity-by-id",
+    "description": "只比较本地序号，接受另一协调器同号请求。",
+    "patch": "graders/LSP-03/mutants/identity-by-id.patch",
+    "expectedFailures": [
+      "hidden/foreign-request-identity"
+    ]
+  },
+  {
+    "id": "close-after-notify",
+    "description": "关闭在调用用户取消通知前尚未移除旧版本。",
+    "patch": "graders/LSP-03/mutants/close-after-notify.patch",
+    "expectedFailures": [
+      "hidden/reentrant-close-and-reopen"
+    ]
+  },
+  {
+    "id": "callback-under-gate",
+    "description": "已先登记状态，但取消回调仍持内部锁。",
+    "patch": "graders/LSP-03/mutants/callback-under-gate.patch",
+    "expectedFailures": [
+      "hidden/cancellation-callback-lock-boundary"
+    ]
+  }
+]

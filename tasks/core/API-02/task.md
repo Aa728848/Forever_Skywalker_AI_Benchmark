@@ -1,6 +1,6 @@
 # API-02 · 分页与幂等写入
 
-- 难度：中等；题型：独立核心题；能力域：后端与服务协议。运行时：TypeScript on Node.js 24。题目版本：0.1.1。
+- 难度：中等；题型：独立核心题；能力域：后端与服务协议。运行时：TypeScript on Node.js 24。题目版本：0.2.0。
 
 ## 背景
 
@@ -56,3 +56,5 @@ node --test --test-isolation=none --test-reporter=tap "public-tests/**/*.test.ts
 
 - 参考实现通过全部公开与未公开检查；缺陷起始版本只被声明的检出项判失败；替代实现同样通过。
 - 本阶段产出检查结论与可用验证分；代码质量评审接入前总分保持待定。
+
+编码和解码的偏移均须为非负安全整数（不超过 Number.MAX_SAFE_INTEGER），非法 encodeCursor 同样抛 PageError，field 为 cursor。游标本身必须是无填充、无空白的规范 base64url 字节表示，不能只校验解码后的文本。

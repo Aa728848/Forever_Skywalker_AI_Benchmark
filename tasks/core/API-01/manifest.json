@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "API-01",
-  "taskVersion": "0.1.0",
+  "taskVersion": "0.2.0",
   "title": "请求校验与错误契约",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -51,7 +51,9 @@
       "hidden/quantity-range-boundaries",
       "hidden/rejects-numeric-strings",
       "hidden/rejects-unknown-fields",
-      "hidden/returns-frozen-copy"
+      "hidden/returns-frozen-copy",
+      "hidden/plain-object-boundary",
+      "hidden/independent-combinations-and-stable-order"
     ]
   },
   "limits": {
@@ -188,6 +190,22 @@
       "weight": 1,
       "critical": false,
       "summary": "隐藏样本下的副本语义。"
+    },
+    {
+      "id": "hidden/plain-object-boundary",
+      "kind": "hidden",
+      "group": "boundary",
+      "summary": "普通对象和继承字段隔离",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/independent-combinations-and-stable-order",
+      "kind": "hidden",
+      "group": "behavior",
+      "summary": "独立组合验证全部错误与稳定顺序",
+      "weight": 1,
+      "critical": true
     }
   ]
 }

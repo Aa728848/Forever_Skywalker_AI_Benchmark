@@ -1,8 +1,7 @@
 diff --git a/starter/src/ledger.ts b/starter/src/ledger.ts
-index 10be087..82abe66 100644
 --- a/starter/src/ledger.ts
 +++ b/starter/src/ledger.ts
-@@ -47,10 +47,10 @@ export class CheckpointStore {
+@@ -47,10 +47,10 @@
  
    recover(): number {
      const entries = this.#journal.read();
@@ -17,3 +16,50 @@ index 10be087..82abe66 100644
      }
      return this.#balance;
    }
+diff --git a/starter/src/transactional-ledger.ts b/starter/src/transactional-ledger.ts
+--- a/starter/src/transactional-ledger.ts
++++ b/starter/src/transactional-ledger.ts
+@@ -4,11 +4,39 @@
+ export class JournalCorruptError extends Error { constructor(){super('日志结构或已确认前缀损坏');} }
+ interface Record {version:1;id:string;amounts:number[]}
+ 
++function validate(id:string,amounts:readonly number[]):void{
++  if(typeof id!=='string'||!id.trim()||!Array.isArray(amounts)||amounts.some(value=>!Number.isSafeInteger(value)))throw new RangeError('transaction');
++}
++function decode(raw:string):Record{
++  try {const record=JSON.parse(raw) as Record;validate(record.id,record.amounts);if(record.version!==1)throw new Error('version');return record;}
++  catch{throw new JournalCorruptError();}
++}
+ export class TransactionalLedger {
+-  #journal:Journal;#balance=0;#checkpoint=0;
++  readonly #journal:Journal;
++  #balance=0;
++  #confirmed:string[]=[];
++  #transactions=new Map<string,{record:Record;receipt:Receipt}>();
+   constructor(journal:Journal){this.#journal=journal;this.recover();}
+   get balance():number{return this.#balance;}
+-  get checkpoint():number{return this.#checkpoint;}
+-  recover():number{for(const line of this.#journal.read()){const row=JSON.parse(line) as Record;for(const amount of row.amounts)this.#balance+=amount;this.#checkpoint++;}return this.#balance;}
+-  commit(id:string,amounts:readonly number[]):Receipt{this.#journal.append(JSON.stringify({version:1,id,amounts}));for(const amount of amounts)this.#balance+=amount;this.#checkpoint++;return {id,balance:this.#balance,checkpoint:this.#checkpoint};}
++  get checkpoint():number{return this.#confirmed.length;}
++  recover():number{
++    const raw=[...this.#journal.read()];
++    if(raw.length<this.#confirmed.length||this.#confirmed.some((entry,index)=>entry!==raw[index]))throw new JournalCorruptError();
++    let balance=0;const transactions=new Map<string,{record:Record;receipt:Receipt}>();
++    for(const [index,line] of raw.entries()){
++      const record=decode(line);if(transactions.has(record.id))throw new JournalCorruptError();
++      for(const amount of record.amounts){balance+=amount;if(!Number.isSafeInteger(balance))throw new JournalCorruptError();}
++      transactions.set(record.id,{record,receipt:{id:record.id,balance,checkpoint:index+1}});
++    }
++    this.#balance=balance;this.#confirmed=raw;this.#transactions=transactions;return balance;
++  }
++  commit(id:string,amounts:readonly number[]):Receipt{
++    validate(id,amounts);this.recover();const previous=this.#transactions.get(id);
++    if(previous){if(JSON.stringify(previous.record.amounts)!==JSON.stringify(amounts))throw new TransactionConflictError();return {...previous.receipt};}
++    let next=this.#balance;for(const amount of amounts){next+=amount;if(!Number.isSafeInteger(next))throw new RangeError('balance');}
++    const record:Record={version:1,id,amounts:[...amounts]};
++    try{this.#journal.append(JSON.stringify(record));}
++    catch(error){this.recover();const persisted=this.#transactions.get(id);if(!persisted)throw error;return {...persisted.receipt};}
++    this.recover();return {...this.#transactions.get(id)!.receipt};
++  }
+ }

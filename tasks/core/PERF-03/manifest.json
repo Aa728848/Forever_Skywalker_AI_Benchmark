@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "PERF-03",
-  "taskVersion": "0.1.1",
+  "taskVersion": "0.2.0",
   "title": "图统计和索引的规模增长控制",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -44,7 +44,12 @@
     "defectDetectors": [
       "public/resource-linear-sparse",
       "hidden/resource-dense-budget",
-      "hidden/resource-paired-scaling"
+      "hidden/resource-paired-scaling",
+      "public/incremental-replacement-removes-old-edge",
+      "hidden/index-missing-target-delete-and-recreate",
+      "hidden/index-failed-batch-keeps-generation-and-state",
+      "hidden/index-seeded-differential-and-snapshot-isolation",
+      "hidden/index-local-edits-do-not-read-unrelated-sources"
     ]
   },
   "limits": {
@@ -107,6 +112,46 @@
       "kind": "hidden",
       "group": "state",
       "summary": "同一图对象在边变化和错误后重新计算，不复用过期索引。",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "public/incremental-replacement-removes-old-edge",
+      "kind": "public",
+      "group": "behavior",
+      "summary": "修改依赖移除旧入边",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/index-missing-target-delete-and-recreate",
+      "kind": "hidden",
+      "group": "state",
+      "summary": "未解析依赖与删除重建",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/index-failed-batch-keeps-generation-and-state",
+      "kind": "hidden",
+      "group": "boundary",
+      "summary": "失败事务保留完整图与代际",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/index-seeded-differential-and-snapshot-isolation",
+      "kind": "hidden",
+      "group": "regression",
+      "summary": "持续编辑独立oracle与快照隔离",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/index-local-edits-do-not-read-unrelated-sources",
+      "kind": "hidden",
+      "group": "resources",
+      "summary": "局部修改受信源读取计数",
       "weight": 1,
       "critical": true
     }

@@ -1,0 +1,35 @@
+[
+  {
+    "id": "publish-before-persistence",
+    "description": "持久确认前发布投影和游标",
+    "patch": "graders/PERF-04/mutants/publish-before-persistence.patch",
+    "expectedFailures": [
+      "public/projection-persist-failure-is-not-visible",
+      "hidden/projection-isolation-until-persist-ack"
+    ]
+  },
+  {
+    "id": "accept-stale-preparation",
+    "description": "遗漏当前代际检查导致较早准备覆盖新切面",
+    "patch": "graders/PERF-04/mutants/accept-stale-preparation.patch",
+    "expectedFailures": [
+      "hidden/projection-rejects-stale-and-forged-tickets"
+    ]
+  },
+  {
+    "id": "checkpoint-from-other-log",
+    "description": "忽略检查点绑定日志身份",
+    "patch": "graders/PERF-04/mutants/checkpoint-from-other-log.patch",
+    "expectedFailures": [
+      "hidden/projection-checkpoint-log-identity-and-aliases"
+    ]
+  },
+  {
+    "id": "consume-before-persistence",
+    "description": "启动持久任务后立即拉取下一批，破坏背压并缓存全部任务",
+    "patch": "graders/PERF-04/mutants/consume-before-persistence.patch",
+    "expectedFailures": [
+      "hidden/projection-backpressure-and-iterator-close"
+    ]
+  }
+]

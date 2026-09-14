@@ -1,0 +1,12 @@
+diff --git a/starter/upstream/src/engine.ts b/starter/upstream/src/engine.ts
+--- a/starter/upstream/src/engine.ts
++++ b/starter/upstream/src/engine.ts
+@@ -399,7 +399,7 @@
+     const dedupeKey = stableHash(identity)
+     const outcome = await this.flights.run(dedupeKey, async () => cache.getOrCreate(keyForMode(await predictScoringChannel(client)), create, value => keyForMode(value.scoringMode)))
+     const landed = outcome.value
+-    const reused = outcome.joined || landed.hit
++    const reused = landed.hit
+     // Findings ride along with the cache entry: the key is the rendered prompt, so they describe the
+     // very evidence that produced this score. An entry written before P04 simply has none.
+     return { scores: [landed.value.scoreA, landed.value.scoreB], usage: reused ? emptyUsage() : landed.value.usage, scoringMode: landed.value.scoringMode, hit: reused, channelFallback: reused ? false : fellBack, diagnostics: landed.value.diagnostics ?? [] }

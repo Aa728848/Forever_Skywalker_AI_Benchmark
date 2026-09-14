@@ -1,26 +1,25 @@
 import {Worker} from 'node:worker_threads';
-export interface Job { readonly id:string; readonly value:number; readonly gate?:SharedArrayBuffer; readonly crash?:boolean }
-export interface Snapshot { readonly generation:number|null; readonly values:ReadonlyMap<string,number> }
-
+export interface Job {readonly id:string;readonly value:number;readonly gate?:SharedArrayBuffer;readonly crash?:boolean}
+export interface Snapshot {readonly generation:number|null;readonly values:ReadonlyMap<string,number>}
+interface Run {generation:number;jobs:Job[];stopped:boolean;workers:Set<Worker>;promise:Promise<boolean>;stop():void}
 export class Publisher {
-  #latest=-1; #ticket:object={}; #visible:Snapshot={generation:null,values:new Map()};
-  snapshot():Snapshot{return {...this.#visible,values:new Map(this.#visible.values)};}
-  async build(generation:number,jobs:readonly Job[],signal?:AbortSignal):Promise<boolean>{
-    if(!Number.isSafeInteger(generation)||generation<=this.#latest)throw new RangeError('generation must increase');
-    if(new Set(jobs.map(job=>job.id)).size!==jobs.length)throw new RangeError('duplicate job');
-    if(signal?.aborted)return false;
-    this.#latest=generation;const ticket={};this.#ticket=ticket;const workers:Worker[]=[];
-    const stop=()=>{for(const worker of workers)void worker.terminate();};signal?.addEventListener('abort',stop,{once:true});
-    const result=await Promise.allSettled(jobs.map(job=>new Promise<[string,number]>((resolve,reject)=>{
-      const worker=new Worker(new URL('./worker.ts',import.meta.url),{workerData:job});workers.push(worker);let message:number|undefined;let failure:Error|undefined;
-      worker.on('message',(value:number)=>{message=value;});worker.on('error',(error:Error)=>{failure=error;stop();});
-      worker.on('exit',code=>{if(code===0&&message!==undefined)resolve([job.id,message]);else{reject(failure??new Error('worker interrupted'));stop();}});
-    })));
-    signal?.removeEventListener('abort',stop);
-    await Promise.all(workers.map(worker=>worker.terminate()));
-    if(signal?.aborted)return false;
-    const failure=result.find(item=>item.status==='rejected');if(failure?.status==='rejected')throw failure.reason;
-    if(this.#ticket!==ticket)return false;
-    this.#visible={generation,values:new Map(result.map(item=>(item as PromiseFulfilledResult<[string,number]>).value))};return true;
-  }
+ private latest=-1;private visible:Snapshot={generation:null,values:new Map()};private runs=new Set<Run>();private tail:Promise<unknown>=Promise.resolve();private closed=false;private closing:Promise<void>|undefined;private size:number;
+ constructor(maxWorkers=4){if(!Number.isInteger(maxWorkers)||maxWorkers<1||maxWorkers>8)throw new RangeError('maxWorkers 1..8');this.size=maxWorkers;}
+ snapshot():Snapshot{return {generation:this.visible.generation,values:new Map(this.visible.values)};}
+ build(generation:number,jobs:readonly Job[],signal?:AbortSignal):Promise<boolean>{
+  if(this.closed)return Promise.reject(new Error('publisher closed'));
+  if(!Number.isSafeInteger(generation)||generation<0||generation<=this.latest)return Promise.reject(new RangeError('generation'));
+  if(new Set(jobs.map(job=>job.id)).size!==jobs.length)return Promise.reject(new RangeError('duplicate job'));
+  if(signal?.aborted)return Promise.resolve(false);this.latest=generation;for(const old of this.runs)old.stop();
+  const run:Run={generation,jobs:jobs.map(job=>({...job})),stopped:false,workers:new Set(),promise:Promise.resolve(false),stop(){this.stopped=true;for(const worker of this.workers)void worker.terminate();}};
+  const abort=()=>run.stop();signal?.addEventListener('abort',abort,{once:true});this.runs.add(run);
+  run.promise=this.tail.catch(()=>{}).then(async()=>{
+   let next=0;const values=new Map<string,number>();let failure:unknown;
+   const lane=async()=>{while(!run.stopped&&next<run.jobs.length){const job=run.jobs[next++]!;try{const value=await new Promise<number>((resolve,reject)=>{const worker=new Worker(new URL('./worker.ts',import.meta.url),{workerData:job});run.workers.add(worker);let result:number|undefined;let error:unknown;worker.once('message',(value:number)=>{result=value;});worker.once('error',value=>{error=value;});worker.once('exit',code=>{run.workers.delete(worker);if(code===0&&result!==undefined)resolve(result);else reject(error??new Error('worker failed'));});});values.set(job.id,value);}catch(error){if(!run.stopped){failure=error;run.stop();}}}};
+   await Promise.all(Array.from({length:Math.min(this.size,run.jobs.length)},lane));
+   if(failure!==undefined)throw failure;if(run.stopped||generation!==this.latest)return false;this.visible={generation,values};return true;
+  }).finally(()=>{signal?.removeEventListener('abort',abort);this.runs.delete(run);});
+  this.tail=run.promise;return run.promise;
+ }
+ close():Promise<void>{if(this.closing)return this.closing;this.closed=true;for(const run of this.runs)run.stop();this.closing=Promise.allSettled([...this.runs].map(run=>run.promise)).then(()=>{});return this.closing;}
 }

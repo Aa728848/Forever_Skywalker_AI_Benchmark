@@ -1,0 +1,23 @@
+{
+  "version": "0.2.0",
+  "calibrated": false,
+  "warmupRounds": 2,
+  "minimumPairs": 7,
+  "command": [
+    "node",
+    "graders/PERF-03/benchmark.ts",
+    "<frozen-workspace>"
+  ],
+  "metrics": [
+    {
+      "id": "durationMs",
+      "direction": "lower",
+      "good": 1.25,
+      "bad": 4,
+      "weight": 1
+    }
+  ],
+  "measurement": "trusted-external-wall-clock",
+  "candidateReportedMetrics": "diagnostic-only",
+  "notes": "固定持续局部更新、缺失目标恢复与查询配对；阈值未校准。"
+}

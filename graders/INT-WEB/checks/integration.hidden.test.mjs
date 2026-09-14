@@ -65,3 +65,26 @@ test('hidden/finished-job-retention-is-bounded', async () => {
     assert.equal(gateway.status(oldest), undefined); assert.equal(gateway.status(latest).phase, 'error');
   } finally { f.cleanup(); }
 });
+
+
+test('hidden/dropping-one-alias-preserves-unrelated-live-tunnels', async () => {
+  const f = fixture(); const store = new HostStore(join(f.directory, 'ssh.json'));
+  store.create(syntheticHost()); store.create({ ...syntheticHost(), alias: 'other-alias', host: 'other-synthetic.invalid' });
+  const engine = new SshEngine(store);
+  const server = await serve(makeRoutes({ store, engine, stagingDir: join(f.directory, 'staging') }).routes);
+  try {
+    const target = await engine.startTunnel('local-test', { remotePort: 9001 });
+    const sibling = await engine.startTunnel('local-test', { remotePort: 9002 });
+    const unrelated = await engine.startTunnel('other-alias', { remotePort: 9010 });
+    const targetServers = [engine.tunnels.get(target.id).server, engine.tunnels.get(sibling.id).server];
+    const other = engine.tunnels.get(unrelated.id); const otherRecord = other.record;
+    const response = await fetch(server.base + '/api/dsh-ssh/hosts?alias=local-test', { method: 'DELETE' });
+    assert.equal(response.status, 200);
+    assert.ok(targetServers.every(listener => !listener.listening));
+    assert.deepEqual([...engine.tunnels.keys()], [unrelated.id]);
+    assert.equal(other.server.listening, true); assert.equal(otherRecord.client.ended, false);
+    assert.equal(engine.pool.get('other-alias'), otherRecord);
+    const continued = await engine.startTunnel('other-alias', { remotePort: 9011 });
+    assert.equal(engine.tunnels.get(continued.id).record, otherRecord);
+  } finally { engine.dispose(); await server.close(); f.cleanup(); }
+});

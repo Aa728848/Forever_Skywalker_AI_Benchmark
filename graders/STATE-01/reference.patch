@@ -1,8 +1,7 @@
 diff --git a/starter/src/store.ts b/starter/src/store.ts
-index 71e66b6..7571896 100644
 --- a/starter/src/store.ts
 +++ b/starter/src/store.ts
-@@ -26,29 +26,54 @@ export function assertKey(key: string): void {
+@@ -26,29 +26,54 @@
    if (!keyPattern.test(key)) throw new RangeError('非法记录键：' + key);
  }
  
@@ -10,13 +9,13 @@ index 71e66b6..7571896 100644
 +import { createHash } from 'node:crypto';
 +import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
  import { join } from 'node:path';
- 
++
 +interface StoredRecord { readonly checksum: string; readonly value: string }
 +
 +function checksumOf(value: string): string {
 +  return createHash('sha256').update(value, 'utf8').digest('hex');
 +}
-+
+ 
  export function openRecordStore(directory: string): RecordStore {
    mkdirSync(directory, { recursive: true });
    let closed = false;
@@ -52,7 +51,7 @@ index 71e66b6..7571896 100644
 +      } catch {
 +        throw new CorruptRecordError(key);
 +      }
-+      if (typeof record.value !== 'string' || record.checksum !== checksumOf(record.value)) {
++      if (typeof record !== 'object' || record === null || typeof record.value !== 'string' || record.checksum !== checksumOf(record.value)) {
 +        throw new CorruptRecordError(key);
 +      }
 +      return record.value;
@@ -63,4 +62,3 @@ index 71e66b6..7571896 100644
      },
    };
  }
-\ No newline at end of file

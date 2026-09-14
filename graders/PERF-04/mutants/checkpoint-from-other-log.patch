@@ -1,0 +1,13 @@
+diff --git a/starter/src/projection.ts b/starter/src/projection.ts
+index 6b65aa0..4990cd5 100644
+--- a/starter/src/projection.ts
++++ b/starter/src/projection.ts
+@@ -7,7 +7,7 @@ export class ProjectionError extends Error {readonly code:string;constructor(cod
+ function checkpoint(logId:string,through:number,rows:Map<string,ProjectionRow>):ProjectionCheckpoint{return Object.freeze({schema:1 as const,logId,through,rows:Object.freeze([...rows.values()].sort((a,b)=>a.id<b.id?-1:a.id>b.id?1:0))});}
+ function restore(logId:string,limits:ProjectionLimits,input:ProjectionCheckpoint|undefined):Map<string,ProjectionRow>{
+  if(!input)return new Map();
+- if(input.schema!==1||input.logId!==logId||!Number.isSafeInteger(input.through)||input.through<0||!Array.isArray(input.rows)||input.rows.length>limits.maxSessions)throw new ProjectionError('checkpoint');
++ if(input.schema!==1||!Number.isSafeInteger(input.through)||input.through<0||!Array.isArray(input.rows)||input.rows.length>limits.maxSessions)throw new ProjectionError('checkpoint');
+  const rows=new Map<string,ProjectionRow>();for(const row of input.rows){if(!row||typeof row.id!=='string'||!row.id.length||rows.has(row.id)||!Number.isSafeInteger(row.epoch)||row.epoch<1||typeof row.open!=='boolean'||!Number.isSafeInteger(row.messages)||row.messages<0||!Number.isSafeInteger(row.bytes)||row.bytes<0||!Number.isFinite(row.lastAt))throw new ProjectionError('checkpoint');rows.set(row.id,Object.freeze({...row}));}return rows;
+ }
+ interface Prepared {readonly revision:number;readonly rows:Map<string,ProjectionRow>;readonly checkpoint:ProjectionCheckpoint;readonly accepted:number}

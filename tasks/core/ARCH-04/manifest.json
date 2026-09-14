@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "ARCH-04",
-  "taskVersion": "0.1.0",
+  "taskVersion": "0.2.0",
   "title": "插件热切换、失败回滚与资源归属",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -45,7 +45,16 @@
       "hidden/failed-switch-keeps-previous-plugin",
       "hidden/failed-switch-releases-new-plugin",
       "public/failed-switch-keeps-previous-plugin",
-      "public/failed-switch-releases-new-plugin"
+      "public/failed-switch-releases-new-plugin",
+      "public/async-activation-rollback-owns-partial-resources",
+      "public/latest-intent-fences-out-of-order-setup",
+      "public/cleanup-lifo-continues-after-failure",
+      "public/scope-closes-registration-after-setup",
+      "hidden/reentrant-dispose-joins-unpublished-setup",
+      "hidden/reentrant-new-selection-is-visible-before-publication",
+      "hidden/same-active-selection-cancels-pending-intent",
+      "hidden/committed-plugin-survives-previous-cleanup-error",
+      "hidden/seeded-completion-order-has-one-owner"
     ]
   },
   "limits": {
@@ -134,6 +143,78 @@
       "weight": 1,
       "critical": false,
       "summary": "隐藏样本：切换到同一个插件是空操作。"
+    },
+    {
+      "id": "public/async-activation-rollback-owns-partial-resources",
+      "kind": "public",
+      "group": "state",
+      "weight": 2,
+      "critical": true,
+      "summary": "启动失败回收部分资源，旧确认插件继续服务。"
+    },
+    {
+      "id": "public/latest-intent-fences-out-of-order-setup",
+      "kind": "public",
+      "group": "state",
+      "weight": 2,
+      "critical": true,
+      "summary": "慢启动不得覆盖新选择，旧候选signal中止并释放。"
+    },
+    {
+      "id": "public/cleanup-lifo-continues-after-failure",
+      "kind": "public",
+      "group": "resources",
+      "weight": 2,
+      "critical": true,
+      "summary": "异步逆序清理，即使一个失败也释放其余所有资源。"
+    },
+    {
+      "id": "public/scope-closes-registration-after-setup",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 2,
+      "critical": true,
+      "summary": "已结束启动的作用域和关闭宿主拒绝新增资源。"
+    },
+    {
+      "id": "hidden/reentrant-dispose-joins-unpublished-setup",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 2,
+      "critical": true,
+      "summary": "setup内同步重入关闭，等待迟到资源登记及异步释放全部结算。"
+    },
+    {
+      "id": "hidden/reentrant-new-selection-is-visible-before-publication",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 2,
+      "critical": true,
+      "summary": "setup同步再次替换时，外层启动不得覆盖内层最新选择。"
+    },
+    {
+      "id": "hidden/same-active-selection-cancels-pending-intent",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 2,
+      "critical": true,
+      "summary": "重新选择当前确认插件不重复启动，但必须撤销待启动选择。"
+    },
+    {
+      "id": "hidden/committed-plugin-survives-previous-cleanup-error",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 2,
+      "critical": true,
+      "summary": "提交后旧资源清理报错仍保留新插件，不回退已确认选择。"
+    },
+    {
+      "id": "hidden/seeded-completion-order-has-one-owner",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 2,
+      "critical": true,
+      "summary": "固定种子打乱12个启动完成顺序，验证唯一确认所有者与全部释放。"
     }
   ]
 }

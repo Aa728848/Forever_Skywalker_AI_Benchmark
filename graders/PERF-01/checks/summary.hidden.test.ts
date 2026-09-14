@@ -37,8 +37,8 @@ test('hidden/matches-naive-reference', () => {
   const lines = sample(200);
   const expected: Record<string, number> = {};
   for (const line of lines) {
-    const parsed = parseLine(line);
-    expected[parsed.key] = (expected[parsed.key] ?? 0) + parsed.value;
+    const [key, value] = line.split('=');
+    expected[key!] = (expected[key!] ?? 0) + Number(value);
   }
   assert.deepEqual(summarizeRecords(lines), expected);
 });

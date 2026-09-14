@@ -1,0 +1,26 @@
+[
+  {
+    "id": "late-read-generation",
+    "description": "异步读取完成后才用当前世代校验，旧读取被归入新生命周期。",
+    "patch": "graders/INT-SUB/mutants/late-read-generation.patch",
+    "expectedFailures": [
+      "hidden/state-load-is-bound-to-entry-lifecycle"
+    ]
+  },
+  {
+    "id": "clear-outside-queue",
+    "description": "注销跳过凭据写入队列，迟到保存可在清理之后复活凭据。",
+    "patch": "graders/INT-SUB/mutants/clear-outside-queue.patch",
+    "expectedFailures": [
+      "hidden/state-save-in-flight-then-logout"
+    ]
+  },
+  {
+    "id": "create-pre-cancelled-source",
+    "description": "只处理消费中取消，预取消仍创建传输。",
+    "patch": "graders/INT-SUB/mutants/create-pre-cancelled-source.patch",
+    "expectedFailures": [
+      "public/boundary-pre-cancel-never-creates-source"
+    ]
+  }
+]

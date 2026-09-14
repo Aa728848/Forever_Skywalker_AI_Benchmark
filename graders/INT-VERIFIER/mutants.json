@@ -1,0 +1,26 @@
+[
+  {
+    "id": "prompt-context-omitted",
+    "description": "缓存身份已包含模型与两个候选，但漏掉验收准则/规则上下文。",
+    "patch": "graders/INT-VERIFIER/mutants/prompt-context-omitted.patch",
+    "expectedFailures": [
+      "hidden/cache-identity-covers-prompt-and-rule-version"
+    ]
+  },
+  {
+    "id": "joined-flight-double-billing",
+    "description": "已正确合并网络调用，但加入者仍重复记入原flight的费用。",
+    "patch": "graders/INT-VERIFIER/mutants/joined-flight-double-billing.patch",
+    "expectedFailures": [
+      "hidden/concurrent-engines-share-one-flight-and-one-cost"
+    ]
+  },
+  {
+    "id": "failed-work-does-not-age-verdict",
+    "description": "已检查旧验收时效，但错误地只把成功结果当作已改变的工程工作。",
+    "patch": "graders/INT-VERIFIER/mutants/failed-work-does-not-age-verdict.patch",
+    "expectedFailures": [
+      "hidden/failed-write-and-wrong-session-do-not-reuse-verdict"
+    ]
+  }
+]

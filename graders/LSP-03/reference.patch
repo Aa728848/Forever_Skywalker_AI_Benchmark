@@ -1,22 +1,74 @@
 diff --git a/starter/src/Diagnostics.fsx b/starter/src/Diagnostics.fsx
-index 291e883..8b862fb 100644
+index 291e883..b96405b 100644
 --- a/starter/src/Diagnostics.fsx
 +++ b/starter/src/Diagnostics.fsx
-@@ -14,7 +14,7 @@ type Coordinator() =
-     member _.Start(uri, version) = lock gate (fun () ->
-         if versions.ContainsKey(uri) && version <= versions.[uri] then invalidArg "version" "stale version"
-         match active.TryGetValue(uri) with
+@@ -2,39 +2,43 @@ module Diagnostics
+ open System
+ open System.Threading
+ open System.Collections.Generic
+-
+-type Request = { Id: int; Uri: string; Version: int; Token: CancellationToken }
+-
++type Request = { Id:int; Uri:string; Version:int; Token:CancellationToken }
+ type Coordinator() =
+     let gate = obj()
+     let active = Dictionary<string, Request * CancellationTokenSource>()
+-    let versions = Dictionary<string, int>()
+-    let published = Dictionary<string, string list>()
++    let versions = Dictionary<string,int>()
++    let published = Dictionary<string,string list>()
+     let mutable sequence = 0
+-    member _.Start(uri, version) = lock gate (fun () ->
+-        if versions.ContainsKey(uri) && version <= versions.[uri] then invalidArg "version" "stale version"
+-        match active.TryGetValue(uri) with
 -        | true, (_, source) -> source.Dispose()
-+        | true, (_, source) -> source.Cancel(); source.Dispose()
-         | _ -> ()
-         sequence <- sequence + 1
-         let source = new CancellationTokenSource()
-@@ -24,7 +24,7 @@ type Coordinator() =
-         request)
-     member _.Complete(request: Request, diagnostics: string list) = lock gate (fun () ->
+-        | _ -> ()
+-        sequence <- sequence + 1
+-        let source = new CancellationTokenSource()
+-        let request = { Id = sequence; Uri = uri; Version = version; Token = source.Token }
+-        active.[uri] <- (request, source)
+-        versions.[uri] <- version
+-        request)
+-    member _.Complete(request: Request, diagnostics: string list) = lock gate (fun () ->
++    let cancel source =
++        match source with
++        | Some (source: CancellationTokenSource) -> try source.Cancel() finally source.Dispose()
++        | None -> ()
++    member _.Start(uri, version) =
++        let request, prior = lock gate (fun () ->
++            if versions.ContainsKey(uri) && version <= versions.[uri] then invalidArg "version" "stale version"
++            let prior = match active.TryGetValue(uri) with | true, (_, source) -> Some source | _ -> None
++            sequence <- sequence + 1
++            let source = new CancellationTokenSource()
++            let request = { Id=sequence; Uri=uri; Version=version; Token=source.Token }
++            active.[uri] <- (request,source)
++            versions.[uri] <- version
++            request,prior)
++        cancel prior
++        request
++    member _.Complete(request: Request, diagnostics) = lock gate (fun () ->
          match active.TryGetValue(request.Uri) with
 -        | true, (_, source) ->
-+        | true, (current, source) when current.Id = request.Id ->
++        | true, (current,source) when current = request ->
              published.[request.Uri] <- diagnostics
              active.Remove(request.Uri) |> ignore
              source.Dispose()
+             true
+         | _ -> false)
+-    member _.Close(uri) = lock gate (fun () ->
+-        match active.TryGetValue(uri) with
+-        | true, (_, source) -> source.Cancel(); source.Dispose(); active.Remove(uri) |> ignore
+-        | _ -> ()
+-        versions.Remove(uri) |> ignore
+-        published.Remove(uri) |> ignore)
+-    member _.Published(uri) = lock gate (fun () ->
+-        match published.TryGetValue(uri) with | true, value -> value | _ -> [])
++    member _.Close(uri) =
++        let prior = lock gate (fun () ->
++            let prior = match active.TryGetValue(uri) with | true, (_,source) -> Some source | _ -> None
++            active.Remove(uri) |> ignore
++            versions.Remove(uri) |> ignore
++            published.Remove(uri) |> ignore
++            prior)
++        cancel prior
++    member _.Published(uri) = lock gate (fun () -> match published.TryGetValue(uri) with | true,value -> value | _ -> [])

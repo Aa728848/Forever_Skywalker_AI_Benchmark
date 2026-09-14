@@ -5,9 +5,10 @@
 | 路径 | 用途 |
 | --- | --- |
 | `checks/replay.hidden.test.ts` | 未公开检查：4 倍规模访问次数比值、每个事件独立会话、缺省会话、输入不可变、原始耗时样本 |
-| `reference.patch` | 参考修复：单次遍历 + Map 累计会话消息数 |
+| `reference.patch` | 参考修复：保留单次摘要回归，增加流式投影的持久确认、日志身份与代际隔离 |
 | `alternative/starter/src/replay.ts` | 替代实现：索引循环累加后再一次性排序会话统计 |
-| `benchmark.ts` / `benchmark-policy.json` | 32,000 条事件、2,000 个会话、12 次完整重放的受信 workload 与未校准计时策略 |
+| `checks/projection.hidden.test.ts` / `mutants.json` | 生命周期、事务准备/确认、检查点恢复、背压及四种近似错误修复 |
+| `benchmark.ts` / `benchmark-policy.json` | 51,828 条事件、160 个会话、828 次确认的流式投影主路径与未校准计时策略 |
 
 复杂度断言使用 **可计数的输入**（Proxy 统计元素访问次数），不使用计时，因此与机器负载无关；
 题目 0.2.0 的资源检查记录 2 次预热后的 7 次原始耗时/RSS/堆样本，并仅用一个宽松上限判断能否在基本预算内完成；它不直接换算性能质量分。
@@ -17,9 +18,9 @@
 ## 独立验证计划
 
 1. 导出候选工作区，断言其中没有 `__checks__`、`graders/` 或 `reference.patch`。
-2. 未修复的起始版本只应在 `grader.defectDetectors` 声明的检查上失败（两个复杂度检查）。
+2. 未修复的起始版本只应在 `grader.defectDetectors` 声明的复杂度及流式投影检出项上失败。
 3. 应用参考补丁后，公开与隐藏检查必须全部通过。
 4. 覆盖替代实现后，公开与隐藏检查必须全部通过。
 5. 任一阶段缺失检查 ID 都视为未取得结论。
 
-运行：`pnpm task:verify PERF-04`。
+运行：`pnpm task:verify PERF-04`、`pnpm task:mutants PERF-04`。0.3.0 新增资产的来源机制见 `source-evidence.json`；公开/隐藏三向通过不代表真实模型难度已经校准。

@@ -1,0 +1,13 @@
+diff --git a/starter/src/WorkspaceIndex.fsx b/starter/src/WorkspaceIndex.fsx
+index 743db62..bae7176 100644
+--- a/starter/src/WorkspaceIndex.fsx
++++ b/starter/src/WorkspaceIndex.fsx
+@@ -29,7 +29,7 @@ type Index() =
+         match Map.tryFind ticket.Workspace pending with
+         | Some current when current.Ticket=ticket ->
+             if not(Map.containsKey path current.Expected) then invalidArg "path" "unexpected document"
+-            if version<>current.Expected.[path] || Map.containsKey path current.Changes then false
++            if Map.containsKey path current.Changes then false
+             else
+                 pending<-Map.add ticket.Workspace {current with Changes=Map.add path symbols current.Changes} pending
+                 true

@@ -1,6 +1,6 @@
 # THR-04 · 多线程代际发布与中断恢复
 
-题目版本：0.1.1；难度：extreme；运行时：Node.js 24 原生 TypeScript 类型剥离。
+题目版本：0.2.0；难度：extreme；运行时：Node.js 24 原生 TypeScript 类型剥离。
 
 ## 固定接口与契约
 
@@ -23,3 +23,9 @@ node --test --test-isolation=none --test-reporter=tap "public-tests/**/*.test.ts
 ## 评分证据分组
 
 本版按真实断言覆盖行为、边界、状态、回归、资源五组；各检查权重见manifest.json。缺组时不产生完整可用分。
+
+## 0.2.0 跨代执行预算与关闭
+
+Publisher(maxWorkers=4) 新增实例级线程预算，参数必须为1..8整数。不同generation共享同一活跃worker上限；每任务仍由冻结worker真实执行。高于窗口的工作在本实例排队，不能先创建被阻塞线程充当队列。新代成功登记后，撤销旧代未启动工作、终止其在途线程；旧build在全部自有线程退出后返回false，不必等待外部gate放行。新代也必须遵守旧线程尚未退出时的共享窗口。
+
+close():Promise<void> 幂等并返回同一Promise：立即拒绝随后build（错误含closed），撤销已接受工作，等待全部worker退出及build结算，保留最后确认快照。预取消build不启动线程也不消耗generation；重复id和非法generation先拒绝，不能取消有效在途构建。禁止修改worker.ts。不要求调用者通过墙钟超大负载证明并行，检查直接观测线程创建、exit、共享屏障及代际交错。

@@ -1,0 +1,26 @@
+[
+  {
+    "id": "publish-stale-run",
+    "description": "分片齐全就发布，遗漏最新计划代际门禁。",
+    "patch": "graders/CONC-04/mutants/publish-stale-run.patch",
+    "expectedFailures": [
+      "hidden/shards-stale-generation-and-content-conflict"
+    ]
+  },
+  {
+    "id": "trust-shard-presence",
+    "description": "只看分片文件存在，恢复/发布不复核其内容哈希。",
+    "patch": "graders/CONC-04/mutants/trust-shard-presence.patch",
+    "expectedFailures": [
+      "hidden/shards-parallel-workers-and-checksum"
+    ]
+  },
+  {
+    "id": "resume-publish-only",
+    "description": "恢复时直接发布，遗漏重新生成缺失分片。",
+    "patch": "graders/CONC-04/mutants/resume-publish-only.patch",
+    "expectedFailures": [
+      "hidden/shards-real-process-crash-and-resume"
+    ]
+  }
+]

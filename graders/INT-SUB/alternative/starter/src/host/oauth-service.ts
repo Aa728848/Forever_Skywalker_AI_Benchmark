@@ -162,9 +162,14 @@ export class OAuthService {
 
   async refresh(): Promise<OAuthStatusDto> {
     this.assertAvailable()
+    const generation = this.credentialScope.signal
     const stored = await this.loadAuthenticated()
+    this.assertCredentialGeneration(generation)
     await this.refreshCredentials(stored)
-    return this.status()
+    this.assertCredentialGeneration(generation)
+    const status = await this.status()
+    this.assertCredentialGeneration(generation)
+    return status
   }
 
   async logout(): Promise<void> {
@@ -182,9 +187,13 @@ export class OAuthService {
 
   async credentials(forceRefresh = false): Promise<StoredOAuthCredentials> {
     this.assertAvailable()
+    const generation = this.credentialScope.signal
     const stored = await this.loadAuthenticated()
+    this.assertCredentialGeneration(generation)
     if (forceRefresh || stored.expiresAt - this.now() <= TOKEN_REFRESH_MARGIN_MS) {
-      return this.refreshCredentials(stored)
+      const fresh = await this.refreshCredentials(stored)
+      this.assertCredentialGeneration(generation)
+      return fresh
     }
     return stored
   }
@@ -281,9 +290,11 @@ export class OAuthService {
   }
 
   private async loadAuthenticated(): Promise<StoredOAuthCredentials> {
+    const scope = this.credentialScope.signal
     const stored = await this.store.load().catch(() => {
       throw new OAuthServiceError('storage-failed', 'Secure credential storage could not be read.')
     })
+    this.assertCredentialGeneration(scope)
     if (stored === null) throw new OAuthServiceError('not-authenticated', 'Sign in with ChatGPT first.')
     return stored
   }

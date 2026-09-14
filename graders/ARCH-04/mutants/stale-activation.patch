@@ -1,0 +1,12 @@
+diff --git a/starter/src/async-plugins.ts b/starter/src/async-plugins.ts
+--- a/starter/src/async-plugins.ts
++++ b/starter/src/async-plugins.ts
+@@ -63,7 +63,7 @@
+       if(errors.length>1||(!this.#closed&&generation===this.#generation))throw new PluginSetupError(scope.id,errors);
+       return {id:scope.id,status:'superseded'};
+     }
+-    if(this.#closed||generation!==this.#generation){await this.#release(scope);return {id:scope.id,status:'superseded'};}
++    if(this.#closed){await this.#release(scope);return {id:scope.id,status:'superseded'};}
+     const previous=this.#active;this.#active=scope;
+     if(previous)await this.#release(previous);
+     return {id:scope.id,status:'active'};

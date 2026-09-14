@@ -22,7 +22,7 @@ export class InvalidNodeError extends Error {
 }
 
 function isNode(value: unknown): value is AstNode {
-  return typeof value === 'object' && value !== null && typeof (value as { type?: unknown }).type === 'string';
+  return typeof value === 'object' && value !== null && typeof (value as { type?: unknown }).type === 'string' && (value as { type: string }).type.length > 0;
 }
 
 /** 校验并返回子节点；缺省 children 与空数组等价，非法结构抛出带路径的 InvalidNodeError。 */

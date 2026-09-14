@@ -1,0 +1,27 @@
+[
+  {
+    "id": "publish-before-durable-write",
+    "description": "批次内存先发布，持久失败留下幽灵确认值",
+    "patch": "graders/CACHE-04/mutants/publish-before-durable-write.patch",
+    "expectedFailures": [
+      "hidden/failed-batch-does-not-publish-partial-state"
+    ]
+  },
+  {
+    "id": "refresh-outside-write-queue",
+    "description": "刷新绕过排队读到尚未提交的旧文件",
+    "patch": "graders/CACHE-04/mutants/refresh-outside-write-queue.patch",
+    "expectedFailures": [
+      "hidden/refresh-and-snapshot-keep-queue-cut"
+    ]
+  },
+  {
+    "id": "truncate-main-file",
+    "description": "直接截断主文件，异常和进程中断破坏确认值",
+    "patch": "graders/CACHE-04/mutants/truncate-main-file.patch",
+    "expectedFailures": [
+      "hidden/file-failure-preserves-confirmed-and-cleans",
+      "hidden/file-process-crash-boundaries"
+    ]
+  }
+]

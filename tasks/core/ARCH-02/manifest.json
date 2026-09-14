@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "ARCH-02",
-  "taskVersion": "0.1.0",
+  "taskVersion": "0.2.0",
   "title": "Provider 元数据与运行时拆分",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -45,7 +45,11 @@
       "hidden/browser-side-skips-node-only",
       "hidden/keeps-shared-and-matching",
       "public/browser-side-skips-node-only",
-      "public/keeps-shared-and-matching"
+      "public/keeps-shared-and-matching",
+      "public/metadata-does-not-load-forbidden-runtime",
+      "hidden/shared-load-coalesces-across-runtimes",
+      "hidden/rejected-and-sync-throwing-loads-are-retryable",
+      "hidden/unavailable-identity-does-not-leak-cached-module"
     ]
   },
   "limits": {
@@ -134,6 +138,38 @@
       "weight": 1,
       "critical": false,
       "summary": "隐藏样本下的空目录。"
+    },
+    {
+      "id": "public/metadata-does-not-load-forbidden-runtime",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 2,
+      "critical": true,
+      "summary": "列举元数据不加载模块，跨运行时加载必须在调用loader前拒绝。"
+    },
+    {
+      "id": "hidden/shared-load-coalesces-across-runtimes",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 2,
+      "critical": true,
+      "summary": "共享provider的并发加载只执行一次，缓存不跨注册表实例。"
+    },
+    {
+      "id": "hidden/rejected-and-sync-throwing-loads-are-retryable",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 2,
+      "critical": true,
+      "summary": "异步拒绝和同步loader抛错保留原始错误并允许下一次重试。"
+    },
+    {
+      "id": "hidden/unavailable-identity-does-not-leak-cached-module",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 2,
+      "critical": true,
+      "summary": "已缓存node模块仍不可从browser取得，未知id以异步RangeError拒绝。"
     }
   ]
 }

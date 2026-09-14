@@ -1,0 +1,13 @@
+diff --git a/starter/src/rewrite.ts b/starter/src/rewrite.ts
+index 897fe04..98bbf6a 100644
+--- a/starter/src/rewrite.ts
++++ b/starter/src/rewrite.ts
+@@ -23,7 +23,7 @@ export function rewriteAst(root: AstNode, transform: (node: AstNode) => string):
+     const type = transform(view);
+     if (typeof type !== 'string' || !type.length) throw new TypeError('transform must return a nonempty type');
+     const unchanged = type === node.type && children.every((child,i)=>child===node.children![i]);
+-    const result = unchanged ? node : node.children===undefined ? {type} : {type,children};
++    const result = unchanged ? node : node.children===undefined ? {type} : {type,children:node.children};
+     outputs.set(node,result);
+   }
+   return outputs.get(root)!;

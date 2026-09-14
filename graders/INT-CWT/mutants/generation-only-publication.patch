@@ -1,0 +1,13 @@
+diff --git a/starter/Pipeline.fs b/starter/Pipeline.fs
+index f0e64d5..844f42b 100644
+--- a/starter/Pipeline.fs
++++ b/starter/Pipeline.fs
+@@ -78,8 +78,6 @@ type Pipeline(onPublished: string -> unit) =
+             // 只允许当前文档与当前配置代际下的精确准入发布。
+             let current =
+                 plan.Generation = generation
+-                && documents.GetVersionByPath(plan.Path) = Some plan.Version
+-                && sameAdmission plan.Admission (tracker.TryAdmit(Domain.NonLocalisation, plan.Path))
+             if current then
+                 symbols <- Map.add plan.Path plan.Symbols symbols
+                 diagnostics <- Map.add plan.Path plan.Errors diagnostics

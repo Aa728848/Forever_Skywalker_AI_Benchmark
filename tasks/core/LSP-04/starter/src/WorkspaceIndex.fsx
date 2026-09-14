@@ -3,6 +3,7 @@ open System
 open System.Threading
 
 type Build = { Id: int; Workspace: string; Generation: int; Token: CancellationToken }
+type View = { Symbols:Map<string,string list>; Versions:Map<string,int> }
 type private Pending = { Ticket: Build; Expected: Set<string>; Changes: Map<string, string list option>; Source: CancellationTokenSource }
 
 type Index() =
@@ -49,3 +50,8 @@ type Index() =
             pending <- Map.remove ticket.Workspace pending
         | _ -> ())
     member _.Snapshot(workspace) = lock gate (fun () -> Map.tryFind workspace visible |> Option.defaultValue Map.empty)
+
+    member this.BeginWithVersions(workspace,generation,expected:Map<string,int>) = this.Begin(workspace,generation,expected |> Map.toList |> List.map fst)
+    member this.StageVersioned(ticket:Build,path,version:int,symbols) = this.Stage(ticket,path,symbols)
+    member this.View(workspace):View = {Symbols=this.Snapshot(workspace);Versions=Map.empty}
+    member _.Close(workspace) = ()

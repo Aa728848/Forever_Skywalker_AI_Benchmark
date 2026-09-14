@@ -1,8 +1,48 @@
+diff --git a/starter/src/repository-router.ts b/starter/src/repository-router.ts
+--- a/starter/src/repository-router.ts
++++ b/starter/src/repository-router.ts
+@@ -1,11 +1,33 @@
+-import type {ReadResult,V2Result} from './repository.ts';
++import {AdapterError,type ReadResult,type V2Result} from './repository.ts';
+ export interface CancellableAdapter {load(id:string,signal:AbortSignal):Promise<V2Result>}
+ export class ReadCancelledError extends Error {constructor(){super('读取已取消');}}
+ export class AdapterReplacedError extends Error {constructor(){super('读取所属适配器已替换');}}
+ 
++interface Waiter {resolve(value:ReadResult):void;reject(error:unknown):void;detach():void}
++interface Call {controller:AbortController;waiters:Set<Waiter>;started:boolean}
+ export class RepositoryRouter {
+-  #adapter:CancellableAdapter;
++  #adapter:CancellableAdapter;#calls=new Map<string,Call>();
+   constructor(adapter:CancellableAdapter){this.#adapter=adapter;}
+-  replace(adapter:CancellableAdapter):void{this.#adapter=adapter;}
+-  async read(id:string,_signal?:AbortSignal):Promise<ReadResult>{const value=await this.#adapter.load(id,new AbortController().signal);return {ok:value.status==='ok',durationMs:value.durationSeconds,body:value.body};}
++  replace(adapter:CancellableAdapter):void{
++    this.#adapter=adapter;const previous=[...this.#calls.values()];this.#calls.clear();
++    for(const entry of previous){for(const waiter of entry.waiters){waiter.detach();waiter.reject(new AdapterReplacedError());}entry.waiters.clear();entry.controller.abort();}
++  }
++  read(id:string,signal?:AbortSignal):Promise<ReadResult>{
++    if(signal?.aborted)return Promise.reject(new ReadCancelledError());
++    let entry=this.#calls.get(id);if(!entry){entry={controller:new AbortController(),waiters:new Set(),started:false};this.#calls.set(id,entry);}const selected=entry;
++    const promise=new Promise<ReadResult>((resolve,reject)=>{
++      const cancel=()=>{selected.waiters.delete(waiter);waiter.detach();reject(new ReadCancelledError());if(selected.waiters.size===0){if(this.#calls.get(id)===selected)this.#calls.delete(id);selected.controller.abort();}};
++      const waiter:Waiter={resolve,reject,detach:()=>signal?.removeEventListener('abort',cancel)};selected.waiters.add(waiter);signal?.addEventListener('abort',cancel,{once:true});
++    });
++    if(!selected.started){selected.started=true;const adapter=this.#adapter;
++      try{Promise.resolve(adapter.load(id,selected.controller.signal)).then(value=>this.#finish(id,selected,value),error=>this.#finish(id,selected,undefined,error));}
++      catch(error){this.#finish(id,selected,undefined,error);}
++    }
++    return promise;
++  }
++  #finish(id:string,entry:Call,value?:V2Result,error?:unknown):void{
++    if(this.#calls.get(id)===entry)this.#calls.delete(id);
++    for(const waiter of entry.waiters){waiter.detach();if(value)waiter.resolve({ok:value.status==='ok',durationMs:value.durationSeconds*1000,body:value.status==='ok'?value.body:null});else waiter.reject(new AdapterError(id,error));}
++    entry.waiters.clear();
++  }
+ }
 diff --git a/starter/src/repository.ts b/starter/src/repository.ts
-index 542980a..0222df6 100644
 --- a/starter/src/repository.ts
 +++ b/starter/src/repository.ts
-@@ -25,12 +25,16 @@ export class Repository {
+@@ -25,12 +25,16 @@
    }
  
    async read(id: string): Promise<ReadResult> {
@@ -25,4 +65,3 @@ index 542980a..0222df6 100644
 -    return { ok: legacy.ok, durationMs: legacy.ms, body: legacy.payload ?? null };
    }
  }
-\ No newline at end of file

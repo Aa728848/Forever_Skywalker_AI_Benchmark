@@ -1,36 +1,33 @@
 diff --git a/starter/src/bounded.ts b/starter/src/bounded.ts
-index a6e70d7..81c165c 100644
+index a6e70d7..9556352 100644
 --- a/starter/src/bounded.ts
 +++ b/starter/src/bounded.ts
-@@ -1,7 +1,29 @@
- export interface Limits { readonly maxBytes: number; readonly maxDepth: number; readonly maxNodes: number }
- export class ParseLimitError extends Error { readonly reason: 'bytes' | 'depth' | 'nodes'; readonly offset: number; constructor(reason: 'bytes' | 'depth' | 'nodes', offset: number) { super(reason + ' limit at ' + offset); this.reason=reason; this.offset=offset; } }
- export function parseBounded(text: string, limits: Limits): unknown {
+@@ -1,7 +1,22 @@
+-export interface Limits { readonly maxBytes: number; readonly maxDepth: number; readonly maxNodes: number }
+-export class ParseLimitError extends Error { readonly reason: 'bytes' | 'depth' | 'nodes'; readonly offset: number; constructor(reason: 'bytes' | 'depth' | 'nodes', offset: number) { super(reason + ' limit at ' + offset); this.reason=reason; this.offset=offset; } }
+-export function parseBounded(text: string, limits: Limits): unknown {
 -  // 缺陷：直接物化输入，所有空间和深度预算都没有检查。
 -  void limits;
-+  for (const value of [limits.maxBytes, limits.maxDepth, limits.maxNodes]) if (!Number.isSafeInteger(value) || value < 0) throw new RangeError('limits must be nonnegative safe integers');
-+  if (Buffer.byteLength(text, 'utf8') > limits.maxBytes) throw new ParseLimitError('bytes', 0);
-+  let depth=0, nodes=0;
-+  for (let index=0; index<text.length;) {
-+    const ch=text[index];
-+    if (/\s/.test(ch) || ch===',' || ch===':') {index++; continue;}
-+    if (ch===']' || ch==='}') {depth--; index++; continue;}
-+    if (++nodes > limits.maxNodes) throw new ParseLimitError('nodes',index);
-+    if (ch==='[' || ch==='{') {
-+      if (++depth > limits.maxDepth) throw new ParseLimitError('depth',index);
-+      index++; continue;
-+    }
-+    if (ch==='"') {
-+      index++;
-+      let closed=false;
-+      while(index<text.length) {
-+        if(text[index]==='\\') {index+=2; continue;}
-+        if(text[index++]==='"') {closed=true; break;}
-+      }
-+      if(!closed) throw new SyntaxError('unterminated string');
-+      continue;
-+    }
-+    do {index++;} while(index<text.length && !/[\s,:{}\[\]"]/.test(text[index]));
-+  }
-   return JSON.parse(text);
+-  return JSON.parse(text);
++export interface Limits {readonly maxBytes:number;readonly maxDepth:number;readonly maxNodes:number}
++export class ParseLimitError extends Error {readonly reason:'bytes'|'depth'|'nodes';readonly offset:number;constructor(reason:'bytes'|'depth'|'nodes',offset:number){super(reason+' limit at '+offset);this.reason=reason;this.offset=offset;}}
++function prepare(text:string,limits:Limits){for(const n of [limits.maxBytes,limits.maxDepth,limits.maxNodes])if(!Number.isSafeInteger(n)||n<0)throw new RangeError('invalid limits');if(Buffer.byteLength(text,'utf8')>limits.maxBytes)throw new ParseLimitError('bytes',0);}
++function stringEnd(text:string,start:number):number{let index=start+1;while(index<text.length){const code=text.charCodeAt(index++);if(code===34)return index;if(code<32)throw new SyntaxError('control character');if(code===92){const escape=text[index++];if(escape==='u'){if(!/^[0-9a-fA-F]{4}$/.test(text.slice(index,index+4)))throw new SyntaxError('unicode escape');index+=4;}else if(escape===undefined||![34,92,47,98,102,110,114,116].includes(escape.charCodeAt(0)))throw new SyntaxError('escape');}}throw new SyntaxError('unterminated string');}
++const numeric=/-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/y;
++function scalarEnd(text:string,index:number):number{if(text[index]==='"')return stringEnd(text,index);for(const literal of ['true','false','null'])if(text.startsWith(literal,index))return index+literal.length;numeric.lastIndex=index;const number=numeric.exec(text);if(!number)throw new SyntaxError('expected value');return numeric.lastIndex;}
++export function parseBounded(text:string,limits:Limits):unknown{
++ prepare(text,limits);let index=0,nodes=0;const stack:{kind:'array'|'object';state:string}[]=[];let rootDone=false;
++ const charge=(at:number,depth:number)=>{if(++nodes>limits.maxNodes)throw new ParseLimitError('nodes',at);if(depth>limits.maxDepth)throw new ParseLimitError('depth',at);};
++ const value=()=>{const token=text[index];charge(index,(token==='['||token==='{')?stack.length+1:0);if(token==='['||token==='{'){index++;stack.push({kind:token==='['?'array':'object',state:token==='['?'first':'keyFirst'});}else index=scalarEnd(text,index);};
++ while(true){while(index<text.length&&' \t\r\n'.includes(text[index]!))index++;
++  if(stack.length===0){if(rootDone){if(index!==text.length)throw new SyntaxError('trailing input');break;}rootDone=true;value();continue;}
++  const frame=stack.at(-1)!;const token=text[index];
++  if(frame.state==='first'&&token===']'){index++;stack.pop();continue;}
++  if(frame.state==='keyFirst'&&token==='}'){index++;stack.pop();continue;}
++  if(frame.state==='key'||frame.state==='keyFirst'){if(token!=='"')throw new SyntaxError('expected key');charge(index,0);index=stringEnd(text,index);frame.state='colon';continue;}
++  if(frame.state==='colon'){if(token!==':')throw new SyntaxError('expected colon');index++;frame.state='value';continue;}
++  if(frame.state==='first'||frame.state==='value'){frame.state='tail';value();continue;}
++  const close=frame.kind==='array'?']':'}';if(token===close){index++;stack.pop();continue;}if(token!==',')throw new SyntaxError('expected comma');index++;frame.state=frame.kind==='array'?'value':'key';
++ }
++ return JSON.parse(text);
  }

@@ -1,0 +1,26 @@
+[
+  {
+    "id": "drop-pending-restart",
+    "description": "避免并发但直接丢弃停止期间的启动意图。",
+    "patch": "graders/LIFE-03/mutants/drop-pending-restart.patch",
+    "expectedFailures": [
+      "hidden/concurrent-restarts-join-one-stopping-generation"
+    ]
+  },
+  {
+    "id": "natural-exit-remains-running",
+    "description": "仅stop路径释放状态，自然结算后仍自认为运行中。",
+    "patch": "graders/LIFE-03/mutants/natural-exit-remains-running.patch",
+    "expectedFailures": [
+      "public/natural-completion-releases-generation"
+    ]
+  },
+  {
+    "id": "sync-failure-stuck-starting",
+    "description": "同步run抛错仅结算等待者，启动状态未复原。",
+    "patch": "graders/LIFE-03/mutants/sync-failure-stuck-starting.patch",
+    "expectedFailures": [
+      "public/synchronous-runner-failure-is-retryable"
+    ]
+  }
+]

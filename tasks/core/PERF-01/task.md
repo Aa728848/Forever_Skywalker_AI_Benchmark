@@ -1,6 +1,6 @@
 # PERF-01 · 消除重复解析并保持结果
 
-- 难度：简单；题型：独立核心题；能力域：性能优化。运行时：TypeScript on Node.js 24。题目版本：0.1.0。
+- 难度：简单；题型：独立核心题；能力域：性能优化。运行时：TypeScript on Node.js 24。题目版本：0.2.0。
 
 ## 背景
 
@@ -38,3 +38,5 @@ node --test --test-isolation=none --test-reporter=tap "public-tests/**/*.test.ts
 
 - 参考实现通过全部公开与未公开检查；缺陷起始版本只被声明的检出项判失败；替代实现同样通过。
 - 本阶段产出检查结论与可用验证分；代码质量评审接入前总分保持待定。
+
+所有符合词法的键都作为数据，包括 __proto__、constructor、toString；返回对象仍使用 Object.prototype，不能改变原型或误读继承属性。

@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "PERF-01",
-  "taskVersion": "0.1.0",
+  "taskVersion": "0.2.0",
   "title": "消除重复解析并保持结果",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -43,7 +43,8 @@
     "alternative": "graders/PERF-01/alternative",
     "defectDetectors": [
       "public/input-accesses-are-linear",
-      "hidden/scaling-ratio-is-subquadratic"
+      "hidden/scaling-ratio-is-subquadratic",
+      "hidden/prototype-keys-are-data"
     ]
   },
   "limits": {
@@ -132,6 +133,22 @@
       "weight": 1,
       "critical": false,
       "summary": "输入不可变且重复调用结果一致。"
+    },
+    {
+      "id": "hidden/prototype-keys-are-data",
+      "kind": "hidden",
+      "group": "boundary",
+      "summary": "特殊合法键不触发原型语义",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/seeded-independent-totals-and-invalid-index",
+      "kind": "hidden",
+      "group": "regression",
+      "summary": "独立数值oracle和错误行定位",
+      "weight": 1,
+      "critical": true
     }
   ]
 }

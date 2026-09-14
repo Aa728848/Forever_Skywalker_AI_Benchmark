@@ -48,7 +48,8 @@ export interface DshRunResult {
   finalResponse: string;
   /** 当前 SDK 未公开完整计费汇总；不能把可见消息的 usage 当成总费用。 */
   usage: null;
-  requestedModel: { provider: string; model: string; reasoningEffort: string; maxTokens: number };
+  /** null 表示未向 DSH 指定思考等级，沿用对应供应商/模型配置。 */
+  requestedModel: { provider: string; model: string; reasoningEffort: string | null; maxTokens: number };
   requestedPreset: DshPreset;
   observedPresets: DshPreset[];
   presetFingerprint: string;
@@ -80,7 +81,7 @@ export interface DshLaunchOptions {
   profile: string;
   provider: string;
   model: string;
-  reasoningEffort: string;
+  reasoningEffort?: string;
   maxTokens: number;
   patches: string[];
   env: NodeJS.ProcessEnv;
@@ -213,7 +214,7 @@ export async function runDsh(options: DshRunOptions, dependencies: DshDependenci
   const launch: DshLaunchOptions = {
     dshBin: installation.cliPath, dshHome, processCwd: workspace, cwd: workspace,
     profile: options.profile ?? 'sdk', provider: options.provider, model: options.model,
-    reasoningEffort: options.reasoningEffort, maxTokens: options.maxTokens,
+    ...(options.reasoningEffort === 'default' ? {} : { reasoningEffort: options.reasoningEffort }), maxTokens: options.maxTokens,
     patches: [prepared.patch],
     env: childEnvironment(options.env ?? process.env, dshHome),
   };
@@ -292,7 +293,7 @@ export async function runDsh(options: DshRunOptions, dependencies: DshDependenci
   return {
     finishReason: interruption ?? (!confirmed ? 'preset-not-confirmed' : record(reason) && typeof reason.kind === 'string' ? reason.kind : 'missing-turn-end'),
     durationMs: Math.round(performance.now() - started), finalResponse: result?.finalResponse ?? '', usage: null,
-    requestedModel: { provider: options.provider, model: options.model, reasoningEffort: options.reasoningEffort, maxTokens: options.maxTokens },
+    requestedModel: { provider: options.provider, model: options.model, reasoningEffort: launch.reasoningEffort ?? null, maxTokens: options.maxTokens },
     requestedPreset: preset, observedPresets, presetFingerprint: prepared.fingerprint,
     observedRoutes: [...observedRoutes.values()], responseModels: [], dshVersion: installation.version,
     runtimeClosed: true, cleanupScope: 'sdk-runtime',

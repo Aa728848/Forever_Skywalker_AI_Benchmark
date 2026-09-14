@@ -39,7 +39,7 @@
 | CONC-01 | 异步并发 | 简单 | 取消与超时传播 | 核心 |
 | CONC-02 | 异步并发 | 中等 | 并发令牌刷新与注销竞争 | 核心 |
 | CONC-03 | 异步并发 | 困难 | 多资源锁顺序和饥饿控制 | 核心 |
-| CONC-04 | 异步并发 | 极度困难 | 断点续跑、重复事件和副作用去重 | 核心 |
+| CONC-04 | 异步并发 | 极度困难 | 持久分片归并、崩溃恢复与代际发布 | 核心 |
 | ARCH-01 | 耦合与解耦 | 简单 | 浏览器与宿主依赖边界 | 核心 |
 | ARCH-02 | 耦合与解耦 | 中等 | Provider 元数据与运行时拆分 | 核心 |
 | ARCH-03 | 耦合与解耦 | 困难 | 替换适配器并保持公共契约 | 核心 |
@@ -165,6 +165,7 @@
 
 - `dsh-web/packages/dsh-plugin-manager/tests/gateway-jobs.spec.ts`
 - `deepseek-harness/benchmarks/long-session-browser/long-session.bench.ts`
+- `deepseek-harness/packages/extensions/tool-cordis/tests/cordis-lifecycle.spec.ts`
 
 ### LSP-01 · JSON-RPC 消息边界
 
@@ -421,10 +422,10 @@
 验收不变量：
 
 - invalidate 之后旧在途结果不能复活
-- 新请求可获得新代际结果
-- 删除、重新加载、旧任务失败的交错不会污染缓存
+- 多键读取在同一组稳定代际返回，失效交错会重取一致视图
+- 旧失败不清理新在途，当前失败可重试且不同键并行
 
-公开检查：公开接口、正常样例、预算及以下不变量：invalidate 之后旧在途结果不能复活；新请求可获得新代际结果；删除、重新加载、旧任务失败的交错不会污染缓存。
+公开检查：旧结果失效与原接口回归，多键顺序、重复合并及冻结结果；隐藏验证代际变化、旧失败和当前失败重试交错。
 
 隐藏检查：使用保留的随机种子、故障位置、真实线程屏障或事件交错，验证公开不变量；性能样本在隔离执行中采集。
 
@@ -439,16 +440,16 @@
 
 - 难度：极度困难；题型：独立核心题；状态：已有可执行夹具，尚未校准。
 - 能力域：缓存；题目运行时：typescript。
-- 来源：dsh-trading、dsh-llm-verifier。
+- 来源：dsh-trading、dsh-llm-verifier、deepseek-harness。
 - 任务：在独立任务仓库中实现或修复“并发冷启动、持久化和版本隔离”。公开接口、输入规模和故障语义在题目发布前冻结；保持已有正确行为。
 
 验收不变量：
 
 - 并发首次访问只加载一次持久化文件
-- 模型、规则版本与工作区变化使缓存分域失效
-- 写中断或损坏文件按契约恢复且不吞权限错误
+- 多键提交、刷新与快照保持同一队列确认切面及域隔离
+- 真实暂存同步/替换及进程中断保留完整确认文件，不吞IO错误
 
-公开检查：公开接口、正常样例、预算及以下不变量：并发首次访问只加载一次持久化文件；模型、规则版本与工作区变化使缓存分域失效；写中断或损坏文件按契约恢复且不吞权限错误。
+公开检查：冷启动合并、域隔离、失败写回归与单次批量提交；隐藏验证刷新/快照切面、真实文件失败和进程中断。
 
 隐藏检查：使用保留的随机种子、故障位置、真实线程屏障或事件交错，验证公开不变量；性能样本在隔离执行中采集。
 
@@ -458,6 +459,8 @@
 
 - `dsh-trading/packages/client-ui-trading/test/ttl-cache.test.ts`
 - `dsh-llm-verifier/src/cache.test.ts`
+- `deepseek-harness/packages/session/session-projection-cache/src/index.ts`
+- `deepseek-harness/packages/session/session-projection-cache/src/spec.ts`
 
 ### BND-01 · CLI 参数与零值语义
 
@@ -734,7 +737,7 @@
 - `dsh-chatgpt-subscription/test/oauth-service.test.ts`
 - `deepseek-harness/benchmarks/agent-continuation/agent-continuation.bench.ts`
 
-### CONC-04 · 断点续跑、重复事件和副作用去重
+### CONC-04 · 持久分片归并、崩溃恢复与代际发布
 
 - 难度：极度困难；题型：独立核心题；状态：已有可执行夹具，尚未校准。
 - 能力域：异步并发；题目运行时：typescript。
@@ -787,7 +790,7 @@
 
 - 难度：中等；题型：独立核心题；状态：已有可执行夹具，尚未校准。
 - 能力域：耦合与解耦；题目运行时：typescript。
-- 来源：cwtools-vscode、dsh-web。
+- 来源：cwtools-vscode、dsh-web、deepseek-harness。
 - 任务：在独立任务仓库中实现或修复“Provider 元数据与运行时拆分”。公开接口、输入规模和故障语义在题目发布前冻结；保持已有正确行为。
 
 验收不变量：
@@ -806,12 +809,13 @@
 
 - `cwtools-vscode/client/extension/vanillaCacheLifecycle.ts`
 - `dsh-web/packages/dsh-ssh/src/engine.ts`
+- `deepseek-harness/packages/util/http-proxy/src/policy.ts`
 
 ### ARCH-03 · 替换适配器并保持公共契约
 
 - 难度：困难；题型：独立核心题；状态：已有可执行夹具，尚未校准。
 - 能力域：耦合与解耦；题目运行时：typescript。
-- 来源：cwtools-vscode、dsh-web。
+- 来源：cwtools-vscode、dsh-web、dsh-chatgpt-subscription。
 - 任务：在独立任务仓库中实现或修复“替换适配器并保持公共契约”。公开接口、输入规模和故障语义在题目发布前冻结；保持已有正确行为。
 
 验收不变量：
@@ -830,12 +834,14 @@
 
 - `cwtools-vscode/client/extension/vanillaCacheLifecycle.ts`
 - `dsh-web/packages/dsh-ssh/src/engine.ts`
+- `cwtools-vscode/client/extension/ai/runner/durableStorage.ts`
+- `dsh-chatgpt-subscription/test/web-provider-lifecycle.test.ts`
 
 ### ARCH-04 · 插件热切换、失败回滚与资源归属
 
 - 难度：极度困难；题型：独立核心题；状态：已有可执行夹具，尚未校准。
 - 能力域：耦合与解耦；题目运行时：typescript。
-- 来源：cwtools-vscode、dsh-web。
+- 来源：cwtools-vscode、dsh-web、deepseek-harness。
 - 任务：在独立任务仓库中实现或修复“插件热切换、失败回滚与资源归属”。公开接口、输入规模和故障语义在题目发布前冻结；保持已有正确行为。
 
 验收不变量：
@@ -854,6 +860,7 @@
 
 - `cwtools-vscode/client/extension/vanillaCacheLifecycle.ts`
 - `dsh-web/packages/dsh-ssh/src/engine.ts`
+- `deepseek-harness/packages/extensions/tool-cordis/tests/cordis-lifecycle.spec.ts`
 
 ### GRAPH-01 · 树遍历终止与叶节点
 
@@ -914,11 +921,11 @@
 
 验收不变量：
 
-- 10000 层输入不依赖调用栈深度
-- 转义、嵌套作用域与浅层参考实现等价
-- 错误输入给出边界位置且不无限循环
+- 200000 层遍历与 20000 层共享AST转换保持栈安全
+- 后序转换向父节点传播新子树，共享对象只转换一次且无变化身份复用
+- 畸形或循环结构在转换前拒绝，异常路径精确且后续调用独立
 
-公开检查：公开接口、正常样例、预算及以下不变量：10000 层输入不依赖调用栈深度；转义、嵌套作用域与浅层参考实现等价；错误输入给出边界位置且不无限循环。
+公开检查：既有前后序/深度/错误路径回归，以及父节点消费已转换子树；隐藏验证共享图、身份复用、预检与回调错误。
 
 隐藏检查：使用保留的随机种子、故障位置、真实线程屏障或事件交错，验证公开不变量；性能样本在隔离执行中采集。
 
@@ -985,7 +992,7 @@
 
 - 难度：中等；题型：独立核心题；状态：已有可执行夹具，尚未校准。
 - 能力域：生命周期；题目运行时：typescript。
-- 来源：dsh-web、dsh-chatgpt-subscription、dsh-llm-verifier。
+- 来源：dsh-web、dsh-chatgpt-subscription、dsh-llm-verifier、deepseek-harness。
 - 任务：在独立任务仓库中实现或修复“流结束、超时和迟到回调”。公开接口、输入规模和故障语义在题目发布前冻结；保持已有正确行为。
 
 验收不变量：
@@ -1005,12 +1012,13 @@
 - `dsh-web/packages/dsh-ssh/src/engine.ts`
 - `dsh-chatgpt-subscription/test/web-provider-lifecycle.test.ts`
 - `dsh-llm-verifier/src/auto.test.ts`
+- `deepseek-harness/packages/extensions/tool-cordis/tests/cordis-lifecycle.spec.ts`
 
 ### LIFE-03 · 启动、停止和重启竞争
 
 - 难度：困难；题型：独立核心题；状态：已有可执行夹具，尚未校准。
 - 能力域：生命周期；题目运行时：typescript。
-- 来源：dsh-web、dsh-chatgpt-subscription、dsh-llm-verifier。
+- 来源：dsh-web、dsh-chatgpt-subscription、dsh-llm-verifier、deepseek-harness。
 - 任务：在独立任务仓库中实现或修复“启动、停止和重启竞争”。公开接口、输入规模和故障语义在题目发布前冻结；保持已有正确行为。
 
 验收不变量：
@@ -1030,6 +1038,7 @@
 - `dsh-web/packages/dsh-ssh/src/engine.ts`
 - `dsh-chatgpt-subscription/test/web-provider-lifecycle.test.ts`
 - `dsh-llm-verifier/src/auto.test.ts`
+- `deepseek-harness/packages/core/agent-loop/tests/scope-lifecycle.spec.ts`
 
 ### LIFE-04 · 子进程故障、回收和验收重入隔离
 
@@ -1115,11 +1124,11 @@
 
 验收不变量：
 
-- 统计结果与物化完整图相同
-- 规模倍增时不出现不必要的平方级中间对象
-- 稀疏和密集输入均满足各自公开预算
+- 全量统计与持续增量更新都符合独立图oracle
+- 批次读取失败不发布部分图，未解析依赖删除重建保持准确
+- 只读取修改源，专用持续局部更新负载保存全部配对性能证据
 
-公开检查：公开接口、正常样例、预算及以下不变量：统计结果与物化完整图相同；规模倍增时不出现不必要的平方级中间对象；稀疏和密集输入均满足各自公开预算。
+公开检查：原统计语义与线性访问预算、增量替换移除旧入边；隐藏验证批次事务、未解析目标恢复、快照隔离和持续编辑差分。
 
 隐藏检查：使用保留的随机种子、故障位置、真实线程屏障或事件交错，验证公开不变量；性能样本在隔离执行中采集。
 
@@ -1140,11 +1149,11 @@
 
 验收不变量：
 
-- 100000 个增量的快照重放语义正确
-- 与同机参考实现比较中位数、p95 和吞吐
-- 保留堆与峰值内存符合预算且热路径不偷减工作
+- 有界流式投影、UTF8计数、生命周期关闭重开与检查点恢复一致
+- 持久确认后才发布，陈旧/伪造票据与错误日志检查点被拒绝
+- 源读取遵守背压，专用新主路径负载保留同机参考的全部配对样本
 
-公开检查：公开接口、正常样例、预算及以下不变量：100000 个增量的快照重放语义正确；与同机参考实现比较中位数、p95 和吞吐；保留堆与峰值内存符合预算且热路径不偷减工作。
+公开检查：原摘要回归、流式重放/检查点恢复与持久失败隔离；隐藏验证票据代际、日志身份、背压、生命周期及独立分块折叠。
 
 隐藏检查：使用保留的随机种子、故障位置、真实线程屏障或事件交错，验证公开不变量；性能样本在隔离执行中采集。
 
@@ -1155,6 +1164,9 @@
 - `deepseek-harness/benchmarks/support/calibration.ts`
 - `deepseek-harness/benchmarks/active-stream-reconnect/reconnect.bench.client.ts`
 - `dsh-trading/packages/knowledge/test/graph.test.ts`
+- `deepseek-harness/packages/session/session-projection-cache/src/index.ts`
+- `deepseek-harness/packages/session/session-projection-cache/src/spec.ts`
+- `deepseek-harness/packages/api/session-controller/tests/session-projections.host.spec.ts`
 
 ### STATE-01 · 原子写入与损坏检测
 
@@ -1230,6 +1242,7 @@
 - `cwtools-vscode/client/extension/ai/runner/durableStorage.ts`
 - `dsh-trading/packages/dsh-home/test/fs-atomic.test.ts`
 - `dsh-llm-verifier/src/topic-storage.test.ts`
+- `dsh-trading/packages/client-ui-trading/src/tasks/ledger.ts`
 
 ### STATE-04 · UI、服务、缓存的故障后一致性
 

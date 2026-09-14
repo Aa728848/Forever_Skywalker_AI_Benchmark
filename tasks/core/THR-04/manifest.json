@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "THR-04",
-  "taskVersion": "0.1.1",
+  "taskVersion": "0.2.0",
   "title": "多线程代际发布与中断恢复",
   "runtime": "mixed",
   "runtimeRange": "node >=24.14.1 <25",
@@ -43,7 +43,10 @@
     "alternative": "graders/THR-04/alternative",
     "defectDetectors": [
       "public/state-old-generation-finishes-late",
-      "hidden/state-three-generations-and-copy"
+      "hidden/state-three-generations-and-copy",
+      "hidden/global-budget-and-superseded-queue",
+      "hidden/close-cancels-queued-and-drains",
+      "hidden/preaborted-admission-and-size"
     ]
   },
   "limits": {
@@ -92,6 +95,30 @@
       "weight": 1,
       "critical": true,
       "summary": "hidden/state-three-generations-and-copy"
+    },
+    {
+      "id": "hidden/global-budget-and-superseded-queue",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": true,
+      "summary": "所有代共用真实线程上限，新代撤销旧代在途与排队任务。"
+    },
+    {
+      "id": "hidden/close-cancels-queued-and-drains",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "关闭停止接收并确认全部线程退出与build结算。"
+    },
+    {
+      "id": "hidden/preaborted-admission-and-size",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "无效并发预算拒绝，预取消不消耗代际。"
     }
   ]
 }

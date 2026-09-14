@@ -52,4 +52,59 @@ report "hidden/boundary-undeclared-and-stale" (fun () ->
     equal false (index.Publish(ticket))
 )
 
+
+report "hidden/document-version-and-duplicate-result" (fun () ->
+    let index=Index()
+    let ticket=index.BeginWithVersions("w",1,Map.ofList ["a",4;"b",9])
+    equal false (index.StageVersioned(ticket,"a",3,Some ["stale"]))
+    equal true (index.StageVersioned(ticket,"a",4,Some ["a4"]))
+    equal false (index.StageVersioned(ticket,"a",4,Some ["late duplicate"]))
+    equal false (index.Publish(ticket))
+    equal true (index.StageVersioned(ticket,"b",9,None))
+    equal true (index.Publish(ticket))
+    equal {Symbols=Map.ofList ["a",["a4"]];Versions=Map.ofList ["a",4]} (index.View("w"))
+)
+report "hidden/readers-observe-atomic-versioned-view" (fun () ->
+    let index=Index()
+    let errors=System.Collections.Concurrent.ConcurrentQueue<string>()
+    use stop=new CancellationTokenSource()
+    use started=new ManualResetEventSlim(false)
+    let reader=Task.Run(Action(fun () ->
+      started.Set()
+      while not stop.IsCancellationRequested do
+        let view=index.View("w")
+        if view.Symbols.Count<>view.Versions.Count then errors.Enqueue("split view")
+        for KeyValue(path,version) in view.Versions do
+            if Map.tryFind path view.Symbols<>Some [string version] then errors.Enqueue("version mismatch")))
+    if not(started.Wait(3000)) then failwith "reader did not start"
+    try
+        for generation in 0..24 do
+            let ticket=index.BeginWithVersions("w",generation,Map.ofList ["a",generation;"b",generation])
+            equal true (index.StageVersioned(ticket,"a",generation,Some [string generation]))
+            equal true (index.StageVersioned(ticket,"b",generation,Some [string generation]))
+            equal true (index.Publish(ticket))
+        equal 2 (index.View("w").Versions.Count)
+    finally stop.Cancel(); if not(reader.Wait(3000)) then failwith "reader did not stop"
+    equal true errors.IsEmpty
+)
+report "hidden/close-callback-reopen-and-foreign-ticket" (fun () ->
+    let index=Index()
+    let ticket=index.Begin("w",1,["a"])
+    let mutable reopened:Build option=None
+    use registration=ticket.Token.Register(Action(fun () ->
+        let observer=Task.Run(fun () -> index.View("w"))
+        if not(observer.Wait(2000)) then failwith "close callback held gate"
+        reopened<-Some(index.Begin("w",0,[]))))
+    index.Close("w")
+    equal true reopened.IsSome
+    equal true (index.Publish(reopened.Value))
+    equal false (index.Stage(ticket,"a",Some ["late"]))
+    let other=Index()
+    let owner=Index()
+    let own=owner.Begin("x",2,["a"])
+    let foreign=other.Begin("x",2,["a"])
+    equal false (owner.Stage(foreign,"a",Some ["foreign"]))
+    equal true (owner.Stage(own,"a",Some ["own"]))
+)
+
 if failures > 0 then exit 1

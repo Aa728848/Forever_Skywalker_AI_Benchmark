@@ -1,0 +1,13 @@
+diff --git a/starter/src/shard-merge.ts b/starter/src/shard-merge.ts
+index c4d904f..7a1a58b 100644
+--- a/starter/src/shard-merge.ts
++++ b/starter/src/shard-merge.ts
+@@ -15,7 +15,7 @@ export class ShardMerge {
+  #directory(runId:string):string{return join(this.#root,'runs',hash(runId));}
+  #plan(runId:string):Plan{const plan=read<Plan>(join(this.#directory(runId),'plan.json'));if(plan.runId!==runId)throw new Error('corrupt plan');return plan;}
+  #shard(runId:string,id:string):string{return join(this.#directory(runId),'shards',hash(id)+'.json');}
+- #load(runId:string,entry:Entry):string[]{const lines=read<string[]>(this.#shard(runId,entry.id));if(hash(JSON.stringify(lines))!==entry.hash)throw new Error('corrupt shard');return lines;}
++ #load(runId:string,entry:Entry):string[]{const lines=read<string[]>(this.#shard(runId,entry.id));return lines;}
+  prepare(generation:number,runId:string,shards:readonly Shard[]):void{
+   if(!Number.isSafeInteger(generation)||generation<0||!runId||shards.some(shard=>!shard.id)||new Set(shards.map(shard=>shard.id)).size!==shards.length)throw new RangeError('invalid plan');
+   const plan:Plan={generation,runId,shards:shards.map(shard=>({id:shard.id,lines:[...shard.lines],hash:hash(JSON.stringify(shard.lines))}))};

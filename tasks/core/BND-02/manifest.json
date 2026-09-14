@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "BND-02",
-  "taskVersion": "0.1.0",
+  "taskVersion": "0.2.0",
   "title": "严格裁判输出和嵌套工具参数",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -49,7 +49,10 @@
       "hidden/rejects-unterminated-json-fence",
       "hidden/non-json-fences-are-ignored",
       "hidden/tool-arguments-nested-escapes",
-      "hidden/invalid-arguments-shape"
+      "hidden/invalid-arguments-shape",
+      "hidden/fence-length-and-opaque-foreign-block",
+      "hidden/preserve-special-score-keys",
+      "hidden/tool-arguments-have-one-decoding-boundary"
     ]
   },
   "limits": {
@@ -161,7 +164,7 @@
       "group": "boundary",
       "weight": 1,
       "critical": false,
-      "summary": "分数边界 0/100 合法，越界与小数值非法。"
+      "summary": "分数边界0/100与区间小数合法，越界非法。"
     },
     {
       "id": "hidden/does-not-mutate-input",
@@ -170,6 +173,30 @@
       "weight": 1,
       "critical": false,
       "summary": "重复解析结果一致且不修改输入。"
+    },
+    {
+      "id": "hidden/fence-length-and-opaque-foreign-block",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": true,
+      "summary": "按围栏长度跳过不透明代码块与检查未闭合优先级。"
+    },
+    {
+      "id": "hidden/preserve-special-score-keys",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "合法小数及所有字符串键保留，不触发原型setter。"
+    },
+    {
+      "id": "hidden/tool-arguments-have-one-decoding-boundary",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": true,
+      "summary": "嵌套工具参数恰好解码一层并拒绝非对象。"
     }
   ]
 }

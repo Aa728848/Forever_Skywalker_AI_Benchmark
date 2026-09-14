@@ -1,0 +1,26 @@
+[
+  {
+    "id": "key-only-transaction",
+    "description": "已做幂等去重但忽略同键金额冲突。",
+    "patch": "graders/STATE-03/mutants/key-only-transaction.patch",
+    "expectedFailures": [
+      "public/transaction-identity-preserves-original-receipt"
+    ]
+  },
+  {
+    "id": "no-ack-reconciliation",
+    "description": "普通成功路径正确，但append抛错即失败，遗漏已持久化确认。",
+    "patch": "graders/STATE-03/mutants/no-ack-reconciliation.patch",
+    "expectedFailures": [
+      "public/acknowledgement-loss-reconciles-persisted-transaction"
+    ]
+  },
+  {
+    "id": "partial-recovery-publication",
+    "description": "逐条恢复时就发布余额，坏尾使外部看到未经完整验证的状态。",
+    "patch": "graders/STATE-03/mutants/partial-recovery-publication.patch",
+    "expectedFailures": [
+      "public/recovery-publishes-only-completely-valid-snapshot"
+    ]
+  }
+]

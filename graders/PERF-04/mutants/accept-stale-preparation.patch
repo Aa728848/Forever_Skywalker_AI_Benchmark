@@ -1,0 +1,13 @@
+diff --git a/starter/src/projection.ts b/starter/src/projection.ts
+index 6b65aa0..7ed44d1 100644
+--- a/starter/src/projection.ts
++++ b/starter/src/projection.ts
+@@ -28,7 +28,7 @@ export class SessionProjection {
+   const ticket=Object.freeze({through,accepted});this.#tickets.set(ticket,{revision:this.#revision,rows:next,checkpoint:checkpoint(this.#logId,through,next),accepted});return ticket;
+  }
+  commit(ticket:ProjectionTicket,persist:(value:ProjectionCheckpoint)=>Promise<void>):Promise<boolean>{const operation=this.#tail.then(async()=>{
+-  const prepared=this.#tickets.get(ticket);if(!prepared||prepared.revision!==this.#revision)return false;
++  const prepared=this.#tickets.get(ticket);if(!prepared)return false;
+   if(prepared.accepted===0){this.#tickets.delete(ticket);return true;}
+   await persist(prepared.checkpoint);
+   this.#rows=prepared.rows;this.#snapshot=prepared.checkpoint;this.#revision++;this.#tickets.delete(ticket);return true;

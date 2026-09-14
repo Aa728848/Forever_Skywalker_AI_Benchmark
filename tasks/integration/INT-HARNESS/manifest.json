@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "INT-HARNESS",
-  "taskVersion": "0.1.0",
+  "taskVersion": "0.2.0",
   "title": "长会话续跑与重连一致性",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -46,7 +46,9 @@
       "public/boundary-zero-prefix-and-invalid-compact",
       "public/state-gap-cannot-publish",
       "hidden/resources-large-compact-prefix",
-      "hidden/state-foreign-attempt-isolation"
+      "hidden/state-foreign-attempt-isolation",
+      "hidden/resources-prefix-does-not-read-tail",
+      "hidden/behavior-mixed-packed-prefix-oracle"
     ]
   },
   "limits": {
@@ -101,6 +103,22 @@
       "kind": "hidden",
       "group": "state",
       "summary": "外来attempt与结束帧不能改变当前已重建前缀。",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/resources-prefix-does-not-read-tail",
+      "kind": "hidden",
+      "group": "resources",
+      "summary": "受信数组访问探针验证前缀外载荷不读取，零前缀无展开。",
+      "weight": 1,
+      "critical": true
+    },
+    {
+      "id": "hidden/behavior-mixed-packed-prefix-oracle",
+      "kind": "hidden",
+      "group": "behavior",
+      "summary": "固定组合的混合压缩记录与原完整展开oracle前缀一致，错误索引不污染接续。",
       "weight": 1,
       "critical": true
     }

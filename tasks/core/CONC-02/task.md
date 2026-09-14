@@ -1,6 +1,6 @@
 # CONC-02 · 并发令牌刷新与注销竞争
 
-- 难度：中等；题型：独立核心题；能力域：异步并发。运行时：TypeScript on Node.js 24。题目版本：0.1.1。
+- 难度：中等；题型：独立核心题；能力域：异步并发。运行时：TypeScript on Node.js 24。题目版本：0.2.0。
 
 0.1.1 补齐目录要求的令牌刷新/注销场景，并保留 0.1.0 的 TaskGroup 接口和回归行为。
 
@@ -54,3 +54,9 @@ node --test --test-isolation=none --test-reporter=tap "public-tests/**/*.test.ts
 
 - 参考实现通过全部公开与未公开检查；缺陷起始版本只被声明的检出项判失败；替代实现同样通过。
 - 本阶段产出检查结论与可用验证分；代码质量评审接入前总分保持待定。
+
+## 0.2.0 认证请求与任务生命周期组合
+
+TokenSession新增 authorized<T>(id,work:(accessToken:string,signal:AbortSignal)=>Promise<T>):Promise<T>：先登记TaskGroup成员，再通过共享refresh获得token，仅未注销/未取消时启动work。同实例并发请求共享刷新但传输各自独立。logout立即使所有未结算授权请求以SignedOutError拒绝并abort传输signal；迟到刷新成功不能再启动传输。close():Promise<void>先logout，等待所有已启动授权请求的底层work最终结算（包括忽略abort后才完成的清理）；多次close返回同一Promise。
+
+TaskGroup在调用work之前必须登记成员，允许work同步调用cancelAll。cancelAll只取消调用瞬间成员，并等待这些底层work结束，取消回调中新登记的成员不受影响。活动id重复以错误含duplicate的拒绝Promise报告，旧成员结束不得误删已复用id的新成员。刷新端口可同步重入refresh；共享在途请求必须在调用端口前登记；各refresh返回对象不可互相改写。已注销后的迟到刷新错误也转SignedOutError，未注销失败仍保留原因。

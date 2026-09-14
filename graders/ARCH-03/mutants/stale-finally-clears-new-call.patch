@@ -1,0 +1,12 @@
+diff --git a/starter/src/repository-router.ts b/starter/src/repository-router.ts
+--- a/starter/src/repository-router.ts
++++ b/starter/src/repository-router.ts
+@@ -26,7 +26,7 @@
+     return promise;
+   }
+   #finish(id:string,entry:Call,value?:V2Result,error?:unknown):void{
+-    if(this.#calls.get(id)===entry)this.#calls.delete(id);
++    this.#calls.delete(id);
+     for(const waiter of entry.waiters){waiter.detach();if(value)waiter.resolve({ok:value.status==='ok',durationMs:value.durationSeconds*1000,body:value.status==='ok'?value.body:null});else waiter.reject(new AdapterError(id,error));}
+     entry.waiters.clear();
+   }

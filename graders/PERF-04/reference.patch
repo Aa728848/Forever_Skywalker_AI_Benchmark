@@ -1,3 +1,40 @@
+diff --git a/starter/src/projection.ts b/starter/src/projection.ts
+index 1bc977e..6b65aa0 100644
+--- a/starter/src/projection.ts
++++ b/starter/src/projection.ts
+@@ -5,15 +5,15 @@ export interface ProjectionLimits {readonly maxSessions:number;readonly maxBatch
+ export interface ProjectionTicket {readonly through:number;readonly accepted:number}
+ export class ProjectionError extends Error {readonly code:string;constructor(code:string){super(code);this.code=code;}}
+ function checkpoint(logId:string,through:number,rows:Map<string,ProjectionRow>):ProjectionCheckpoint{return Object.freeze({schema:1 as const,logId,through,rows:Object.freeze([...rows.values()].sort((a,b)=>a.id<b.id?-1:a.id>b.id?1:0))});}
+-function restore(limits:ProjectionLimits,input:ProjectionCheckpoint|undefined):Map<string,ProjectionRow>{
++function restore(logId:string,limits:ProjectionLimits,input:ProjectionCheckpoint|undefined):Map<string,ProjectionRow>{
+  if(!input)return new Map();
+- if(input.schema!==1||!Number.isSafeInteger(input.through)||input.through<0||!Array.isArray(input.rows)||input.rows.length>limits.maxSessions)throw new ProjectionError('checkpoint');
++ if(input.schema!==1||input.logId!==logId||!Number.isSafeInteger(input.through)||input.through<0||!Array.isArray(input.rows)||input.rows.length>limits.maxSessions)throw new ProjectionError('checkpoint');
+  const rows=new Map<string,ProjectionRow>();for(const row of input.rows){if(!row||typeof row.id!=='string'||!row.id.length||rows.has(row.id)||!Number.isSafeInteger(row.epoch)||row.epoch<1||typeof row.open!=='boolean'||!Number.isSafeInteger(row.messages)||row.messages<0||!Number.isSafeInteger(row.bytes)||row.bytes<0||!Number.isFinite(row.lastAt))throw new ProjectionError('checkpoint');rows.set(row.id,Object.freeze({...row}));}return rows;
+ }
+ interface Prepared {readonly revision:number;readonly rows:Map<string,ProjectionRow>;readonly checkpoint:ProjectionCheckpoint;readonly accepted:number}
+ export class SessionProjection {
+  readonly #logId:string;readonly #limits:ProjectionLimits;#rows:Map<string,ProjectionRow>;#snapshot:ProjectionCheckpoint;#revision=0;#tickets=new WeakMap<ProjectionTicket,Prepared>();#tail=Promise.resolve();
+- constructor(logId:string,limits:ProjectionLimits,initial?:ProjectionCheckpoint){if(!logId||!Object.values(limits).every(value=>Number.isSafeInteger(value)&&value>0)||!['maxSessions','maxBatchEvents','maxBatchBytes'].every(key=>key in limits))throw new ProjectionError('invalid');this.#logId=logId;this.#limits={...limits};this.#rows=restore(limits,initial);this.#snapshot=checkpoint(logId,initial?.through??0,this.#rows);}
++ constructor(logId:string,limits:ProjectionLimits,initial?:ProjectionCheckpoint){if(!logId||!Object.values(limits).every(value=>Number.isSafeInteger(value)&&value>0)||!['maxSessions','maxBatchEvents','maxBatchBytes'].every(key=>key in limits))throw new ProjectionError('invalid');this.#logId=logId;this.#limits={...limits};this.#rows=restore(logId,limits,initial);this.#snapshot=checkpoint(logId,initial?.through??0,this.#rows);}
+  snapshot():ProjectionCheckpoint{return this.#snapshot;}
+  prepare(events:readonly ProjectionEvent[]):ProjectionTicket{
+   if(events.length>this.#limits.maxBatchEvents)throw new ProjectionError('capacity');let bytes=0;
+@@ -28,10 +28,10 @@ export class SessionProjection {
+   const ticket=Object.freeze({through,accepted});this.#tickets.set(ticket,{revision:this.#revision,rows:next,checkpoint:checkpoint(this.#logId,through,next),accepted});return ticket;
+  }
+  commit(ticket:ProjectionTicket,persist:(value:ProjectionCheckpoint)=>Promise<void>):Promise<boolean>{const operation=this.#tail.then(async()=>{
+-  const prepared=this.#tickets.get(ticket);if(!prepared)return false;
++  const prepared=this.#tickets.get(ticket);if(!prepared||prepared.revision!==this.#revision)return false;
+   if(prepared.accepted===0){this.#tickets.delete(ticket);return true;}
+-  this.#rows=prepared.rows;this.#snapshot=prepared.checkpoint;this.#revision++;
+-  await persist(prepared.checkpoint);this.#tickets.delete(ticket);return true;
++  await persist(prepared.checkpoint);
++  this.#rows=prepared.rows;this.#snapshot=prepared.checkpoint;this.#revision++;this.#tickets.delete(ticket);return true;
+  });this.#tail=operation.then(()=>{},()=>{});return operation;}
+ }
+ export async function replayProjection(projection:SessionProjection,source:AsyncIterable<readonly ProjectionEvent[]>,persist:(value:ProjectionCheckpoint)=>Promise<void>):Promise<ProjectionCheckpoint>{
 diff --git a/starter/src/replay.ts b/starter/src/replay.ts
 index 75a726c..3c4774a 100644
 --- a/starter/src/replay.ts

@@ -1,0 +1,13 @@
+diff --git a/starter/packages/client-ui-trading/src/tasks/ledger.ts b/starter/packages/client-ui-trading/src/tasks/ledger.ts
+index 84fd8df..545112d 100644
+--- a/starter/packages/client-ui-trading/src/tasks/ledger.ts
++++ b/starter/packages/client-ui-trading/src/tasks/ledger.ts
+@@ -589,7 +589,7 @@ export class TasksLedger {
+       for (const task of document.tasks) {
+         for (const execution of task.executions) {
+           if (execution.endedAt !== undefined) continue
+-          if (execution.sessionId === undefined) {
++          if (true) {
+             execution.endedAt = now
+             execution.result = 'cancelled'
+             execution.error = 'host restarted before the execution session was created'

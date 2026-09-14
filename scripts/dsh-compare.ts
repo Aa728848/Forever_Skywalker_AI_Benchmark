@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { pathToFileURL } from 'node:url';
 import { repositoryRoot } from '../packages/tasks/src/index.ts';
+import { tasks } from '../packages/catalog/src/index.ts';
 import { probeContainerRuntime, requirePinnedImage } from '../packages/executor/src/index.ts';
 import { judgeConfigFromEnvironment, JudgeUnavailableError } from '../packages/judge/src/index.ts';
 import { runDshComparison, validateComparison, type DshComparisonOptions } from '../packages/evaluation/src/dsh-comparison.ts';
@@ -16,11 +17,15 @@ const usage = `DSH 自动模式对比（固定 Linux 评分，沿用你的 DSH h
 pnpm dsh:compare --model <DSH 中的模型 ID>
 pnpm dsh:compare --preset ptc --model <模型 ID> --reasoning high --output <报告目录>
 pnpm dsh:compare --presets standard,ptc,minimal,cordis --model <模型 ID> --reasoning high --tasks API-04,GRAPH-04
+pnpm dsh:compare --all --provider <供应商ID> --model <模型ID> --preset standard --reasoning high
 pnpm dsh:compare --model <模型 ID> --check
 
 预设：standard/标准、ptc/PTC、minimal/极简、cordis/创造。与思考等级分别设置。
+--provider 指定 DSH 供应商 ID；与 --model 一起确定目标，同名模型不会跨供应商自动匹配。
 默认标准预设、CACHE-02、off/high、每组一次、每题 20 分钟、每请求输出上限 16384 Token。
 --reasoning 指定一个思考等级；已有 --modes off,high,max 可同时比较多个等级。
+--reasoning default 沿用供应商/模型默认值，省略思考参数；未声明推理等级的模型使用此项。default 不等同 off。
+--all 选择全部已具备题目包的题，不能与 --tasks 同时使用。
 --check 只核对本地文件、容器和裁判参数；不启动 DSH、不调用模型。
 --minutes / --max-tokens 调整作答预算；--no-measure 跳过性能采样（完整质量分保持待定）。
 输出目录只保留报告及压缩证据；其余本次临时数据在报告确认保存后清理。
@@ -31,7 +36,7 @@ try {
   const { values, positionals } = parseArgs({ options: {
     help: { type: 'boolean' }, check: { type: 'boolean' }, model: { type: 'string' }, provider: { type: 'string' },
     preset: { type: 'string' }, presets: { type: 'string' }, reasoning: { type: 'string' }, output: { type: 'string' },
-    tasks: { type: 'string', default: 'CACHE-02' }, modes: { type: 'string' },
+    tasks: { type: 'string' }, all: { type: 'boolean' }, modes: { type: 'string' },
     repeat: { type: 'string', default: '1' }, minutes: { type: 'string', default: '20' },
     'max-tokens': { type: 'string', default: '16384' }, 'no-measure': { type: 'boolean' },
   } });
@@ -40,6 +45,7 @@ try {
     if (positionals.length > 0) throw new Error('不接受位置参数；使用 --model 指定模型。');
     if (values.preset !== undefined && values.presets !== undefined) throw new Error('--preset 与 --presets 请选择一种。');
     if (values.reasoning !== undefined && values.modes !== undefined) throw new Error('--reasoning 与 --modes 请选择一种。');
+    if (values.all && values.tasks !== undefined) throw new Error('--all 与 --tasks 请选择一种。');
     if (values.reasoning !== undefined && /[,\s]/.test(values.reasoning.trim())) throw new Error('--reasoning 只接受一个等级；比较多个等级请用 --modes。');
     const outputRoot = resolve(values.output || process.env.BENCH_DSH_REPORT_DIR || join(repositoryRoot, 'data', 'experiments'));
     const options: DshComparisonOptions = {
@@ -49,7 +55,7 @@ try {
       model: values.model || process.env.BENCH_DSH_MODEL || '',
       // PowerShell 的 pnpm shim 会把未引用的逗号列表作为空格列表传入。
       presets: (values.presets || values.preset || process.env.BENCH_DSH_PRESETS || 'standard').split(/[,\s]+/).filter(Boolean).map(resolveDshPreset),
-      taskIds: values.tasks.split(/[,\s]+/).filter(Boolean),
+      taskIds: values.all ? tasks.filter(task => task.status !== 'designed').map(task => task.id) : (values.tasks ?? 'CACHE-02').split(/[,\s]+/).filter(Boolean),
       modes: (values.modes || values.reasoning || process.env.BENCH_DSH_REASONING_EFFORT || 'off,high').split(/[,\s]+/).filter(Boolean),
       repeats: Number(values.repeat), maxTokens: Number(values['max-tokens']), timeoutMs: Number(values.minutes) * 60_000,
       outputDirectory: join(outputRoot, new Date().toISOString().replace(/[:.]/g, '-') + '-' + randomUUID().slice(0, 8)),

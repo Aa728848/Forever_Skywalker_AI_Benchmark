@@ -1,8 +1,8 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "CONC-04",
-  "taskVersion": "0.1.0",
-  "title": "断点续跑、重复事件和副作用去重",
+  "taskVersion": "0.2.0",
+  "title": "持久分片归并、崩溃恢复与代际发布",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
   "workspace": {
@@ -48,7 +48,12 @@
       "hidden/crash-after-effect-does-not-double-apply",
       "hidden/resume-drains-pending-effects",
       "hidden/effect-ledger-is-the-authority",
-      "hidden/out-of-order-and-duplicate-mix"
+      "hidden/out-of-order-and-duplicate-mix",
+      "public/shards-only-publish-complete-generation",
+      "public/shards-restart-and-frozen-plan",
+      "hidden/shards-real-process-crash-and-resume",
+      "hidden/shards-parallel-workers-and-checksum",
+      "hidden/shards-stale-generation-and-content-conflict"
     ]
   },
   "limits": {
@@ -145,6 +150,46 @@
       "weight": 1,
       "critical": false,
       "summary": "构造只读存储，不依赖内存残留。"
+    },
+    {
+      "id": "public/shards-only-publish-complete-generation",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "所有分片齐备前不能覆盖已确认快照。"
+    },
+    {
+      "id": "public/shards-restart-and-frozen-plan",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "跨实例恢复与输入冻结，不依赖进程内Map。"
+    },
+    {
+      "id": "hidden/shards-real-process-crash-and-resume",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": true,
+      "summary": "真实进程在持久化故障点退出后恢复且不重复行。"
+    },
+    {
+      "id": "hidden/shards-parallel-workers-and-checksum",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": true,
+      "summary": "多个真实进程提交分片及重复提交，内容损坏拒绝发布。"
+    },
+    {
+      "id": "hidden/shards-stale-generation-and-content-conflict",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "旧代不可覆盖新代，同运行ID不同内容拒绝。"
     }
   ]
 }

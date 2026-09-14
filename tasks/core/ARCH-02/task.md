@@ -1,6 +1,6 @@
 # ARCH-02 · Provider 元数据与运行时拆分
 
-- 难度：中等；题型：独立核心题；能力域：耦合与解耦。运行时：TypeScript on Node.js 24。题目版本：0.1.0。
+- 难度：中等；题型：独立核心题；能力域：耦合与解耦。运行时：TypeScript on Node.js 24。题目版本：0.2.0。
 
 ## 背景
 
@@ -41,3 +41,9 @@ node --test --test-isolation=none --test-reporter=tap "public-tests/**/*.test.ts
 
 - 参考实现通过全部公开与未公开检查；缺陷起始版本只被声明的检出项判失败；替代实现同样通过。
 - 本阶段产出检查结论与可用验证分；代码质量评审接入前总分保持待定。
+
+## 0.2.0 元数据目录与惰性模块加载
+
+保留 resolveProviders，新增 starter/src/provider-registry.ts 的 ProviderRegistry(catalog:readonly LoadableProvider[])，LoadableProvider 在 Provider 上增加 load():Promise<unknown>。list(runtime) 返回仅id/runtime/label元数据副本，不能触发任何loader；构造时按原目录规则验证重复/非法元数据。
+
+load(id,runtime) 必须先判断该provider是否属于目标运行时，再加载模块；未知/不可用id返回以RangeError拒绝的Promise，不能同步抛错或调用loader。成功结果仅在当前registry缓存；同id并发（含shared跨runtime）只调用一次loader，所有调用者获得同一结果。loader同步抛出或异步失败均原样转为Promise拒绝，失败不得永久缓存。另一个registry拥有独立生命周期。

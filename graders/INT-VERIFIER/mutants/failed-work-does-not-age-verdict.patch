@@ -1,0 +1,12 @@
+diff --git a/starter/upstream/src/auto.ts b/starter/upstream/src/auto.ts
+--- a/starter/upstream/src/auto.ts
++++ b/starter/upstream/src/auto.ts
+@@ -182,7 +182,7 @@
+   // completed at seq 6 while it was running, and a failed post-pass command must not leave
+   // the earlier pass valid either.
+   const completedWork = [
+-    ...calls.filter(event => allResults.has(String(event.data.callId))).map(event => ({ seq: allResults.get(String(event.data.callId))!.seq, name: event.data.name })),
++    ...calls.filter(event => results.has(String(event.data.callId))).map(event => ({ seq: results.get(String(event.data.callId))!.seq, name: event.data.name })),
+     ...dispatches.map(entry => ({ seq: entry.seq, name: entry.data.name })),
+   ]
+   const stale = (coveredTo: number) => completedWork.some(entry => entry.seq > coveredTo && isConsequential(entry.name))

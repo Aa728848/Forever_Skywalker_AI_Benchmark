@@ -1,8 +1,16 @@
 diff --git a/starter/src/verdict.ts b/starter/src/verdict.ts
-index 046fdad..8c8683a 100644
+index 046fdad..123c066 100644
 --- a/starter/src/verdict.ts
 +++ b/starter/src/verdict.ts
-@@ -43,31 +43,54 @@ function toVerdict(value: unknown): Verdict {
+@@ -36,38 +36,50 @@ function toVerdict(value: unknown): Verdict {
+     if (typeof score !== 'number' || !Number.isFinite(score) || score < 0 || score > 100) {
+       throw new VerdictFormatError('invalid-shape', 'scores.' + name + ' 必须是 0 到 100 之间的有限数。');
+     }
+-    normalized[name] = score;
++    Object.defineProperty(normalized, name, { value:score, enumerable:true, writable:true, configurable:true });
+   }
+   const rationale = value.rationale;
+   if (typeof rationale !== 'string' || rationale.trim() === '') throw new VerdictFormatError('invalid-shape', 'rationale 必须是非空字符串。');
    return { winner, scores: normalized, rationale };
  }
  
@@ -13,24 +21,13 @@ index 046fdad..8c8683a 100644
 -  return match[0];
 +/** 扫描成对的围栏块，只认 info 为 json 的块；未闭合的 json 围栏视为语法错误。 */
 +function jsonBlocks(raw: string): string[] {
-+  const lines = raw.split(/\r?\n/);
-+  const bodies: string[] = [];
-+  for (let index = 0; index < lines.length; index += 1) {
-+    const match = /^\s*```([A-Za-z0-9_-]*)\s*$/.exec(lines[index] ?? '');
-+    if (match === null) continue;
-+    const info = (match[1] ?? '').toLowerCase();
-+    const body: string[] = [];
-+    let cursor = index + 1;
-+    while (cursor < lines.length && !/^\s*```\s*$/.test(lines[cursor] ?? '')) {
-+      body.push(lines[cursor] ?? '');
-+      cursor += 1;
-+    }
-+    if (cursor >= lines.length) {
-+      if (info === 'json') throw new VerdictFormatError('invalid-json', 'json 围栏块没有闭合。');
-+      break;
-+    }
-+    if (info === 'json') bodies.push(body.join('\n'));
-+    index = cursor;
++  const lines=raw.split(/\r?\n/),bodies:string[]=[];
++  for(let index=0;index<lines.length;index++){
++    const opening=/^[ \t]*(\x60{3,})([^\x60]*)$/.exec(lines[index]!);if(!opening)continue;
++    const length=opening[1]!.length,info=opening[2]!.trim().toLowerCase();const body:string[]=[];let cursor=index+1;
++    for(;cursor<lines.length;cursor++){const end=/^[ \t]*(\x60{3,})[ \t]*$/.exec(lines[cursor]!);if(end&&end[1]!.length>=length)break;body.push(lines[cursor]!);}
++    if(cursor===lines.length){if(info==='json')throw new VerdictFormatError('invalid-json','unclosed json fence');break;}
++    if(info==='json')bodies.push(body.join('\n'));index=cursor;
 +  }
 +  return bodies;
 +}
@@ -69,7 +66,7 @@ index 046fdad..8c8683a 100644
      throw new VerdictFormatError('invalid-json', '工具调用 JSON 解析失败。');
    }
    if (!Array.isArray(parsed)) throw new VerdictFormatError('invalid-arguments', '工具调用必须是数组。');
-@@ -75,9 +98,16 @@ export function parseToolCalls(raw: string): ToolCall[] {
+@@ -75,9 +87,16 @@ export function parseToolCalls(raw: string): ToolCall[] {
      if (!isRecord(item)) throw new VerdictFormatError('invalid-arguments', '第 ' + index + ' 个工具调用必须是对象。');
      const name = item.name;
      if (typeof name !== 'string' || name.trim() === '') throw new VerdictFormatError('invalid-arguments', '第 ' + index + ' 个工具调用缺少 name。');

@@ -1,0 +1,13 @@
+diff --git a/starter/src/publisher.ts b/starter/src/publisher.ts
+index ba47e6f..549b852 100644
+--- a/starter/src/publisher.ts
++++ b/starter/src/publisher.ts
+@@ -8,7 +8,7 @@ export class Publisher {
+   constructor(maxWorkers=4){if(!Number.isInteger(maxWorkers)||maxWorkers<1||maxWorkers>8)throw new RangeError('maxWorkers 1..8');this.#limit=maxWorkers;}
+   snapshot():Snapshot{return {generation:this.#snapshot.generation,values:new Map(this.#snapshot.values)};}
+   build(generation:number,jobs:readonly Job[],signal?:AbortSignal):Promise<boolean>{
+-    if(this.#closed)return Promise.reject(new Error('publisher closed'));
++    
+     if(!Number.isSafeInteger(generation)||generation<0||generation<=this.#latest)return Promise.reject(new RangeError('generation must increase'));
+     if(new Set(jobs.map(job=>job.id)).size!==jobs.length)return Promise.reject(new RangeError('duplicate job'));
+     if(signal?.aborted)return Promise.resolve(false);

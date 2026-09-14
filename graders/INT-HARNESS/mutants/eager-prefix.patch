@@ -1,0 +1,13 @@
+diff --git a/starter/packages/api/session-controller/src/client/sessions/assistant-stream.ts b/starter/packages/api/session-controller/src/client/sessions/assistant-stream.ts
+index b29643e..fe7dac6 100644
+--- a/starter/packages/api/session-controller/src/client/sessions/assistant-stream.ts
++++ b/starter/packages/api/session-controller/src/client/sessions/assistant-stream.ts
+@@ -29,7 +29,7 @@ function reconnectPrefix(stream: readonly AssistantStreamRecord[], limit: number
+       : { ...record, dt, texts: record.texts.slice(0, count) })
+     remaining -= count
+   }
+-  return expandAssistantStream(selected)
++  return expandAssistantStream(stream).slice(0, limit)
+ }
+ 
+ interface ActiveAttempt {

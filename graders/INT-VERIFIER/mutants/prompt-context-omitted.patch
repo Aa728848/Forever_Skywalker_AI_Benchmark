@@ -1,0 +1,12 @@
+diff --git a/starter/upstream/src/engine.ts b/starter/upstream/src/engine.ts
+--- a/starter/upstream/src/engine.ts
++++ b/starter/upstream/src/engine.ts
+@@ -366,7 +366,7 @@
+     // completion mode, so a first-call downgrade lands under explicit-tag keys and is
+     // found by later explicit-tag calls instead of being misread as a top-logprobs
+     // expectation. The channel stays OUT of the in-flight dedup key below.
+-    const identity = { version: 6, provider: client.provider, model: client.model, effort: client.reasoningEffort, maxTokens: client.maxTokens, temperature: client.temperature, repeat, promptHash: stableHash(prompt), imageKey }
++    const identity = { version: 6, provider: client.provider, model: client.model, effort: client.reasoningEffort, maxTokens: client.maxTokens, temperature: client.temperature, repeat, promptHash: stableHash([options.problem, candidateA, candidateB]), imageKey }
+     const keyForMode = (scoringMode: ScoringMode) => stableHash({ ...identity, scoringMode })
+     // Captured out of band: a fallback describes the REQUEST, not the score, so it must not
+     // enter the cached value (a cache hit later must not claim a downgrade that never happened).

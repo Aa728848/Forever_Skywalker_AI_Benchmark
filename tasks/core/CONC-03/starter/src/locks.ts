@@ -27,6 +27,11 @@ export class LockManager {
     });
   }
 
+  acquireMany(resources: readonly string[], signal?: AbortSignal): Promise<Release> {
+    void signal;
+    return Promise.all([...new Set(resources)].map(resource => this.acquire(resource))).then(releases => () => releases.forEach(release => release()));
+  }
+
   #grant(resource: string): Release {
     let released = false;
     return () => {

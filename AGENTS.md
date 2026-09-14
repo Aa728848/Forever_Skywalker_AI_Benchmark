@@ -7,7 +7,7 @@
 - 当前状态：55/55题具备完整资产，全部fixture-ready；用户重启后Docker/WSL与固定Linux镜像已配置。Windows与Linux的参考/替代均50/50，缺陷均准确检出；真实网络/资源/回收5项及PERF-04容器性能链通过。模型评测仍暂停，真实裁判与发布校准待验收，不得冒称正式成绩。
 - 评分链路已端到端可用：受控执行 → 可用验证分（`scoreExecution`）；静态规则 → 三个客观维度（`@fsa/static`，阈值未校准）；评审适配器 → 评审分（`@fsa/judge`，凭据由 `BENCH_JUDGE_*` 配置）；`pnpm score:rehearse` 演示完整分数。缺证据的维度必须保持 `null`、总分待定，不得用假设分补齐。预览分数不是正式成绩。
 - 裁判已支持8供应商的协议/推理参数，见 `docs/judge-providers.md`；参数指纹与实际返回模型必须保持两轮一致，不同裁判档案不混合汇总。用户暂不急跑实际模型，当前只做开发验收，不自动重启或调用真实裁判。
-- API-04/GRAPH-04已升0.2.0并有近似错误修复集；涉及它们除三向外运行 `pnpm task:mutants <ID>`。目标检出项预声明，额外交叉断言失败原样保留；缺测/编译失败不得计为有效检出。难度仍待校准，见 `docs/task-quality-review.md`。
+- 55题已逐题审查，32题改善、4题澄清、19题保留，83个近似错误修复有有效检出证据，见 `catalog/task-quality-audit.json` 与 `docs/task-quality-review.md`。修改具有 `graders/<ID>/mutants.json` 的题目时，除三向外运行 `pnpm task:mutants <ID>`。目标检出项预声明，额外交叉断言失败原样保留；缺测/编译失败不得计为有效检出。真实模型区分度与难度仍待校准。
 - 题目执行状态在 `catalog/tasks.json` 的 `status` 字段：`designed` → `fixture-ready` → `calibrating` → `ready`；没有题目包就不得标成 `fixture-ready`。
 - 优先功能正确与最小改动，不改动七个来源仓库，不顺带重构。
 - 协议在 `packages/contracts` 维护，评分核心不引入文件、网络或模型调用。

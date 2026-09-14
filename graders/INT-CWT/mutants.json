@@ -1,0 +1,35 @@
+[
+  {
+    "id": "version-only-publication",
+    "description": "只检查文档版本，忽略配置与关闭重开生命周期",
+    "patch": "graders/INT-CWT/mutants/version-only-publication.patch",
+    "expectedFailures": [
+      "hidden/configuration-generation-rejects-old-plan",
+      "hidden/reopen-same-version-rejects-prior-lifecycle"
+    ]
+  },
+  {
+    "id": "generation-only-publication",
+    "description": "只检查全局代际，忽略同生命周期内文档变化",
+    "patch": "graders/INT-CWT/mutants/generation-only-publication.patch",
+    "expectedFailures": [
+      "hidden/changed-document-version-rejects-late-plan"
+    ]
+  },
+  {
+    "id": "ignore-diagnostic-admission",
+    "description": "版本和生命周期正确但旧准入仍确认新失效工作",
+    "patch": "graders/INT-CWT/mutants/ignore-diagnostic-admission.patch",
+    "expectedFailures": [
+      "hidden/same-version-notification-requires-current-admission"
+    ]
+  },
+  {
+    "id": "notify-under-root-write-lock",
+    "description": "将发布通知放回根写锁内，破坏跨层重入边界",
+    "patch": "graders/INT-CWT/mutants/notify-under-root-write-lock.patch",
+    "expectedFailures": [
+      "hidden/notification-runs-after-root-release"
+    ]
+  }
+]

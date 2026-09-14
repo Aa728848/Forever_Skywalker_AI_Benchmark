@@ -67,6 +67,31 @@ describe('DSH automation adapter', () => {
     expect(env.BENCH_JUDGE_TOKEN).toBe('judge-secret');
   });
 
+  it.each([
+    { provider: 'gateway-a', effort: 'default' },
+    { provider: 'gateway-b', effort: 'default' },
+    { provider: 'gateway-a', effort: 'off' },
+    { provider: 'gateway-b', effort: 'high' },
+  ])('keeps $provider identity and sends only an explicit $effort control', async ({ provider, effort }) => {
+    const report = await runDsh({ ...options, provider, model: 'same-model', reasoningEffort: effort }, {
+      createHarness(launch) {
+        expect(launch.provider).toBe(provider); expect(launch.model).toBe('same-model');
+        if (effort === 'default') {
+          // 与 DSH 无推理元数据的模型边界一致：任何显式字段（包括 off/default）都会被拒绝。
+          if (Object.hasOwn(launch, 'reasoningEffort')) throw new Error('UNSUPPORTED_REASONING_EFFORT');
+        } else expect(launch.reasoningEffort).toBe(effort);
+        return { close: async () => {}, run: async () => ({ finalResponse: 'done', events: [
+          { type: 'agent-preset/selected', data: { agentPreset: 'standard' } },
+          { type: 'assistant/message', data: { message: { source: { provider, model: 'same-model' } } } },
+          { type: 'turn/end', data: { reason: { kind: 'completed' } } },
+        ] }) };
+      },
+    });
+    expect(report.finishReason).toBe('completed');
+    expect(report.requestedModel).toMatchObject({ provider, model: 'same-model', reasoningEffort: effort === 'default' ? null : effort });
+    expect(report.observedRoutes).toEqual([{ provider, model: 'same-model' }]);
+  });
+
   it.each(['max-tokens', 'error', undefined])('does not turn idle with %s into completed', async reason => {
     const report = await runDsh(options, { createHarness: () => ({ run: async () => result(reason), close: async () => {} }) });
     expect(report.finishReason).toBe(reason ?? 'missing-turn-end');
