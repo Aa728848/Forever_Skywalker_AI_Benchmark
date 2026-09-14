@@ -1,0 +1,167 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "CACHE-01",
+  "taskVersion": "0.1.0",
+  "title": "TTL 与有界淘汰",
+  "runtime": "typescript",
+  "runtimeRange": "node >=24.14.1 <25",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "public-tests/**/*.test.ts"
+    ],
+    "hidden": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "__checks__/**/*.test.ts"
+    ]
+  },
+  "grader": {
+    "checks": "graders/CACHE-01/checks",
+    "referencePatch": "graders/CACHE-01/reference.patch",
+    "alternative": "graders/CACHE-01/alternative",
+    "defectDetectors": [
+      "public/capacity-evicts-least-recently-used",
+      "public/get-refreshes-recency",
+      "public/ttl-boundary-at-expiry",
+      "public/zero-ttl-expires-immediately",
+      "hidden/lru-order-across-many-keys",
+      "hidden/refresh-then-evict-keeps-refreshed",
+      "hidden/expired-entries-are-not-counted",
+      "hidden/ttl-per-entry-overrides-default"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/stores-and-returns-values",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "写入后能按 key 取回。"
+    },
+    {
+      "id": "public/capacity-evicts-least-recently-used",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "超出容量时逐出最久未使用项。"
+    },
+    {
+      "id": "public/get-refreshes-recency",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "命中的读取刷新最近使用顺序。"
+    },
+    {
+      "id": "public/ttl-boundary-at-expiry",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "now >= expiresAt 即过期。"
+    },
+    {
+      "id": "public/zero-ttl-expires-immediately",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "ttlMs=0 立即过期，不得当作无 TTL。"
+    },
+    {
+      "id": "public/negative-ttl-is-rejected",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "负 TTL 与非法容量抛 RangeError。"
+    },
+    {
+      "id": "public/overwrite-does-not-evict-others",
+      "kind": "public",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "同键覆盖不增加条目也不误逐出。"
+    },
+    {
+      "id": "hidden/lru-order-across-many-keys",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "多键交错读写后的保留集合正确。"
+    },
+    {
+      "id": "hidden/refresh-then-evict-keeps-refreshed",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "刷新过的键不会被当成最旧项逐出。"
+    },
+    {
+      "id": "hidden/expired-entries-are-not-counted",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "size 与 has 都不计入过期条目。"
+    },
+    {
+      "id": "hidden/ttl-per-entry-overrides-default",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "逐条目 TTL 覆盖默认 TTL。"
+    },
+    {
+      "id": "hidden/has-does-not-refresh-recency",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "has 不改变逐出顺序。"
+    },
+    {
+      "id": "hidden/clear-and-delete-semantics",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "delete/clear 的返回值与效果。"
+    }
+  ]
+}

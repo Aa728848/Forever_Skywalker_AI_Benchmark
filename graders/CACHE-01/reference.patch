@@ -1,0 +1,49 @@
+diff --git a/starter/src/ttl-cache.ts b/starter/src/ttl-cache.ts
+index 9f109d8..358a1e0 100644
+--- a/starter/src/ttl-cache.ts
++++ b/starter/src/ttl-cache.ts
+@@ -28,11 +28,19 @@ export class TtlCache<V> {
+   }
+ 
+   get size(): number {
++    this.#sweep();
+     return this.#entries.size;
+   }
+ 
+   #expired(entry: Entry<V>): boolean {
+-    return entry.expiresAt !== null && this.#now() > entry.expiresAt;
++    return entry.expiresAt !== null && this.#now() >= entry.expiresAt;
++  }
++
++  /** 惰性清理过期条目（不改变最近使用顺序）。 */
++  #sweep(): void {
++    for (const [key, entry] of [...this.#entries]) {
++      if (this.#expired(entry)) this.#entries.delete(key);
++    }
+   }
+ 
+   has(key: string): boolean {
+@@ -52,16 +60,18 @@ export class TtlCache<V> {
+       this.#entries.delete(key);
+       return undefined;
+     }
++    // 命中更新最近使用顺序：Map 的插入顺序即 LRU 顺序。
++    this.#entries.delete(key);
++    this.#entries.set(key, entry);
+     return entry.value;
+   }
+ 
+   set(key: string, value: V, options: EntryOptions = {}): void {
+-    // 缺陷：用逻辑或处理可选值，0 会被当成“未提供”而退回默认 TTL。
+-    const provided = options.ttlMs;
+-    const ttl = provided === undefined || provided === 0 ? this.#defaultTtlMs : provided;
++    const ttl = options.ttlMs === undefined ? this.#defaultTtlMs : options.ttlMs;
+     if (ttl !== null && (!Number.isFinite(ttl) || ttl < 0)) throw new RangeError('ttlMs 必须是非负有限数');
+-    const effective = provided === undefined ? ttl : provided;
+-    this.#entries.set(key, { value, expiresAt: effective === null ? null : this.#now() + effective });
++    this.#entries.delete(key);
++    this.#entries.set(key, { value, expiresAt: ttl === null ? null : this.#now() + ttl });
++    this.#sweep();
+     while (this.#entries.size > this.#capacity) {
+       const oldest = this.#entries.keys().next();
+       if (oldest.done === true) break;

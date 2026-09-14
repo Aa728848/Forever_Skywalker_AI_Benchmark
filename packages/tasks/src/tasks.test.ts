@@ -137,7 +137,7 @@ describe('三向验证', () => {
 describe('题目状态与题目包资产一致', () => {
   it('非 designed 的题目必须有可校验的题目包，designed 的题目不得有 manifest', () => {
     const ready = tasks.filter(task => task.status !== 'designed');
-    expect(ready.length).toBe(8);
+    expect(ready.length).toBe(9);
     for (const task of ready) {
       const manifest = readManifest(task.id);
       expect(manifest.taskId).toBe(task.id);
