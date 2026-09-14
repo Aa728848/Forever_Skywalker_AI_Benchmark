@@ -249,7 +249,7 @@
     "domain": "后端与服务协议",
     "difficulty": "medium",
     "track": "core",
-    "status": "designed",
+    "status": "fixture-ready",
     "runtime": "typescript",
     "sources": [
       "deepseek-harness",

@@ -1,0 +1,139 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "API-02",
+  "taskVersion": "0.1.0",
+  "title": "分页与幂等写入",
+  "runtime": "typescript",
+  "runtimeRange": "node >=24.14.1 <25",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "public-tests/**/*.test.ts"
+    ],
+    "hidden": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "__checks__/**/*.test.ts"
+    ]
+  },
+  "grader": {
+    "checks": "graders/API-02/checks",
+    "referencePatch": "graders/API-02/reference.patch",
+    "alternative": "graders/API-02/alternative",
+    "defectDetectors": [
+      "hidden/rejects-invalid-cursor-text",
+      "hidden/rejects-noncanonical-cursor",
+      "public/rejects-invalid-cursor-text",
+      "public/rejects-noncanonical-cursor"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/first-page-without-cursor",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "无游标时返回首页并给出下一页游标。"
+    },
+    {
+      "id": "public/last-page-has-no-cursor",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "恰好取完时 nextCursor 必须为 null。"
+    },
+    {
+      "id": "public/rejects-invalid-cursor-text",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "非法游标抛 PageError('cursor')。"
+    },
+    {
+      "id": "public/rejects-noncanonical-cursor",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "只接受规范编码，且编码往返一致。"
+    },
+    {
+      "id": "public/rejects-out-of-range-limit",
+      "kind": "public",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "limit 越界报 PageError('limit')，超界偏移返回空页。"
+    },
+    {
+      "id": "hidden/first-page-without-cursor",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的首页。"
+    },
+    {
+      "id": "hidden/last-page-has-no-cursor",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的末页边界。"
+    },
+    {
+      "id": "hidden/rejects-invalid-cursor-text",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的非法游标。"
+    },
+    {
+      "id": "hidden/rejects-noncanonical-cursor",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的规范编码。"
+    },
+    {
+      "id": "hidden/rejects-out-of-range-limit",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的范围校验。"
+    }
+  ]
+}

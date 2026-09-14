@@ -1,0 +1,21 @@
+diff --git a/starter/src/page.ts b/starter/src/page.ts
+index 8770a95..471244f 100644
+--- a/starter/src/page.ts
++++ b/starter/src/page.ts
+@@ -22,9 +22,14 @@ export function encodeCursor(offset: number): string {
+ }
+ 
+ export function decodeCursor(cursor: string): number {
+-  // 缺陷：不校验前缀、不校验数值，非法游标得到 NaN 而不是 PageError。
+   const text = Buffer.from(cursor, 'base64url').toString('utf8');
+-  return Number(text.split(':')[1]);
++  const match = /^offset:(\d+)$/.exec(text);
++  if (match === null) throw new PageError('cursor', '游标格式非法');
++  const offset = Number(match[1]);
++  if (!Number.isSafeInteger(offset)) throw new PageError('cursor', '游标偏移超出安全整数范围');
++  // 往返一致：编码回去必须与原始游标完全相同，拒绝任何非规范写法。
++  if (encodeCursor(offset) !== cursor) throw new PageError('cursor', '游标不是规范编码');
++  return offset;
+ }
+ 
+ export function paginate<T>(items: readonly T[], request: PageRequest): Page<T> {
