@@ -1,0 +1,28 @@
+diff --git a/starter/src/plugins.ts b/starter/src/plugins.ts
+index 2db01db..235aa61 100644
+--- a/starter/src/plugins.ts
++++ b/starter/src/plugins.ts
+@@ -34,13 +34,18 @@ export class PluginHost {
+ 
+   switchTo(next: Plugin): Promise<void> {
+     if (next.id === this.#active.id) return Promise.resolve();
+-    // 缺陷：先释放旧插件再启动新插件；新插件失败时旧插件已经没了，
+-    // 而且新插件已经占用的资源也没有被释放。
+     const previous = this.#active;
++    try {
++      next.setup();
++    } catch (error) {
++      // 回滚：新插件必须释放它已经占用的资源，旧插件保持运行且不被 teardown。
++      next.teardown();
++      this.#released.push(next.id);
++      throw new SwitchError(previous.id, next.id, error);
++    }
++    this.#active = next;
+     this.#released.push(previous.id);
+     previous.teardown();
+-    next.setup();
+-    this.#active = next;
+     return Promise.resolve();
+   }
+ }
+\ No newline at end of file

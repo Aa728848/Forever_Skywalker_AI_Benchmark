@@ -1,0 +1,139 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "ARCH-04",
+  "taskVersion": "0.1.0",
+  "title": "插件热切换、失败回滚与资源归属",
+  "runtime": "typescript",
+  "runtimeRange": "node >=24.14.1 <25",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "public-tests/**/*.test.ts"
+    ],
+    "hidden": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "__checks__/**/*.test.ts"
+    ]
+  },
+  "grader": {
+    "checks": "graders/ARCH-04/checks",
+    "referencePatch": "graders/ARCH-04/reference.patch",
+    "alternative": "graders/ARCH-04/alternative",
+    "defectDetectors": [
+      "hidden/failed-switch-keeps-previous-plugin",
+      "hidden/failed-switch-releases-new-plugin",
+      "public/failed-switch-keeps-previous-plugin",
+      "public/failed-switch-releases-new-plugin"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/switch-succeeds-and-releases-previous",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "成功切换并释放旧插件。"
+    },
+    {
+      "id": "hidden/switch-succeeds-and-releases-previous",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本：成功切换并释放旧插件。"
+    },
+    {
+      "id": "public/failed-switch-keeps-previous-plugin",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "切换失败后旧插件必须仍然生效且不被 teardown。"
+    },
+    {
+      "id": "hidden/failed-switch-keeps-previous-plugin",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本：切换失败后旧插件必须仍然生效且不被 teardown。"
+    },
+    {
+      "id": "public/failed-switch-releases-new-plugin",
+      "kind": "public",
+      "group": "resources",
+      "weight": 1,
+      "critical": true,
+      "summary": "失败的新插件必须释放它占用的资源。"
+    },
+    {
+      "id": "hidden/failed-switch-releases-new-plugin",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本：失败的新插件必须释放它占用的资源。"
+    },
+    {
+      "id": "public/teardown-happens-once-per-plugin",
+      "kind": "public",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "每个插件最多 teardown 一次。"
+    },
+    {
+      "id": "hidden/teardown-happens-once-per-plugin",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本：每个插件最多 teardown 一次。"
+    },
+    {
+      "id": "public/switch-to-same-plugin-is-noop",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "切换到同一个插件是空操作。"
+    },
+    {
+      "id": "hidden/switch-to-same-plugin-is-noop",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本：切换到同一个插件是空操作。"
+    }
+  ]
+}
