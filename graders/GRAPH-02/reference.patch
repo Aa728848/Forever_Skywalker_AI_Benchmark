@@ -1,0 +1,45 @@
+diff --git a/starter/src/graph.ts b/starter/src/graph.ts
+index d614ff1..671d38f 100644
+--- a/starter/src/graph.ts
++++ b/starter/src/graph.ts
+@@ -48,6 +48,12 @@ function findCycle(nodes: readonly string[], successors: Map<string, string[]>):
+   return [];
+ }
+ 
++function insertSorted(list: string[], value: string): void {
++  let index = 0;
++  while (index < list.length && (list[index] as string) < value) index += 1;
++  list.splice(index, 0, value);
++}
++
+ export function topologicalOrder(nodes: readonly string[], edges: readonly Edge[]): readonly string[] {
+   const unique = [...new Set(nodes)];
+   const successors = new Map<string, string[]>();
+@@ -59,12 +65,14 @@ export function topologicalOrder(nodes: readonly string[], edges: readonly Edge[
+   for (const edge of edges) {
+     if (!successors.has(edge.from)) throw new UnknownNodeError(edge.from);
+     if (!successors.has(edge.to)) throw new UnknownNodeError(edge.to);
+-    // 缺陷：不去重、不排序，直接按输入顺序累加，重复边会把入度算重。
+-    (successors.get(edge.from) as string[]).push(edge.to);
++    const list = successors.get(edge.from) as string[];
++    // 去重：同一条边只算一次入度。
++    if (list.includes(edge.to)) continue;
++    list.push(edge.to);
++    list.sort();
+     inDegree.set(edge.to, (inDegree.get(edge.to) ?? 0) + 1);
+   }
+-  // 缺陷：起始层用输入顺序而不是字典序。
+-  const ready = unique.filter(node => inDegree.get(node) === 0);
++  const ready = unique.filter(node => inDegree.get(node) === 0).sort();
+   const order: string[] = [];
+   while (ready.length > 0) {
+     const node = ready.shift() as string;
+@@ -72,7 +80,7 @@ export function topologicalOrder(nodes: readonly string[], edges: readonly Edge[
+     for (const next of successors.get(node) as string[]) {
+       const remaining = (inDegree.get(next) ?? 0) - 1;
+       inDegree.set(next, remaining);
+-      if (remaining === 0) ready.push(next);
++      if (remaining === 0) insertSorted(ready, next);
+     }
+   }
+   if (order.length !== unique.length) throw new CycleError(findCycle(unique, successors));

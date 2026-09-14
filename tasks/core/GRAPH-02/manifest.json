@@ -1,0 +1,137 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "GRAPH-02",
+  "taskVersion": "0.1.0",
+  "title": "图去重、环与确定性排序",
+  "runtime": "typescript",
+  "runtimeRange": "node >=24.14.1 <25",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "public-tests/**/*.test.ts"
+    ],
+    "hidden": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "__checks__/**/*.test.ts"
+    ]
+  },
+  "grader": {
+    "checks": "graders/GRAPH-02/checks",
+    "referencePatch": "graders/GRAPH-02/reference.patch",
+    "alternative": "graders/GRAPH-02/alternative",
+    "defectDetectors": [
+      "hidden/lexicographic-tiebreak-is-deterministic",
+      "public/lexicographic-tiebreak-is-deterministic"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/orders-simple-dag",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "简单 DAG 给出正确顺序。"
+    },
+    {
+      "id": "public/lexicographic-tiebreak-is-deterministic",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "结果与输入顺序无关，按字典序选取。"
+    },
+    {
+      "id": "public/deduplicates-repeated-edges",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "重复边只计入度一次。"
+    },
+    {
+      "id": "public/detects-cycles-with-path",
+      "kind": "public",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "环与未知节点的错误类型与路径。"
+    },
+    {
+      "id": "public/empty-graph-returns-empty-order",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "空图与单节点。"
+    },
+    {
+      "id": "hidden/orders-simple-dag",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的排序。"
+    },
+    {
+      "id": "hidden/lexicographic-tiebreak-is-deterministic",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的确定性。"
+    },
+    {
+      "id": "hidden/deduplicates-repeated-edges",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的去重。"
+    },
+    {
+      "id": "hidden/detects-cycles-with-path",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的错误类型。"
+    },
+    {
+      "id": "hidden/empty-graph-returns-empty-order",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的空图。"
+    }
+  ]
+}
