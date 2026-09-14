@@ -154,7 +154,7 @@ if (verify.status !== 0) {
   const publicObserved = observedFailures(verify.stdout, 'starter-public');
   const hiddenObserved = observedFailures(verify.stdout, 'starter-hidden');
   const othersPassed = verify.stdout.split('\n').every(line => !/^不通过 (reference|alternative)-/.test(line));
-  if (publicObserved !== null && hiddenObserved !== null && othersPassed) {
+  if (publicObserved !== null && hiddenObserved !== null && othersPassed && publicObserved.length + hiddenObserved.length > 0) {
     const declared = [...spec.defectDetectors].sort();
     const observed = [...publicObserved, ...hiddenObserved].sort();
     console.log('起始版本失败项与声明不一致，按实测收敛：');
@@ -166,6 +166,11 @@ if (verify.status !== 0) {
     writeFileSync(manifestPath, JSON.stringify(manifestJson, null, 2) + '\n');
     verify = capture(['node', join(repositoryRoot, 'scripts', 'task.ts'), 'verify', spec.id], repositoryRoot);
     console.log(showStages(verify));
+  } else if (publicObserved !== null && hiddenObserved !== null && publicObserved.length + hiddenObserved.length === 0) {
+    // 起始版本一条都不失败，说明缺陷注入或检查写错了：不能把空数组写进 manifest（协议要求至少一项）。
+    console.error('起始版本没有任何失败项：缺陷注入或检查设计有问题，拒绝自动收敛，保持 designed 状态。');
+    console.log(showStages(verify));
+    process.exit(1);
   }
 }
 if (verify.status !== 0) {
