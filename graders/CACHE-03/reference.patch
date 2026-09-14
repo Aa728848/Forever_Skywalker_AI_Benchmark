@@ -1,0 +1,38 @@
+diff --git a/starter/src/cache.ts b/starter/src/cache.ts
+index 4599af6..a02da56 100644
+--- a/starter/src/cache.ts
++++ b/starter/src/cache.ts
+@@ -38,17 +38,21 @@ export class VersionedCache {
+     const cached = this.#entries.get(key);
+     if (cached !== undefined) return cached.promise;
+     const version = this.version(key);
+-    const promise = this.#port.load(key);
+-    // 缺陷：结算后无条件入缓存，不校验发起时的版本是否已经失效。
+-    promise.then(value => {
+-      void value;
++    const loaded = this.#port.load(key);
++    // 只有发起时的版本仍是当前版本时，结果才允许留在缓存里；
++    // 无论是否入缓存，结果都要返回给本次调用方。
++    const guarded = loaded.then(value => {
++      if (this.version(key) !== version) {
++        const current = this.#entries.get(key);
++        if (current !== undefined && current.version === version) this.#entries.delete(key);
++      }
++      return value;
+     });
+-    this.#entries.set(key, { version, promise });
+-    // 缺陷：结算时无条件写回缓存，被失效的旧结果会重新占据缓存。
+-    promise.then(
+-      value => { this.#entries.set(key, { version, promise: Promise.resolve(value) }); },
+-      () => {},
+-    );
+-    return promise;
++    this.#entries.set(key, { version, promise: guarded });
++    guarded.catch(() => {
++      const current = this.#entries.get(key);
++      if (current !== undefined && current.version === version) this.#entries.delete(key);
++    });
++    return guarded;
+   }
+ }
+\ No newline at end of file

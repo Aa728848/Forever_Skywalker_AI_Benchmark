@@ -1,0 +1,139 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "CACHE-03",
+  "taskVersion": "0.1.0",
+  "title": "失效期间的在途旧结果",
+  "runtime": "typescript",
+  "runtimeRange": "node >=24.14.1 <25",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "public-tests/**/*.test.ts"
+    ],
+    "hidden": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "__checks__/**/*.test.ts"
+    ]
+  },
+  "grader": {
+    "checks": "graders/CACHE-03/checks",
+    "referencePatch": "graders/CACHE-03/reference.patch",
+    "alternative": "graders/CACHE-03/alternative",
+    "defectDetectors": [
+      "hidden/discards-inflight-result-invalidated-before-settle",
+      "hidden/second-invalidate-during-flight-keeps-latest-request",
+      "public/discards-inflight-result-invalidated-before-settle",
+      "public/second-invalidate-during-flight-keeps-latest-request"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/caches-on-miss-and-reuses-hit",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "未命中加载、命中共用同一 promise。"
+    },
+    {
+      "id": "public/invalidate-forces-reload",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "失效后必然重新加载并推进版本。"
+    },
+    {
+      "id": "public/discards-inflight-result-invalidated-before-settle",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "在途中被失效的旧结果不得入缓存，但要返回给调用方。"
+    },
+    {
+      "id": "public/second-invalidate-during-flight-keeps-latest-request",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "多次失效时只有最后发起的请求占据缓存。"
+    },
+    {
+      "id": "public/keys-are-independent",
+      "kind": "public",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "不同 key 的版本与缓存互相独立。"
+    },
+    {
+      "id": "hidden/caches-on-miss-and-reuses-hit",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的命中复用。"
+    },
+    {
+      "id": "hidden/invalidate-forces-reload",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的失效重载。"
+    },
+    {
+      "id": "hidden/discards-inflight-result-invalidated-before-settle",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的在途丢弃。"
+    },
+    {
+      "id": "hidden/second-invalidate-during-flight-keeps-latest-request",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的多次失效。"
+    },
+    {
+      "id": "hidden/keys-are-independent",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的跨 key 独立。"
+    }
+  ]
+}
