@@ -1,0 +1,59 @@
+diff --git a/starter/src/supervisor.ts b/starter/src/supervisor.ts
+index c73b7f8..4b0edb3 100644
+--- a/starter/src/supervisor.ts
++++ b/starter/src/supervisor.ts
+@@ -12,9 +12,10 @@ interface Activation {
+ export class Supervisor {
+   readonly #runner: Runner;
+   #phase: Phase = 'idle';
+-  #controller = new AbortController();
++  #controller: AbortController | null = null;
+   #current: Promise<void> | null = null;
+   #starts = 0;
++  #stopPromise: Promise<void> | null = null;
+ 
+   constructor(runner: Runner) {
+     this.#runner = runner;
+@@ -29,21 +30,34 @@ export class Supervisor {
+   }
+ 
+   async start(): Promise<void> {
++    // 正在停止时必须等停止完成，避免与旧 runner 并发，也不能丢弃这次启动。
++    if (this.#stopPromise !== null) await this.#stopPromise;
+     if (this.#phase === 'running' || this.#phase === 'starting') return;
+-    // 缺陷：停止尚未完成时直接启动，并且复用已经被 abort 的 controller。
+     this.#phase = 'starting';
+     this.#starts += 1;
+-    const done = this.#runner.run(this.#controller.signal).catch(() => {});
++    const controller = new AbortController();
++    this.#controller = controller;
++    const done = this.#runner.run(controller.signal).catch(() => {});
+     this.#current = done;
+     this.#phase = 'running';
+   }
+ 
+   async stop(): Promise<void> {
++    if (this.#stopPromise !== null) return this.#stopPromise;
+     if (this.#phase === 'idle') return;
+-    this.#phase = 'stopping';
+-    this.#controller.abort();
+-    await this.#current;
+-    this.#current = null;
+-    this.#phase = 'idle';
++    const run = (async () => {
++      this.#phase = 'stopping';
++      this.#controller?.abort();
++      await this.#current;
++      this.#current = null;
++      this.#controller = null;
++      this.#phase = 'idle';
++    })();
++    this.#stopPromise = run;
++    try {
++      await run;
++    } finally {
++      this.#stopPromise = null;
++    }
+   }
+ }
+\ No newline at end of file
