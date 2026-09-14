@@ -81,8 +81,12 @@ const specPath = process.argv[2];
 if (specPath === undefined) throw new Error('用法：node scripts/newtask.ts <规格 JSON 路径>');
 const spec = JSON.parse(readFileSync(specPath, 'utf8')) as TaskSpec;
 const task = requireTask(spec.id);
+// 题库是元数据的唯一来源：规格只能声明，冲突时以题库为准并明确告警，
+// 否则 readManifest 的交叉校验会在阶段开始前抛错，看起来像“验证没有任何输出”。
+if (spec.runtime !== undefined && spec.runtime !== task.runtime) console.warn('规格 runtime 与题库不一致，以题库为准：' + spec.runtime + ' → ' + task.runtime);
+if (spec.title !== task.title) console.warn('规格 title 与题库不一致，以题库为准：' + spec.title + ' → ' + task.title);
 const runtime = spec.runtime ?? task.runtime;
-const runtimeRange = spec.runtimeRange ?? (runtime === 'fsharp' ? 'dotnet >= 10.0' : 'node >=24.14.1 <25');
+const runtimeRange = runtime === 'fsharp' ? 'dotnet >= 10.0' : 'node >=24.14.1 <25';
 const publicTests = Object.keys(spec.publicTests);
 const hiddenChecks = Object.keys(spec.hiddenChecks);
 const paths = runtime === 'fsharp' ? [hiddenChecks[0] as string] : ['__checks__/**/*.test.ts'];
@@ -110,8 +114,8 @@ write('graders/' + spec.id + '/reference.patch', patches.join(''));
 const manifest = {
   schemaVersion: '0.1.0',
   taskId: spec.id,
-  taskVersion: spec.version ?? task.version,
-  title: spec.title,
+  taskVersion: task.version,
+  title: task.title,
   runtime,
   runtimeRange,
   workspace: { entries: [
