@@ -56,7 +56,7 @@ M1 交付时 `pnpm check`（53 项 vitest）、`pnpm test:e2e`、8 道题的 `ta
 
 ## M2：核心题库与独立评审
 
-进度（2026-09-14 起）：正式评分可端到端产出（`pnpm score:rehearse` 演示可用验证 50/50 + 质量 44.68/50 + 总分 94.68/100）；正式评分桥已落地（`scoreExecution`：受控执行结果 → 可用验证分，质量缺失时总分待定）；题目包生成器 `scripts/newtask.ts` 可一份规格产出一道题的全套资产并自动三向验证；核心题完成 30/48（8 道试点 + CACHE-01、API-01、BND-01、LIFE-01、GRAPH-01、STATE-01、ARCH-01、PERF-01、CONC-01、THR-01、FE-02、CONC-02、API-02、GRAPH-02、STATE-02、LIFE-02、ARCH-02、PERF-02、BND-03、API-03、CACHE-03、CONC-03），其余 18 道按批次制作；**简单档 12/12 完成，中等档 11/12，困难档 6/12**。
+进度（2026-09-14 起）：正式评分可端到端产出（`pnpm score:rehearse` 演示可用验证 50/50 + 质量 44.68/50 + 总分 94.68/100）；正式评分桥已落地（`scoreExecution`：受控执行结果 → 可用验证分，质量缺失时总分待定）；题目包生成器 `scripts/newtask.ts` 可一份规格产出一道题的全套资产并自动三向验证；核心题完成 31/48（8 道试点 + CACHE-01、API-01、BND-01、LIFE-01、GRAPH-01、STATE-01、ARCH-01、PERF-01、CONC-01、THR-01、FE-02、CONC-02、API-02、GRAPH-02、STATE-02、LIFE-02、ARCH-02、PERF-02、BND-03、API-03、CACHE-03、CONC-03），其余 18 道按批次制作；**简单档 12/12 完成，中等档 11/12，困难档 6/12**。
 
 完成全部 48 道核心题；按题族保留隐藏数据；接入独立裁判及人工复核。实现固定模型和提示版本、评审证据引用、分歧处理、缓存键、预算与失败状态。
 

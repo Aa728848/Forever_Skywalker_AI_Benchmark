@@ -1,0 +1,28 @@
+diff --git a/starter/src/repository.ts b/starter/src/repository.ts
+index 542980a..0222df6 100644
+--- a/starter/src/repository.ts
++++ b/starter/src/repository.ts
+@@ -25,12 +25,16 @@ export class Repository {
+   }
+ 
+   async read(id: string): Promise<ReadResult> {
+-    if (isV2(this.#adapter)) {
+-      // 缺陷：v2 适配器直接透传字段——缺失被当成成功、秒被当成毫秒、错误也不包装。
+-      const result = await this.#adapter.load(id);
+-      return { ok: true, durationMs: result.durationSeconds, body: result.body };
++    try {
++      if (isV2(this.#adapter)) {
++        const result = await this.#adapter.load(id);
++        const ok = result.status === 'ok';
++        return { ok, durationMs: Math.round(result.durationSeconds * 1000), body: ok ? result.body : null };
++      }
++      const legacy = this.#adapter.fetch(id);
++      return { ok: legacy.ok, durationMs: legacy.ms, body: legacy.payload ?? null };
++    } catch (error) {
++      throw new AdapterError(id, error);
+     }
+-    const legacy = this.#adapter.fetch(id);
+-    return { ok: legacy.ok, durationMs: legacy.ms, body: legacy.payload ?? null };
+   }
+ }
+\ No newline at end of file
