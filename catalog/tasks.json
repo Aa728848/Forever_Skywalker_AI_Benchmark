@@ -694,7 +694,7 @@
     "domain": "异步并发",
     "difficulty": "medium",
     "track": "core",
-    "status": "designed",
+    "status": "fixture-ready",
     "runtime": "typescript",
     "sources": [
       "dsh-chatgpt-subscription",

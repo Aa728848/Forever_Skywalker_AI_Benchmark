@@ -1,0 +1,137 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "CONC-02",
+  "taskVersion": "0.1.0",
+  "title": "并发令牌刷新与注销竞争",
+  "runtime": "typescript",
+  "runtimeRange": "node >=24.14.1 <25",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "public-tests/**/*.test.ts"
+    ],
+    "hidden": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "__checks__/**/*.test.ts"
+    ]
+  },
+  "grader": {
+    "checks": "graders/CONC-02/checks",
+    "referencePatch": "graders/CONC-02/reference.patch",
+    "alternative": "graders/CONC-02/alternative",
+    "defectDetectors": [
+      "hidden/cancel-all-aborts-every-member",
+      "public/cancel-all-aborts-every-member"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/runs-and-settles-members",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "成员结果原样兑现，结算后从 active 移除。"
+    },
+    {
+      "id": "public/cancel-all-aborts-every-member",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "cancelAll 对每个未完成成员 abort signal 并以 GroupCancelledError 拒绝。"
+    },
+    {
+      "id": "public/cancel-all-waits-for-settlements",
+      "kind": "public",
+      "group": "resources",
+      "weight": 1,
+      "critical": true,
+      "summary": "cancelAll 兑现前所有成员必须已结算。"
+    },
+    {
+      "id": "public/cancel-all-is-noop-without-members",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "没有成员时取消是空操作。"
+    },
+    {
+      "id": "public/member-failure-is-isolated",
+      "kind": "public",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "成员失败只影响自己。"
+    },
+    {
+      "id": "hidden/runs-and-settles-members",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的成员结算。"
+    },
+    {
+      "id": "hidden/cancel-all-aborts-every-member",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的取消传播。"
+    },
+    {
+      "id": "hidden/cancel-all-waits-for-settlements",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的等待语义。"
+    },
+    {
+      "id": "hidden/cancel-all-is-noop-without-members",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的空取消。"
+    },
+    {
+      "id": "hidden/member-failure-is-isolated",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的失败隔离。"
+    }
+  ]
+}

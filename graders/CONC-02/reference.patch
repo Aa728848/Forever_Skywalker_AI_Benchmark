@@ -1,0 +1,23 @@
+diff --git a/starter/src/group.ts b/starter/src/group.ts
+index 6cd2261..aa46e9b 100644
+--- a/starter/src/group.ts
++++ b/starter/src/group.ts
+@@ -52,7 +52,15 @@ export class TaskGroup {
+   }
+ 
+   async cancelAll(): Promise<void> {
+-    // 缺陷：既不 abort signal、也不清理 active，还用普通 Error 拒绝并且不等待成员结算。
+-    for (const member of this.#members.values()) member.reject(new Error('已取消'));
++    const entries = [...this.#members.entries()];
++    if (entries.length === 0) return;
++    const pending = entries.map(([id]) => id);
++    // 先 abort 全部成员，再统一拒绝并清空，最后等待它们真正结算。
++    for (const [, member] of entries) member.controller.abort();
++    for (const [id, member] of entries) {
++      this.#members.delete(id);
++      member.reject(new GroupCancelledError(pending));
++    }
++    await Promise.all(entries.map(([, member]) => member.done));
+   }
+ }
+\ No newline at end of file
