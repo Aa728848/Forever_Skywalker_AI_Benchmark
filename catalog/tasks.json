@@ -805,7 +805,7 @@
     "domain": "耦合与解耦",
     "difficulty": "medium",
     "track": "core",
-    "status": "designed",
+    "status": "fixture-ready",
     "runtime": "typescript",
     "sources": [
       "cwtools-vscode",

@@ -1,0 +1,22 @@
+diff --git a/starter/src/providers.ts b/starter/src/providers.ts
+index 5dc6481..a27049c 100644
+--- a/starter/src/providers.ts
++++ b/starter/src/providers.ts
+@@ -41,16 +41,12 @@ function assertCatalog(catalog: readonly Provider[]): void {
+   }
+ }
+ 
+-/** 缺陷：按 id 前缀猜“浏览器专属”，而不是读 provider.runtime 元数据。 */
+-const browserOnlyPrefix = 'browser-';
+-
+ export function resolveProviders(catalog: readonly Provider[], runtime: 'browser' | 'node'): ResolvedProviders {
+   assertCatalog(catalog);
+   const usable: Provider[] = [];
+   const skipped: string[] = [];
+   for (const provider of catalog) {
+-    const isBrowserOnly = provider.id.startsWith(browserOnlyPrefix);
+-    if (runtime === 'browser' || !isBrowserOnly) usable.push(provider);
++    if (provider.runtime === 'shared' || provider.runtime === runtime) usable.push(provider);
+     else skipped.push(provider.id);
+   }
+   return { usable, skipped };

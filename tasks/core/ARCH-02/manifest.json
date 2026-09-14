@@ -1,0 +1,139 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "ARCH-02",
+  "taskVersion": "0.1.0",
+  "title": "Provider 元数据与运行时拆分",
+  "runtime": "typescript",
+  "runtimeRange": "node >=24.14.1 <25",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "public-tests/**/*.test.ts"
+    ],
+    "hidden": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "__checks__/**/*.test.ts"
+    ]
+  },
+  "grader": {
+    "checks": "graders/ARCH-02/checks",
+    "referencePatch": "graders/ARCH-02/reference.patch",
+    "alternative": "graders/ARCH-02/alternative",
+    "defectDetectors": [
+      "hidden/browser-side-skips-node-only",
+      "hidden/keeps-shared-and-matching",
+      "public/browser-side-skips-node-only",
+      "public/keeps-shared-and-matching"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/keeps-shared-and-matching",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "Node 侧按元数据保留共享与 Node provider。"
+    },
+    {
+      "id": "public/browser-side-skips-node-only",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "浏览器侧跳过 Node 专属 provider。"
+    },
+    {
+      "id": "public/preserves-catalog-order",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "结果保持目录顺序。"
+    },
+    {
+      "id": "public/rejects-duplicate-and-invalid-metadata",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "重复 id 与非法元数据报错。"
+    },
+    {
+      "id": "public/empty-catalog-is-empty-result",
+      "kind": "public",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "空目录返回空结果。"
+    },
+    {
+      "id": "hidden/keeps-shared-and-matching",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的 Node 侧拆分。"
+    },
+    {
+      "id": "hidden/browser-side-skips-node-only",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的浏览器侧拆分。"
+    },
+    {
+      "id": "hidden/preserves-catalog-order",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的顺序。"
+    },
+    {
+      "id": "hidden/rejects-duplicate-and-invalid-metadata",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的元数据校验。"
+    },
+    {
+      "id": "hidden/empty-catalog-is-empty-result",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的空目录。"
+    }
+  ]
+}
