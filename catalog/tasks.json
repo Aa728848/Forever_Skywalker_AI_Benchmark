@@ -1313,7 +1313,7 @@
     "domain": "持久化与故障恢复",
     "difficulty": "extreme",
     "track": "core",
-    "status": "designed",
+    "status": "fixture-ready",
     "runtime": "typescript",
     "sources": [
       "cwtools-vscode",

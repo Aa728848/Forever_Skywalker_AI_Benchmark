@@ -1,0 +1,139 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "STATE-04",
+  "taskVersion": "0.1.0",
+  "title": "UI、服务、缓存的故障后一致性",
+  "runtime": "typescript",
+  "runtimeRange": "node >=24.14.1 <25",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "public-tests/**/*.test.ts"
+    ],
+    "hidden": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "__checks__/**/*.test.ts"
+    ]
+  },
+  "grader": {
+    "checks": "graders/STATE-04/checks",
+    "referencePatch": "graders/STATE-04/reference.patch",
+    "alternative": "graders/STATE-04/alternative",
+    "defectDetectors": [
+      "hidden/layers-stay-consistent-after-failure",
+      "hidden/rolls-back-every-applied-layer",
+      "public/layers-stay-consistent-after-failure",
+      "public/rolls-back-every-applied-layer"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/commits-in-fixed-order",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "按 service → cache → ui 顺序应用并记录。"
+    },
+    {
+      "id": "hidden/commits-in-fixed-order",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本：按 service → cache → ui 顺序应用并记录。"
+    },
+    {
+      "id": "public/rolls-back-every-applied-layer",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "失败时按相反顺序回滚所有已应用层。"
+    },
+    {
+      "id": "hidden/rolls-back-every-applied-layer",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本：失败时按相反顺序回滚所有已应用层。"
+    },
+    {
+      "id": "public/layers-stay-consistent-after-failure",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "失败后三层状态一致，无半成品残留。"
+    },
+    {
+      "id": "hidden/layers-stay-consistent-after-failure",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本：失败后三层状态一致，无半成品残留。"
+    },
+    {
+      "id": "public/reports-failing-layer-and-recovers",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "错误带失败层名，之后仍可正常提交。"
+    },
+    {
+      "id": "hidden/reports-failing-layer-and-recovers",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本：错误带失败层名，之后仍可正常提交。"
+    },
+    {
+      "id": "public/repeated-commit-is-idempotent",
+      "kind": "public",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "重复提交同一个值是幂等的。"
+    },
+    {
+      "id": "hidden/repeated-commit-is-idempotent",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本：重复提交同一个值是幂等的。"
+    }
+  ]
+}
