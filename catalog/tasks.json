@@ -496,7 +496,7 @@
     "domain": "参数与边界解析",
     "difficulty": "hard",
     "track": "core",
-    "status": "designed",
+    "status": "fixture-ready",
     "runtime": "typescript",
     "sources": [
       "dsh-chatgpt-subscription",

@@ -1,0 +1,38 @@
+diff --git a/starter/src/decoder.ts b/starter/src/decoder.ts
+index 8b235ee..cfcf357 100644
+--- a/starter/src/decoder.ts
++++ b/starter/src/decoder.ts
+@@ -15,21 +15,30 @@ export class IncompleteSequenceError extends Error {
+ }
+ 
+ export class StreamDecoder {
++  readonly #decoder = new TextDecoder('utf-8', { fatal: true });
+   #offset = 0;
++  #open = false;
+ 
+   push(bytes: Uint8Array): string {
++    if (this.#open) throw new IncompleteSequenceError('解码器已经结束');
+     const start = this.#offset;
+     this.#offset += bytes.length;
+     try {
+-      // 缺陷：每块独立解码，不保留跨块状态——被拆开的多字节字符直接报错。
+-      return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
++      // stream: true 让解码器保留跨块的未完成序列。
++      return this.#decoder.decode(bytes, { stream: true });
+     } catch {
+       throw new InvalidUtf8Error(start);
+     }
+   }
+ 
+   end(): string {
+-    return '';
++    if (this.#open) return '';
++    this.#open = true;
++    try {
++      return this.#decoder.decode();
++    } catch {
++      throw new IncompleteSequenceError();
++    }
+   }
+ 
+   get offset(): number {

@@ -1,0 +1,141 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "BND-03",
+  "taskVersion": "0.1.0",
+  "title": "跨字节块的 Unicode 与流解析",
+  "runtime": "typescript",
+  "runtimeRange": "node >=24.14.1 <25",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "public-tests/**/*.test.ts"
+    ],
+    "hidden": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "__checks__/**/*.test.ts"
+    ]
+  },
+  "grader": {
+    "checks": "graders/BND-03/checks",
+    "referencePatch": "graders/BND-03/reference.patch",
+    "alternative": "graders/BND-03/alternative",
+    "defectDetectors": [
+      "hidden/decodes-character-split-across-chunks",
+      "hidden/decodes-four-byte-emoji-in-two-parts",
+      "hidden/end-reports-incomplete-sequence",
+      "public/decodes-character-split-across-chunks",
+      "public/decodes-four-byte-emoji-in-two-parts",
+      "public/end-reports-incomplete-sequence"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/decodes-single-chunk",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "单块文本正常解码。"
+    },
+    {
+      "id": "public/decodes-character-split-across-chunks",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "跨块拆分的三字节字符必须正确解码。"
+    },
+    {
+      "id": "public/decodes-four-byte-emoji-in-two-parts",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "四字节 emoji 跨块拆分。"
+    },
+    {
+      "id": "public/rejects-invalid-bytes",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "非法字节抛 InvalidUtf8Error 并给出全局偏移。"
+    },
+    {
+      "id": "public/end-reports-incomplete-sequence",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "结束时未完成序列抛 IncompleteSequenceError。"
+    },
+    {
+      "id": "hidden/decodes-single-chunk",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的单块解码。"
+    },
+    {
+      "id": "hidden/decodes-character-split-across-chunks",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的跨块字符。"
+    },
+    {
+      "id": "hidden/decodes-four-byte-emoji-in-two-parts",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的 emoji。"
+    },
+    {
+      "id": "hidden/rejects-invalid-bytes",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的非法字节。"
+    },
+    {
+      "id": "hidden/end-reports-incomplete-sequence",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的结束语义。"
+    }
+  ]
+}
