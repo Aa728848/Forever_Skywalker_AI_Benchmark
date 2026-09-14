@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -308,6 +308,33 @@ describe('冻结之后', () => {
         mkdirSync(occupied, { recursive: true });
         writeFileSync(join(occupied, 'keep.txt'), 'busy\n');
         expect(() => store.materialize(envelope.runId, envelope.attemptId, occupied)).toThrow(/必须为空/);
+      } finally {
+        rmSync(candidate, { recursive: true, force: true });
+      }
+    });
+  });
+});
+
+describe('崩溃残留回收', () => {
+  it('回收陈旧的半成品目录，保留新出现的', () => {
+    const candidate = exportedCandidate();
+    withTemp(storeRoot => {
+      try {
+        const store = createRunStore(storeRoot);
+        const envelope = envelopeFor(candidate);
+        store.submit({ taskId, envelope, candidateDirectory: candidate, submittedBy: 'operator' });
+        const runDirectory = join(storeRoot, taskId, envelope.runId);
+        const stale = join(runDirectory, 'attempt-crashed.partial');
+        mkdirSync(stale, { recursive: true });
+        writeFileSync(join(stale, 'candidate.txt'), '半成品\n');
+        const old = new Date(Date.now() - 30 * 60 * 1000);
+        utimesSync(stale, old, old);
+        const fresh = join(runDirectory, 'attempt-running.partial');
+        mkdirSync(fresh, { recursive: true });
+
+        expect(store.pruneStalePartials()).toEqual([taskId + '/' + envelope.runId + '/attempt-crashed.partial']);
+        expect(existsSync(stale)).toBe(false);
+        expect(existsSync(fresh)).toBe(true);
       } finally {
         rmSync(candidate, { recursive: true, force: true });
       }

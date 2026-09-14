@@ -49,7 +49,7 @@ M1-05 与 M1-06 已完成：其余 7 道试点（FE-01、LSP-01、BND-02、THR-0
 | [来源清单](../catalog/sources.json) | 七个项目提交、运行时与证据路径 | 原仓库完整测试尚未执行 |
 | [CLI](../apps/cli/src/main.ts) | list、show、score，支持 Markdown 预览输出 | 还没有 submit、run、status 等正式执行命令 |
 | [API](../apps/api/src/app.ts) | health、tasks、previews 查询与预览写入 | 没有任务队列、完成事件入口或执行器调度 |
-| [存储](../apps/api/src/store.ts) | SQLite 原子保存与读取预览 | 没有正式 runs、attempts、events、artifacts 存储 |
+| [存储](../apps/api/src/store.ts) | SQLite 原子保存与读取预览 | 预览存储；正式运行记录是 `data/runs/` 下的文件（见 [执行记录机制](../docs/execution-records.md)），两者分开 |
 | [Web](../apps/web/src/main.tsx) | 题目筛选、预览报告及证据查看 | 没有正式执行时间线；示例分数必须继续标为预览 |
 | [目录生成器](../scripts/catalog.ts) | 元数据生成 Markdown，一致性检查 | 修改目录后运行 catalog:docs，不直接改生成文件 |
 | [题目包支撑](../packages/tasks/src/index.ts) | manifest 校验、白名单导出、受信检查执行与三向验证 | 导出只认 manifest 白名单；隐藏资产必须位于题目包之外 |
@@ -245,7 +245,7 @@ M1 完成需同时满足：8 题具备真实资产、首道到全部试点的提
 未完成及原因：M1-02 至 M1-06 未开始；Linux 容器、提交冻结、完成事件、代码质量评审仍缺失。
 实际检查命令与结果：pnpm check exit 0（53 项 vitest、生产构建通过）；pnpm test:e2e exit 0（1 项）；8 道题各自 node scripts/task.ts verify <ID> 六阶段通过；node scripts/trial.ts 8/8 通过；pnpm bench submit 自动验证与同键复用通过。
 运行中的本任务服务/端口（没有则写无）：无
-工作区/提交状态：仍无任何 Git 提交；全部文件（含 M0 初始化文件）为未跟踪，本次 M1-01 新增 tasks/、graders/、packages/tasks 并修改 package.json、tsconfig.json、pnpm-lock.yaml、packages/contracts、scripts/catalog.ts、docs/。
+工作区/提交状态：已创建首次提交 `bc3a613`（138 个文件），工作区干净；此前 M0 初始化文件一直未跟踪，现已全部纳入版本控制。
 新增依赖与环境要求：无第三方运行时依赖；新增 workspace 包 @fsa/tasks、@fsa/runs、@fsa/executor，需重新 pnpm install；题目包、控制面与执行器要求 Node >=24.14.1（原生类型剥离）与 git（应用参考补丁）。容器内执行还需要可用的 Linux 容器运行时，本机没有。
 下一位从哪个文件、哪个动作开始：先读 docs/notes/implemented/feature/2026-09-14-container-profile-and-pinned-image.md 的 runbook，在有容器运行时的机器上预载固定 digest 的镜像，再跑 `pnpm bench submit --profile linux-container …` 与 `BENCH_PROFILE=linux-container pnpm trial`；容器跑通后按 docs/roadmap.md 的 M2 推进核心题库与独立评审。
 对应 Agent Note：cache-02-task-package（M1-01）、submission-freeze-control-plane（M1-02）、minimal-executor-and-fault-classification + container-profile-and-pinned-image（M1-03）、submit-entry-and-run-status（M1-04）、m1-pilot-pack-and-trial（M1-05/06），均在 docs/notes/implemented/feature/ 下。

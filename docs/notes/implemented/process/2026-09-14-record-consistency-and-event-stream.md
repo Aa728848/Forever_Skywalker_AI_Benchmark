@@ -48,6 +48,7 @@ M1 的功能已经交付，但记录层还有几处与实现对不上：
 - 事件流仍未与面板联动：M2 的正式时间线直接消费 `events.jsonl`。
 - 事件只由可信侧写入，候选进程无法追加；但这仍是本地文件，拥有写权限的人可以重写历史，隔离写入身份留给发布阶段。
 - 首次提交把仓库带入可回滚状态；后续每个执行项按同一粒度提交。
+- 崩溃残留（`<attemptId>.partial`）现在会在每次成功提交后按年龄回收（默认 10 分钟以前），不会删除正在进行的提交。
 
 ## Verification
 
@@ -55,5 +56,6 @@ M1 的功能已经交付，但记录层还有几处与实现对不上：
 - `node scripts/catalog.ts --check`：55 题目录与元数据一致；生成目录中 8 行“已有可执行夹具”、47 行“夹具未完成”。
 - 事件流实测：一次提交产生 `run.created`、`submission.frozen`（seq 1、2）；一次执行后追加 `execution.started`、
   两个 `check.finished`、`execution.finished`（seq 3–6）；重复完成事件追加 `execution.reused` 且只追加一次。
-- `git log`：首次提交包含 8 道题目包、执行链路与全部文档。
+- `git log`：首次提交包含 8 道题目包、执行链路与全部文档；138 个文件纳入跟踪。
+- 崩溃残留回收：单测写入 30 分钟前的 `attempt-crashed.partial` 与刚创建的 `attempt-running.partial`，前者被回收、后者保留。
 

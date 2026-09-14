@@ -249,6 +249,8 @@ export interface MaterializedCandidate {
 export interface RunStore {
   readonly root: string;
   readonly excluded: readonly string[];
+  /** 回收崩溃遗留的半成品目录（默认只清理 10 分钟以前的，避免删除正在进行的提交）。 */
+  pruneStalePartials(options?: { olderThanMs?: number }): string[];
   submit(request: SubmitRequest): SubmissionOutcome;
   read(idempotencyKey: string): SubmissionOutcome | null;
   readAttempt(runId: string, attemptId: string): SubmissionOutcome | null;
@@ -276,6 +278,29 @@ export function createRunStore(root: string = defaultRunRoot, options: { exclude
 
   const attemptDirectory = (taskId: string, runId: string, attemptId: string): string => join(storeRoot, taskId, runId, attemptId);
   const relativePathOf = (absolute: string): string => relative(storeRoot, absolute).split(sep).join('/');
+
+  /** 崩溃只会在 <attemptId>.partial 留下半成品；这里按年龄回收，不碰正在进行的提交。 */
+  const pruneStalePartials = (options: { olderThanMs?: number } = {}): string[] => {
+    const threshold = Date.now() - (options.olderThanMs ?? 10 * 60 * 1000);
+    const removed: string[] = [];
+    if (!existsSync(storeRoot)) return removed;
+    for (const taskEntry of readdirSync(storeRoot, { withFileTypes: true })) {
+      if (!taskEntry.isDirectory()) continue;
+      const taskPath = join(storeRoot, taskEntry.name);
+      for (const runEntry of readdirSync(taskPath, { withFileTypes: true })) {
+        if (!runEntry.isDirectory()) continue;
+        const runPath = join(taskPath, runEntry.name);
+        for (const attemptEntry of readdirSync(runPath, { withFileTypes: true })) {
+          if (!attemptEntry.name.endsWith('.partial')) continue;
+          const candidate = join(runPath, attemptEntry.name);
+          if (statSync(candidate).mtimeMs > threshold) continue;
+          rmSync(candidate, { recursive: true, force: true });
+          removed.push(relativePathOf(candidate));
+        }
+      }
+    }
+    return removed;
+  };
 
   const outcomeOf = (entry: IndexEntry): SubmissionOutcome => {
     const directory = attemptDirectory(entry.taskId, entry.runId, entry.attemptId);
@@ -317,6 +342,7 @@ export function createRunStore(root: string = defaultRunRoot, options: { exclude
   return {
     root: storeRoot,
     excluded,
+    pruneStalePartials,
 
     submit(request: SubmitRequest): SubmissionOutcome {
       const task = readManifest(request.taskId);
@@ -427,6 +453,8 @@ export function createRunStore(root: string = defaultRunRoot, options: { exclude
             frozenAt,
           }],
         });
+        // 提交成功后顺手回收别的崩溃残留，不影响刚写入的 attempt。
+        pruneStalePartials();
         return { outcome: 'created', attempt: frozen, manifest, directory: finalDirectory };
       } catch (error) {
         rmSync(staging, { recursive: true, force: true });
