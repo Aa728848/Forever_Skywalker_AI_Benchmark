@@ -45,8 +45,8 @@ test('public/newcomers-cannot-jump-the-queue', async () => {
   release();
   await Promise.resolve();
   await Promise.resolve();
-  assert.equal(seen[0].value, 'waiting', '队首必须先获得资源');
-  assert.equal(seen[1].value, 'pending', '插队者不得先获得资源');
+  assert.equal(seen[0]?.value, 'waiting', '队首必须先获得资源');
+  assert.equal(seen[1]?.value, 'pending', '插队者不得先获得资源');
 });
 
 test('public/release-is-idempotent', async () => {
