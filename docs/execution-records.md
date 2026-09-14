@@ -40,6 +40,7 @@ data/runs/
       public.resources.json        # 资源采样原始数据（只对 node 命令生效）
       hidden.*                     # 隐藏检查同上
       execution.json               # 执行结论、逐项检查、资源数据与证据引用
+      score.json                   # 正式评分：可用验证分项（质量缺失时 total=null）
 ```
 
 事件包含 `schemaVersion`、稳定 `id`、单调递增 `seq`、UTC 时间、`type`、`actor`、`candidateHash`、`payload`、`evidenceRefs`；同一 `id` 只追加一次（重复完成事件不会重复记账）。持续时间由执行器用单调时钟测量，不依赖墙钟差值。
@@ -55,7 +56,7 @@ data/runs/
 | agent.completed | 未实现 | 适配器来源、完成原因、提交键（M2 的宿主适配器） |
 | benchmark.sampled | 未实现 | 输入规模、重复轮次、耗时、吞吐、内存、校准标识（M2 的性能采样） |
 | review.finished | 未实现 | 模型/参数、提示模板哈希、四维证据、调用错误与成本（M2 的裁判） |
-| score.finalized | 未实现 | 规则版本、全部输入引用、计算结果和门槛（需要裁判接入后才能定分） |
+| score.finalized | 已实现（可用验证分项） | 规则版本、分组权重、可用验证分与理由；代码质量与总分仍为 null，等裁判接入后补齐 |
 | run.failed/cancelled | 未实现 | 责任域与可重试原因；目前取消与超时记在 check.finished 的 payload 里 |
 
 尚未生成 `metrics.json`、`review.json`、`report.json`、`report.md` 与独立 `artifacts/` 目录：性能原始样本目前放在 `execution/*.resources.json`，执行输出与资源报告直接位于 `execution/` 下。这些文件随 M2 的评分与评审一起补齐。

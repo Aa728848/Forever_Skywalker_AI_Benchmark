@@ -108,6 +108,9 @@ importers:
       '@fsa/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@fsa/core':
+        specifier: workspace:*
+        version: link:../core
       '@fsa/runs':
         specifier: workspace:*
         version: link:../runs

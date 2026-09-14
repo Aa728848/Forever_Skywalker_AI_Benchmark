@@ -30,7 +30,9 @@ function renderStatus(status: RunStatus, created: boolean, reusedExecution: bool
   else for (const failure of status.knownFailures) lines.push(`已知失败：${failure.id}（${failure.kind}${failure.critical ? '，关键项' : ''}）`);
   if (status.missingChecks.length > 0) lines.push(`缺失检查：${status.missingChecks.join('、')}`);
   lines.push(`可重试：${status.retryable.allowed ? `是（${status.retryable.reason}，仅限同一快照）` : '否'}`);
-  lines.push(`总分：${status.scoring.mode === 'pending' ? `待定（${status.scoring.reason}）` : status.scoring.mode}`);
+  lines.push(`可用验证：${status.scoring.functional === null ? `未取得（${status.scoring.reason}）` : `${status.scoring.functional} / 50`}`);
+  lines.push(`代码质量：${status.scoring.quality === null ? '未接入（静态检查、性能基准与独立评审缺失）' : `${status.scoring.quality} / 50`}`);
+  lines.push(`总分：${status.scoring.total === null ? '待定' : `${status.scoring.total} / 100`}`);
   lines.push(`证据：${status.evidenceRefs.length > 0 ? status.evidenceRefs.join('、') : '无'}`);
   return lines.join('\n');
 }

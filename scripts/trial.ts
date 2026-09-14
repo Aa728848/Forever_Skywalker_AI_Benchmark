@@ -5,7 +5,7 @@ import type { ExecutionResult } from '../packages/contracts/src/index.ts';
 import { requireTask } from '../packages/catalog/src/index.ts';
 import { applyReferencePatch, exportWorkspace, readManifest, repositoryRoot } from '../packages/tasks/src/index.ts';
 import { createEnvelope, createRunStore } from '../packages/runs/src/index.ts';
-import { verifySubmission } from '../packages/executor/src/index.ts';
+import { readExecutionScore, verifySubmission } from '../packages/executor/src/index.ts';
 
 /** M1-06 试点试跑：8 道题各自跑一次缺陷候选与一次参考补丁候选，记录可执行状态与原始证据。 */
 const pilots = ['FE-01', 'LSP-01', 'CACHE-02', 'BND-02', 'THR-03', 'GRAPH-03', 'CONC-04', 'PERF-04'];
@@ -13,6 +13,10 @@ const pilots = ['FE-01', 'LSP-01', 'CACHE-02', 'BND-02', 'THR-03', 'GRAPH-03', '
 interface VariantReport {
   variant: 'defect' | 'reference';
   classification: string;
+  functional: number | null;
+  quality: number | null;
+  total: number | null;
+  criticalPassed: boolean | null;
   failed: string[];
   missing: string[];
   expectedDetectors: string[];
@@ -35,13 +39,22 @@ interface TaskReport {
   note: string;
 }
 
+function taskIdOf(result: ExecutionResult): string {
+  return result.taskId;
+}
+
 function summarize(variant: VariantReport['variant'], expected: string[], result: ExecutionResult, reused: boolean, patchApplied: boolean): VariantReport {
   const failed = result.checks.filter(check => check.status === 'failed').map(check => check.id).sort();
   const missing = result.checks.filter(check => check.status === 'not-run').map(check => check.id).sort();
   const declared = [...expected].sort();
+  const score = readExecutionScore(join(artifactRoot, 'runs', taskIdOf(result), result.runId, result.attemptId));
   return {
     variant,
     classification: result.classification,
+    functional: score?.functional ?? null,
+    quality: score?.quality ?? null,
+    total: score?.total ?? null,
+    criticalPassed: score?.criticalPassed ?? null,
     failed,
     missing,
     expectedDetectors: declared,
@@ -86,7 +99,8 @@ for (const taskId of pilots) {
         patchApplied = applied.exitCode === 0;
         if (!patchApplied) {
           report.phases.push({
-            variant, classification: 'patch-failed', failed: [], missing: [], expectedDetectors: [],
+            variant, classification: 'patch-failed', functional: null, quality: null, total: null, criticalPassed: null,
+            failed: [], missing: [], expectedDetectors: [],
             matchesDeclaredDetectors: false, durationMs: 0, phaseDurations: [], peakRssBytes: [],
             reusedExecution: false, referencePatchApplied: false, error: applied.stderr.trim() || '参考补丁应用失败',
           });
@@ -115,9 +129,11 @@ for (const taskId of pilots) {
     rmSync(scratch, { recursive: true, force: true });
   }
   reports.push(report);
-  const defect = report.phases.find(phase => phase.variant === 'defect')?.classification ?? '-';
-  const reference = report.phases.find(phase => phase.variant === 'reference')?.classification ?? '-';
-  console.log(`${report.ok ? '通过' : '不通过'} ${taskId}：缺陷=${defect}，参考=${reference}${report.note === '' ? '' : `（${report.note}）`}`);
+  const defectPhase = report.phases.find(phase => phase.variant === 'defect');
+  const referencePhase = report.phases.find(phase => phase.variant === 'reference');
+  const defect = defectPhase?.classification ?? '-';
+  const reference = referencePhase?.classification ?? '-';
+  console.log(`${report.ok ? '通过' : '不通过'} ${taskId}：缺陷=${defect}（可用验证 ${defectPhase?.functional ?? '未取得'}/50），参考=${reference}（可用验证 ${referencePhase?.functional ?? '未取得'}/50）${report.note === '' ? '' : `（${report.note}）`}`);
 }
 
 const okCount = reports.filter(report => report.ok).length;

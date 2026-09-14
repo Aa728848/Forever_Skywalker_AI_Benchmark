@@ -56,7 +56,8 @@ M1-05 与 M1-06 已完成：其余 7 道试点（FE-01、LSP-01、BND-02、THR-0
 | [CACHE-02 题目包](../tasks/core/CACHE-02/) | task.md、manifest.json、缺陷 starter、公开检查 | 只有这一题有真实资产，其余 54 题仍是设计规格 |
 | [CACHE-02 受信资产](../graders/CACHE-02/README.md) | 隐藏检查、参考补丁、替代实现与独立验证计划 | 不进入候选工作区，只由受信侧在导出后注入 |
 | [题目包 CLI](../scripts/task.ts) | task:export 与 task:verify，用 node 运行 | 还不是正式执行器；只在开发机验证题目包本身 |
-| [提交与冻结控制面](../packages/runs/src/index.ts) | 候选树摘要、提交信封校验、冻结快照、幂等索引与物化 | 不做隔离执行，也不决定分数；单进程写入模型 |
+| [提交与冻结控制面](../packages/runs/src/index.ts) | 候选树摘要、提交信封校验、冻结快照、幂等索引、事件流与物化 | 不做隔离执行，也不决定分数；单进程写入模型 |
+| [正式评分桥](../packages/core/src/index.ts) | `scoreExecution`：执行结果 → 可用验证分组分（质量缺失时总分待定） | 纯函数，不读文件/网络，不调用模型 |
 | [演练入口](../scripts/run.ts) | submit / show / list / materialize / execute | 非正式入口；`bench submit` 与来源认证属于 M1-04 |
 | [最小执行器](../packages/executor/src/index.ts) | 物化被测对象、运行固定命令、解析检查、故障分类与资源采样 | 不决定分数；`profile=local` 时没有隔离与网络阻断 |
 | [试点题目包](../tasks/core/) | 8 道题各有 task.md、manifest.json、缺陷 starter、公开检查与受信资产 | 其余 47 道仍是设计规格，不是可执行题目 |

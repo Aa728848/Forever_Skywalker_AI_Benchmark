@@ -335,7 +335,10 @@ export const RunStatusSchema = Type.Object({
     sameSnapshotOnly: Type.Boolean(),
   }, { additionalProperties: false }),
   scoring: Type.Object({
-    mode: Type.Literal('pending'),
+    mode: Type.Union([Type.Literal('formal'), Type.Literal('pending')]),
+    functional: score,
+    quality: score,
+    total: score,
     reason: text,
   }, { additionalProperties: false }),
   evidenceRefs: Type.Array(checkId, { maxItems: 64 }),
@@ -344,6 +347,52 @@ export const RunStatusSchema = Type.Object({
 }, { additionalProperties: false });
 export type RunStatus = Type.Static<typeof RunStatusSchema>;
 export const runStatusValidator = Schema.Compile(RunStatusSchema);
+
+/** 可用验证分组：权重与 docs/scoring.md 一致（20/10/10/5/5，合计 50）。 */
+export const ExecutionScoreGroupSchema = Type.Union([
+  Type.Literal('behavior'), Type.Literal('boundary'), Type.Literal('state'), Type.Literal('regression'), Type.Literal('resources'),
+]);
+
+export const ExecutionGroupScoreSchema = Type.Object({
+  group: ExecutionScoreGroupSchema,
+  weight: Type.Number({ minimum: 0, maximum: 50 }),
+  score: Type.Union([Type.Number({ minimum: 0, maximum: 100 }), Type.Null()]),
+  weightPassed: Type.Number({ minimum: 0 }),
+  weightTotal: Type.Number({ minimum: 0 }),
+  passed: Type.Array(checkId, { maxItems: 200 }),
+  failed: Type.Array(checkId, { maxItems: 200 }),
+  notRun: Type.Array(checkId, { maxItems: 200 }),
+}, { additionalProperties: false });
+
+/**
+ * 正式评分：可用验证分项只来自受控执行结果；代码质量证据缺失时保持 null，总分待定。
+ * mode=formal 的可信度来自冻结快照、平台实算摘要与受控执行链，不来自字段命名。
+ */
+export const ExecutionScoreSchema = Type.Object({
+  schemaVersion: Type.Literal('0.1.0'),
+  mode: Type.Literal('formal'),
+  rubricVersion: Type.Literal('0.1.0'),
+  runId: id,
+  attemptId: id,
+  taskId: id,
+  taskVersion: text,
+  candidateTreeHash: treeHash,
+  classification: ExecutionClassificationSchema,
+  functional: score,
+  quality: score,
+  total: score,
+  groups: Type.Array(ExecutionGroupScoreSchema, { minItems: 1, maxItems: 5 }),
+  dimensions: Type.Object({ simplicity: score, maintainability: score, decoupling: score, performance: score }, { additionalProperties: false }),
+  criticalPassed: Type.Boolean(),
+  readiness: Type.Union([Type.Literal('complete'), Type.Literal('pending'), Type.Literal('infra-error')]),
+  thresholdMet: Type.Union([Type.Boolean(), Type.Null()]),
+  reasons: Type.Array(text, { maxItems: 32 }),
+  evidenceRefs: Type.Array(checkId, { maxItems: 64 }),
+  scoredAt: text,
+}, { additionalProperties: false });
+export type ExecutionScore = Type.Static<typeof ExecutionScoreSchema>;
+export const executionScoreValidator = Schema.Compile(ExecutionScoreSchema);
+
 
 /** 控制面事件：由可信侧按顺序追加到 attempt 的 events.jsonl，候选只能产生被采集的日志。 */
 export const RunEventSchema = Type.Object({
@@ -358,6 +407,7 @@ export const RunEventSchema = Type.Object({
     Type.Literal('check.finished'),
     Type.Literal('execution.finished'),
     Type.Literal('execution.reused'),
+    Type.Literal('score.finalized'),
   ]),
   actor: text,
   candidateHash: treeHash,

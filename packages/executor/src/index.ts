@@ -5,10 +5,11 @@ import { availableParallelism, arch, platform, totalmem } from 'node:os';
 import { basename, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
+import { scoreExecution } from '@fsa/core';
 import {
-  executionResultValidator, explainExecutionResult, runStatusValidator,
+  executionResultValidator, executionScoreValidator, explainExecutionResult, runStatusValidator,
   type ExecutionArtifact, type ExecutionCheck, type ExecutionClassification,
-  type ExecutionManifest, type ExecutionResult, type RunStatus, type TaskManifest,
+  type ExecutionManifest, type ExecutionResult, type ExecutionScore, type RunStatus, type TaskManifest,
 } from '@fsa/contracts';
 import { appendRunEvent, type RunStore, type SubmissionOutcome } from '@fsa/runs';
 import { installHiddenChecks, parseTap, type CheckOutcome } from '@fsa/tasks';
@@ -472,7 +473,32 @@ export async function executeAttempt(options: ExecuteOptions): Promise<Execution
   }
 
   mkdirSync(artifactDirectory, { recursive: true });
+
+  // 正式评分：可用验证分项由受控执行结果换算；质量证据缺失时保持 null（总分待定）。
+  const score = scoreExecution(result, task);
+  if (!executionScoreValidator.Check(score)) throw new Error('执行评分不符合 0.1.0 协议。');
+  const scorePath = join(artifactDirectory, 'score.json');
+  writeFileSync(scorePath, `${JSON.stringify(score, null, 2)}\n`);
+  result.artifacts.push(artifactOf('score.json', scorePath, artifactDirectory));
+  result.evidenceRefs = [...result.evidenceRefs, 'score.json'];
+
   writeFileSync(join(artifactDirectory, 'execution.json'), `${JSON.stringify(result, null, 2)}\n`);
+  appendRunEvent(outcome.directory, {
+    type: 'score.finalized',
+    actor: 'executor',
+    candidateHash: result.candidateTreeHash,
+    payload: {
+      mode: score.mode,
+      functional: score.functional,
+      quality: score.quality,
+      total: score.total,
+      readiness: score.readiness,
+      criticalPassed: score.criticalPassed,
+    },
+    evidenceRefs: ['score.json'],
+    id: eventId('score.finalized'),
+    at: score.scoredAt,
+  });
   appendRunEvent(outcome.directory, {
     type: 'execution.finished',
     actor: 'executor',
@@ -507,6 +533,15 @@ export function readExecutionResult(attemptDirectory: string): ExecutionResult |
   if (!existsSync(path)) return null;
   const input: unknown = JSON.parse(readFileSync(path, 'utf8'));
   if (!executionResultValidator.Check(input)) throw new Error('已记录的执行结果不符合 0.1.0 协议。');
+  return input;
+}
+
+/** 读取正式评分文档；没有执行结论时为 null。 */
+export function readExecutionScore(attemptDirectory: string): ExecutionScore | null {
+  const path = join(attemptDirectory, 'execution', 'score.json');
+  if (!existsSync(path)) return null;
+  const input: unknown = JSON.parse(readFileSync(path, 'utf8'));
+  if (!executionScoreValidator.Check(input)) throw new Error('已记录的执行评分不符合 0.1.0 协议。');
   return input;
 }
 
@@ -569,6 +604,7 @@ export function readRunStatus(store: RunStore, runId: string, attemptId: string)
   const outcome = store.readAttempt(runId, attemptId);
   if (outcome === null) throw new Error(`未找到已冻结的 attempt：${runId}/${attemptId}`);
   const execution = readExecutionResult(outcome.directory);
+  const score = readExecutionScore(outcome.directory);
   const checks = execution?.checks ?? [];
   const classification = execution?.classification ?? null;
   const retryable = classification === 'infrastructure-error' || classification === 'cancelled';
@@ -586,7 +622,15 @@ export function readRunStatus(store: RunStore, runId: string, attemptId: string)
     knownFailures: checks.filter(check => check.status === 'failed').map(check => ({ id: check.id, kind: check.kind, critical: check.critical })),
     missingChecks: checks.filter(check => check.status === 'not-run').map(check => check.id),
     retryable: { allowed: retryable, reason: retryable ? classification : null, sameSnapshotOnly: retryable },
-    scoring: { mode: 'pending', reason: '代码质量评审未接入，总分保持待定。' },
+    scoring: score === null
+      ? { mode: 'pending', functional: null, quality: null, total: null, reason: '尚未取得受控执行结论，总分待定。' }
+      : {
+          mode: 'formal',
+          functional: score.functional,
+          quality: score.quality,
+          total: score.total,
+          reason: score.reasons.join(' '),
+        },
     evidenceRefs: execution?.evidenceRefs ?? [],
     artifacts: execution?.artifacts ?? [],
     updatedAt: execution?.finishedAt ?? outcome.attempt.frozenAt,

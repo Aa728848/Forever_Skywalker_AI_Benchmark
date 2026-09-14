@@ -1,6 +1,6 @@
 import {
   assessmentValidator, difficulties, functionalWeights, qualityWeights, rubricVersion,
-  type Assessment, type Difficulty, type ScoreResult, type Task,
+  type Assessment, type Difficulty, type ExecutionResult, type ExecutionScore, type ScoreResult, type Task, type TaskManifest,
 } from '@fsa/contracts';
 
 const round = (value: number) => Math.round(value * 100) / 100;
@@ -100,4 +100,77 @@ export function summarizeLevels(
   const weightedTotal = levels.every(level => level.score !== null)
     ? round(levels.reduce((sum, level, index) => sum + (level.score ?? 0) * (index + 1) / 10, 0)) : null;
   return { mode: 'preview' as const, levels, weightedTotal, highestConsecutiveLevel };
+}
+
+/** 可用验证分组顺序固定；权重来自评分标准（20/10/10/5/5）。 */
+const executionGroups = ['behavior', 'boundary', 'state', 'regression', 'resources'] as const;
+
+/**
+ * 正式评分：把受控执行结果换算成可用验证分项。
+ * - 只接受执行器产出的检查状态；未取得的结论不能被 0 或满分替代。
+ * - infrastructure-error 与 cancelled 属于未完成执行：可用分为 null，状态 pending。
+ * - 被测失败（check-failed / timeout / memory-exceeded）按评分标准把相关项记 0。
+ * - 代码质量四个维度没有静态/基准/评审证据时保持 null，因此总分待定。
+ */
+export function scoreExecution(execution: ExecutionResult, manifest: TaskManifest): ExecutionScore {
+  const statusOf = (id: string) => execution.checks.find(check => check.id === id)?.status ?? 'not-run';
+  const undone = execution.classification === 'infrastructure-error' || execution.classification === 'cancelled';
+  const groups = executionGroups.map(group => {
+    const declared = manifest.checks.filter(check => check.group === group);
+    const weightTotal = declared.reduce((sum, check) => sum + check.weight, 0);
+    const passed = declared.filter(check => statusOf(check.id) === 'passed');
+    const failed = declared.filter(check => statusOf(check.id) === 'failed');
+    const notRun = declared.filter(check => statusOf(check.id) === 'not-run');
+    const weightPassed = passed.reduce((sum, check) => sum + check.weight, 0);
+    // 被测失败（含超时/OOM）按评分标准把未取得的项记 0；只有基础设施故障与取消才是“未取得结论”。
+    const complete = !undone && weightTotal > 0;
+    return {
+      group,
+      weight: functionalWeights[group],
+      score: complete ? round((weightPassed / weightTotal) * 100) : null,
+      weightPassed,
+      weightTotal,
+      passed: passed.map(check => check.id),
+      failed: failed.map(check => check.id),
+      notRun: notRun.map(check => check.id),
+    };
+  });
+  const complete = groups.every(group => group.score !== null);
+  const functional = complete
+    ? round(groups.reduce((sum, group) => sum + ((group.score ?? 0) / 100) * group.weight, 0))
+    : null;
+  const criticalPassed = manifest.checks.filter(check => check.critical).every(check => statusOf(check.id) === 'passed');
+  const reasons: string[] = [];
+  if (execution.classification === 'infrastructure-error') reasons.push('基础设施故障：只允许同一快照有限重试，本次不产生分数。');
+  if (execution.classification === 'cancelled') reasons.push('执行被取消：未取得结论，总分保持待定。');
+  if (execution.classification === 'timeout') reasons.push('候选未在时间预算内完成：未取得的检查项按被测失败记 0。');
+  if (execution.classification === 'memory-exceeded') reasons.push('候选因内存耗尽终止：未取得的检查项按被测失败记 0。');
+  const notRunTotal = groups.reduce((sum, group) => sum + group.notRun.length, 0);
+  if (!undone && notRunTotal > 0) reasons.push('仍有 ' + notRunTotal + ' 项检查未取得结论，按被测失败记 0。');
+  if (!criticalPassed) reasons.push('存在未通过的关键验收项。');
+  reasons.push('代码质量证据缺失：静态检查、性能基准与独立评审未接入，总分待定。');
+  const readiness: ExecutionScore['readiness'] = execution.classification === 'infrastructure-error' ? 'infra-error' : functional === null ? 'pending' : 'complete';
+  return {
+    schemaVersion: '0.1.0',
+    mode: 'formal',
+    rubricVersion,
+    runId: execution.runId,
+    attemptId: execution.attemptId,
+    taskId: execution.taskId,
+    taskVersion: execution.taskVersion,
+    candidateTreeHash: execution.candidateTreeHash,
+    classification: execution.classification,
+    functional,
+    quality: null,
+    total: null,
+    groups,
+    dimensions: { simplicity: null, maintainability: null, decoupling: null, performance: null },
+    criticalPassed,
+    readiness,
+    // 总分需要质量证据，因此只有关键验收项明确失败时才给出确定的 false。
+    thresholdMet: criticalPassed ? null : false,
+    reasons,
+    evidenceRefs: execution.evidenceRefs,
+    scoredAt: new Date().toISOString(),
+  };
 }

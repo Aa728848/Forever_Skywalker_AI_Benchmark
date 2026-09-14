@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { applyReferencePatch, exportWorkspace, readManifest } from '@fsa/tasks';
 import { createEnvelope, createRunStore, digestTree, readRunEvents, submissionBaseline } from '@fsa/runs';
 import type { SubmissionEnvelope } from '@fsa/contracts';
-import { classifyExecution, executeAttempt, listRunStatuses, readRunStatus, runPhase, verifySubmission } from './index.ts';
+import { classifyExecution, executeAttempt, listRunStatuses, readExecutionScore, readRunStatus, runPhase, verifySubmission } from './index.ts';
 
 const taskId = 'CACHE-02';
 
@@ -150,6 +150,9 @@ describe('冻结快照执行', () => {
       const reference = await executeAttempt({ store, runId: patchedEnvelope.runId, attemptId: patchedEnvelope.attemptId });
       expect(reference.classification).toBe('passed');
       expect(reference.checks.every(check => check.status === 'passed')).toBe(true);
+      const referenceScore = readExecutionScore(join(storeRoot, taskId, patchedEnvelope.runId, patchedEnvelope.attemptId));
+      expect(referenceScore).toMatchObject({ mode: 'formal', functional: 50, quality: null, total: null, criticalPassed: true, thresholdMet: null });
+      expect(referenceScore?.groups.map(group => group.score)).toEqual([100, 100, 100, 100, 100]);
     } finally {
       for (const directory of [storeRoot, candidate, patched]) rmSync(directory, { recursive: true, force: true });
     }
@@ -210,7 +213,7 @@ describe('提交入口自动触发验证', () => {
       expect(status.classification).toBe('check-failed');
       expect(status.knownFailures.map(item => item.id).sort()).toEqual([...manifest.grader.defectDetectors].sort());
       expect(status.missingChecks).toEqual([]);
-      expect(status.scoring.mode).toBe('pending');
+
       expect(status.retryable.allowed).toBe(false);
       expect(status.evidenceRefs.length).toBeGreaterThan(0);
       expect(status.candidateTreeHash).toBe(envelope.candidateTreeHash);
@@ -218,11 +221,21 @@ describe('提交入口自动触发验证', () => {
       // 事件流：冻结两条 + 执行四条，seq 单调递增且同 ID 不重复
       const events = readRunEvents(first.submission.directory);
       expect(events.map(event => event.type)).toEqual([
-        'run.created', 'submission.frozen', 'execution.started', 'check.finished', 'check.finished', 'execution.finished',
+        'run.created', 'submission.frozen', 'execution.started', 'check.finished', 'check.finished',
+        'score.finalized', 'execution.finished',
       ]);
-      expect(events.map(event => event.seq)).toEqual([1, 2, 3, 4, 5, 6]);
+      expect(events.map(event => event.seq)).toEqual([1, 2, 3, 4, 5, 6, 7]);
       expect(events[2]?.payload).toMatchObject({ isolation: 'none' });
       expect(events[3]?.payload).toMatchObject({ phase: 'public' });
+
+      // 正式评分：可用验证分项由执行结果算出，质量缺失时总分待定
+      const score = readExecutionScore(first.submission.directory);
+      expect(score).toMatchObject({ mode: 'formal', quality: null, total: null, criticalPassed: false, thresholdMet: false });
+      expect(score?.groups.find(group => group.group === 'boundary')).toMatchObject({ weightPassed: 2, weightTotal: 5 });
+      expect(score?.functional).toBeGreaterThan(0);
+      expect(score?.functional).toBeLessThan(50);
+      expect(status.scoring).toMatchObject({ mode: 'formal', total: null, quality: null });
+      expect(status.scoring.functional).toBe(score?.functional);
 
       // 重复完成事件：不得重跑检查
       const again = await verifySubmission({ store, taskId, envelope, candidateDirectory: candidate, submittedBy: 'test' });
@@ -256,7 +269,7 @@ describe('提交入口自动触发验证', () => {
       expect(status.phase).toBe('frozen');
       expect(status.classification).toBeNull();
       expect(status.knownFailures).toEqual([]);
-      expect(status.scoring).toEqual({ mode: 'pending', reason: '代码质量评审未接入，总分保持待定。' });
+      expect(status.scoring).toEqual({ mode: 'pending', functional: null, quality: null, total: null, reason: '尚未取得受控执行结论，总分待定。' });
     } finally {
       for (const directory of [storeRoot, candidate]) rmSync(directory, { recursive: true, force: true });
     }

@@ -87,3 +87,91 @@ describe('四级汇总', () => {
     expect(() => summarizeLevels(tasks, [{ ...report, taskId: 'unknown' }])).toThrow(/题库以外/);
   });
 });
+
+import { scoreExecution } from './index.ts';
+import type { ExecutionResult, TaskManifest } from '@fsa/contracts';
+
+function manifestFixture(criticalId = 'public/behavior'): TaskManifest {
+  const id = (value: string) => value;
+  const check = (value: string, group: 'behavior' | 'boundary' | 'state' | 'regression' | 'resources', critical: boolean) => ({
+    id: value, kind: 'public' as const, group, weight: 1, critical, summary: '测试检查 ' + value,
+  });
+  return {
+    schemaVersion: '0.1.0', taskId: 'CACHE-02', taskVersion: '0.1.0', title: '测试题', runtime: 'typescript',
+    runtimeRange: 'node >=24.14.1 <25',
+    workspace: { entries: [{ from: 'task.md', to: 'TASK.md' }] },
+    commands: { public: ['node', 'x'], hidden: ['node', 'y'] },
+    grader: { checks: 'graders/CACHE-02/checks', referencePatch: 'graders/CACHE-02/reference.patch', alternative: 'graders/CACHE-02/alternative', defectDetectors: [id('public/behavior')] },
+    limits: { timeoutMs: 60000, memoryMb: 512, cpus: 1, network: false },
+    checks: [
+      check('public/behavior', 'behavior', criticalId === 'public/behavior'),
+      check('public/boundary', 'boundary', criticalId === 'public/boundary'),
+      check('public/state', 'state', false),
+      check('public/regression', 'regression', false),
+      check('public/resources', 'resources', false),
+    ],
+  };
+}
+
+function executionFixture(statuses: Record<string, 'passed' | 'failed' | 'not-run'>, classification: ExecutionResult['classification']): ExecutionResult {
+  return {
+    schemaVersion: '0.1.0', runId: 'run-test', attemptId: 'attempt-test', taskId: 'CACHE-02', taskVersion: '0.1.0',
+    candidateTreeHash: 'a'.repeat(64), classification, isolation: 'none',
+    startedAt: '2026-01-01T00:00:00.000Z', finishedAt: '2026-01-01T00:00:01.000Z', durationMs: 1000,
+    environment: { profile: 'local', image: null, imageDigest: null, platform: 'test x64', platformVersion: 'v24', candidateRuntimes: ['node'], containerRuntime: null, cpus: 1, totalMemoryMb: 1024, network: false },
+    phases: [{ kind: 'public', declaredCommand: ['node', 'x'], argv: ['node', 'x'], cwd: '/w', timeoutMs: 60000, exitCode: 1, signal: null, timedOut: false, cancelled: false, durationMs: 10, resource: { peakRssBytes: null, userCpuMs: null, systemCpuMs: null, sampler: 'unavailable' }, missing: [], artifacts: [] }],
+    checks: manifestFixture().checks.map(check => ({
+      id: check.id, kind: check.kind, group: check.group, critical: check.critical,
+      status: statuses[check.id] ?? 'not-run', durationMs: 1,
+    })),
+    artifacts: [], evidenceRefs: ['public.stdout'], notes: [],
+  };
+}
+
+describe('正式评分桥：执行结果 → 可用验证分', () => {
+  it('全部通过时可用验证 50 分，但总分仍待定', () => {
+    const score = scoreExecution(executionFixture({
+      'public/behavior': 'passed', 'public/boundary': 'passed', 'public/state': 'passed', 'public/regression': 'passed', 'public/resources': 'passed',
+    }, 'passed'), manifestFixture());
+    expect(score.mode).toBe('formal');
+    expect(score.functional).toBe(50);
+    expect(score.quality).toBeNull();
+    expect(score.total).toBeNull();
+    expect(score.readiness).toBe('complete');
+    expect(score.thresholdMet).toBeNull();
+    expect(score.groups.map(group => group.score)).toEqual([100, 100, 100, 100, 100]);
+    expect(score.reasons.join(' ')).toContain('代码质量证据缺失');
+  });
+
+  it('分组按权重折算，失败组记 0 而不是重新归一化', () => {
+    const score = scoreExecution(executionFixture({
+      'public/behavior': 'passed', 'public/boundary': 'failed', 'public/state': 'passed', 'public/regression': 'passed', 'public/resources': 'passed',
+    }, 'check-failed'), manifestFixture());
+    expect(score.functional).toBe(40);
+    expect(score.groups.find(group => group.group === 'boundary')).toMatchObject({ score: 0, weightPassed: 0, weightTotal: 1 });
+  });
+
+  it('关键验收项失败时明确不合格', () => {
+    const score = scoreExecution(executionFixture({
+      'public/behavior': 'failed', 'public/boundary': 'passed', 'public/state': 'passed', 'public/regression': 'passed', 'public/resources': 'passed',
+    }, 'check-failed'), manifestFixture());
+    expect(score.criticalPassed).toBe(false);
+    expect(score.thresholdMet).toBe(false);
+    expect(score.reasons.join(' ')).toContain('关键验收项');
+  });
+
+  it('超时把未取得的检查项按被测失败记 0', () => {
+    const score = scoreExecution(executionFixture({ 'public/behavior': 'passed' }, 'timeout'), manifestFixture());
+    expect(score.functional).toBe(20);
+    expect(score.readiness).toBe('complete');
+    expect(score.reasons.join(' ')).toContain('时间预算');
+  });
+
+  it('基础设施故障与取消不给分数', () => {
+    for (const classification of ['infrastructure-error', 'cancelled'] as const) {
+      const score = scoreExecution(executionFixture({ 'public/behavior': 'passed' }, classification), manifestFixture());
+      expect(score.functional).toBeNull();
+      expect(score.readiness).toBe(classification === 'infrastructure-error' ? 'infra-error' : 'pending');
+    }
+  });
+});

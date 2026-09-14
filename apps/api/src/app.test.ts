@@ -80,7 +80,8 @@ describe('正式运行入口', () => {
       expect(created.statusCode).toBe(201);
       const status = created.json();
       expect(status).toMatchObject({ taskId: 'CACHE-02', phase: 'verified', classification: 'check-failed' });
-      expect(status.scoring.mode).toBe('pending');
+      expect(status.scoring).toMatchObject({ mode: 'formal', quality: null, total: null });
+      expect(status.scoring.functional).toBeGreaterThan(0);
       expect(status.knownFailures.map((item: { id: string }) => item.id).sort()).toEqual([
         'public/retry-after-failure', 'public/sync-throw-becomes-rejection',
         'hidden/no-cache-of-rejected-attempt', 'hidden/retry-then-coalesce-again',
