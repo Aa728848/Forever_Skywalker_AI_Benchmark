@@ -59,9 +59,15 @@ importers:
       '@fsa/executor':
         specifier: workspace:*
         version: link:../../packages/executor
+      '@fsa/judge':
+        specifier: workspace:*
+        version: link:../../packages/judge
       '@fsa/runs':
         specifier: workspace:*
         version: link:../../packages/runs
+      '@fsa/static':
+        specifier: workspace:*
+        version: link:../../packages/static
 
   apps/web:
     dependencies:

@@ -5,12 +5,15 @@ import { difficultyLabels, type RunStatus } from '@fsa/contracts';
 import { parseAssessment, scoreAssessment } from '@fsa/core';
 import { createEnvelope, createRunStore, defaultRunRoot } from '@fsa/runs';
 import { listRunStatuses, readRunStatus, verifySubmission } from '@fsa/executor';
+import { defaultTypeScriptPolicy } from '@fsa/static';
+import { judgeConfigFromEnvironment, JudgeUnavailableError } from '@fsa/judge';
 
 const usage = [
   '用法：',
   '  bench list | show <题目 ID> | score <证据 JSON> [--format json|markdown]   # 预览语义，不执行候选代码',
   '  bench submit <题目 ID> <候选目录> --key <幂等键> [--by <提交者>] [--reason agent-completed|operator-submit|patch-import]',
-  '              [--root <运行存储目录>] [--format json] [--profile local|linux-container] [--image <镜像引用>] [--image-digest sha256:...]',
+  '              [--root <运行存储目录>] [--format json] [--profile local|linux-container] [--image <镜像引用>] [--image-digest sha256:...] [--static]',
+  '  --static 启用未校准的 TypeScript 静态客观分（只覆盖 simplicity/maintainability/decoupling）。',
   '  bench status <runId> <attemptId> [--root <运行存储目录>] [--format json]',
   '  bench runs [--root <运行存储目录>] [--format json]',
   '',
@@ -31,7 +34,7 @@ function renderStatus(status: RunStatus, created: boolean, reusedExecution: bool
   if (status.missingChecks.length > 0) lines.push(`缺失检查：${status.missingChecks.join('、')}`);
   lines.push(`可重试：${status.retryable.allowed ? `是（${status.retryable.reason}，仅限同一快照）` : '否'}`);
   lines.push(`可用验证：${status.scoring.functional === null ? `未取得（${status.scoring.reason}）` : `${status.scoring.functional} / 50`}`);
-  lines.push(`代码质量：${status.scoring.quality === null ? '未接入（静态检查、性能基准与独立评审缺失）' : `${status.scoring.quality} / 50`}`);
+  lines.push(`代码质量：${status.scoring.quality === null ? `待定（${status.scoring.reason}）` : `${status.scoring.quality} / 50`}`);
   lines.push(`总分：${status.scoring.total === null ? '待定' : `${status.scoring.total} / 100`}`);
   lines.push(`证据：${status.evidenceRefs.length > 0 ? status.evidenceRefs.join('、') : '无'}`);
   return lines.join('\n');
@@ -48,6 +51,7 @@ try {
       profile: { type: 'string', default: 'local' },
       image: { type: 'string' },
       'image-digest': { type: 'string' },
+      static: { type: 'boolean', default: false },
     },
     allowPositionals: true,
   });
@@ -77,11 +81,20 @@ try {
     if (values.key !== undefined) envelopeOptions.idempotencyKey = values.key;
     const envelope = createEnvelope(first, second, envelopeOptions);
     if (!['local', 'linux-container'].includes(values.profile)) throw new Error('--profile 必须为 local 或 linux-container。');
+    let judgeSummary = '评审：未配置（需要 BENCH_JUDGE_ENDPOINT / BENCH_JUDGE_MODEL / BENCH_JUDGE_TOKEN），代码质量保持待定。';
+    try {
+      const { config } = judgeConfigFromEnvironment();
+      judgeSummary = '评审已配置：' + config.provider + ' ' + config.model + '（提示版本 ' + config.promptVersion + '，预算 ' + config.maxCalls + ' 次）。注意：CLI 尚不自动调用评审，判决需由调度器注入。';
+    } catch (error) {
+      if (!(error instanceof JudgeUnavailableError)) throw error;
+    }
+    console.log(judgeSummary);
     const outcome = await verifySubmission({
       store, taskId: first, envelope, candidateDirectory: second, submittedBy: values.by,
       profile: values.profile === 'linux-container' ? 'linux-container' : 'local',
       ...(values.image === undefined ? {} : { image: values.image }),
       ...(values['image-digest'] === undefined ? {} : { imageDigest: values['image-digest'] }),
+      ...(values.static !== true ? {} : { staticPolicy: defaultTypeScriptPolicy() }),
     });
     const status = readRunStatus(store, outcome.submission.attempt.runId, outcome.submission.attempt.attemptId);
     if (asJson) console.log(JSON.stringify({ ...status, submission: outcome.submission.outcome, reusedExecution: outcome.reusedExecution }, null, 2));

@@ -8,6 +8,8 @@
     "@fsa/contracts": "workspace:*",
     "@fsa/core": "workspace:*",
     "@fsa/runs": "workspace:*",
-    "@fsa/executor": "workspace:*"
+    "@fsa/executor": "workspace:*",
+    "@fsa/static": "workspace:*",
+    "@fsa/judge": "workspace:*"
   }
 }

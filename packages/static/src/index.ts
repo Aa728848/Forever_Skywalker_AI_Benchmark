@@ -99,6 +99,20 @@ function sourceFiles(root: string, current = root, acc: string[] = []): string[]
 
 const clamp = (value: number): number => Math.max(0, Math.min(100, Math.round(value)));
 
+/**
+ * TypeScript 起步策略：阈值是**未经校准**的初始值，只用于把链路跑通；
+ * 正式发布前必须按题族用真实作答分布校准并提升规则版本。
+ */
+export function defaultTypeScriptPolicy(evidenceId = 'static-report'): StaticPolicy {
+  return {
+    language: 'typescript',
+    maxDecisionPointsPerFunction: 12,
+    maxFunctionLines: 60,
+    forbiddenImports: ['node:child_process', 'node:worker_threads'],
+    evidenceId,
+  };
+}
+
 export function analyzeWorkspace(root: string, policy: StaticPolicy): StaticReport {
   if (policy.language !== 'typescript') throw new RangeError('当前静态规则只支持 typescript。');
   const files: FileFacts[] = [];
