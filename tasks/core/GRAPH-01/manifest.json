@@ -1,0 +1,143 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "GRAPH-01",
+  "taskVersion": "0.1.0",
+  "title": "树遍历终止与叶节点",
+  "runtime": "typescript",
+  "runtimeRange": "node >=24.14.1 <25",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "public-tests/**/*.test.ts"
+    ],
+    "hidden": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "__checks__/**/*.test.ts"
+    ]
+  },
+  "grader": {
+    "checks": "graders/GRAPH-01/checks",
+    "referencePatch": "graders/GRAPH-01/reference.patch",
+    "alternative": "graders/GRAPH-01/alternative",
+    "defectDetectors": [
+      "hidden/cycle-is-rejected",
+      "hidden/node-limit-is-enforced",
+      "hidden/shared-node-is-visited-per-occurrence",
+      "hidden/walks-preorder-and-collects-leaves",
+      "public/cycle-is-rejected",
+      "public/node-limit-is-enforced",
+      "public/shared-node-is-visited-per-occurrence",
+      "public/walks-preorder-and-collects-leaves"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/walks-preorder-and-collects-leaves",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "前序顺序正确，缺省 children 也算叶子。"
+    },
+    {
+      "id": "public/node-limit-is-enforced",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "超过 maxNodes 抛 NodeLimitExceededError 且携带 limit。"
+    },
+    {
+      "id": "public/rejects-malformed-nodes",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "非法节点抛 InvalidTreeError 并带路径。"
+    },
+    {
+      "id": "public/cycle-is-rejected",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "路径上的循环被拒绝。"
+    },
+    {
+      "id": "public/shared-node-is-visited-per-occurrence",
+      "kind": "public",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "DAG 共享节点按出现次数各访问一次。"
+    },
+    {
+      "id": "hidden/walks-preorder-and-collects-leaves",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的前序与叶子。"
+    },
+    {
+      "id": "hidden/node-limit-is-enforced",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的上限行为。"
+    },
+    {
+      "id": "hidden/rejects-malformed-nodes",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的非法结构。"
+    },
+    {
+      "id": "hidden/cycle-is-rejected",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "深层循环也会被拒绝而不是耗尽栈。"
+    },
+    {
+      "id": "hidden/shared-node-is-visited-per-occurrence",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的共享节点。"
+    }
+  ]
+}

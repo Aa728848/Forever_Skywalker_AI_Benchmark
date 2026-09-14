@@ -1,0 +1,66 @@
+diff --git a/starter/src/store.ts b/starter/src/store.ts
+index 71e66b6..7571896 100644
+--- a/starter/src/store.ts
++++ b/starter/src/store.ts
+@@ -26,29 +26,54 @@ export function assertKey(key: string): void {
+   if (!keyPattern.test(key)) throw new RangeError('非法记录键：' + key);
+ }
+ 
+-import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
++import { createHash } from 'node:crypto';
++import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+ import { join } from 'node:path';
+ 
++interface StoredRecord { readonly checksum: string; readonly value: string }
++
++function checksumOf(value: string): string {
++  return createHash('sha256').update(value, 'utf8').digest('hex');
++}
++
+ export function openRecordStore(directory: string): RecordStore {
+   mkdirSync(directory, { recursive: true });
+   let closed = false;
+   const fileOf = (key: string): string => join(directory, key + '.rec');
++  const assertOpen = (): void => {
++    if (closed) throw new StoreClosedError();
++  };
+   return {
+     write(key: string, value: string): void {
+       assertKey(key);
+-      writeFileSync(fileOf(key), value);
++      assertOpen();
++      const temporary = fileOf(key) + '.' + String(process.pid) + '.tmp';
++      try {
++        writeFileSync(temporary, JSON.stringify({ checksum: checksumOf(value), value }));
++        renameSync(temporary, fileOf(key));
++      } catch (error) {
++        rmSync(temporary, { force: true });
++        throw error;
++      }
+     },
+     read(key: string): string | null {
+       assertKey(key);
++      assertOpen();
+       const path = fileOf(key);
+       if (!existsSync(path)) return null;
+-      const content = readFileSync(path, 'utf8');
+-      // 缺陷：空内容被当成“不存在”，也没有校验和。
+-      return content === '' ? null : content;
++      let record: StoredRecord;
++      try {
++        record = JSON.parse(readFileSync(path, 'utf8')) as StoredRecord;
++      } catch {
++        throw new CorruptRecordError(key);
++      }
++      if (typeof record.value !== 'string' || record.checksum !== checksumOf(record.value)) {
++        throw new CorruptRecordError(key);
++      }
++      return record.value;
+     },
+     close(): void {
+       closed = true;
+-      void closed;
+     },
+   };
+ }
+\ No newline at end of file
