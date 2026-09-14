@@ -14,6 +14,10 @@
   只有关键验收项明确失败时才给出确定的 `thresholdMet=false`。
 - 结果写入运行档案的 `execution/score.json` 并追加 `score.finalized` 事件；`mode=formal` 的可信度来自
   冻结快照、平台实算摘要与受控执行链，不来自字段命名。
+- 代码质量的四个维度由 `scoreExecution` 的第三个参数合成：每维 = 客观分 × 客观权重 + 评审分 ×（1 − 客观权重）；
+  `performance` 的客观证据必须是 `benchmark`，其余三维必须是 `static`；分数必须引用证据。
+  任一维度缺一半证据时该维度为 `null`、`quality` 为 `null`、`total` 为 `null`，**不做重新归一化**；
+  `total` 已知时才按「总分 ≥70、可用验证 ≥40、关键项全过」给出确定的 `thresholdMet`。
 
 ## 单题总分
 

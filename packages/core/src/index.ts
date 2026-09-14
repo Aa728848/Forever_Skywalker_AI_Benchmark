@@ -112,7 +112,64 @@ const executionGroups = ['behavior', 'boundary', 'state', 'regression', 'resourc
  * - 被测失败（check-failed / timeout / memory-exceeded）按评分标准把相关项记 0。
  * - 代码质量四个维度没有静态/基准/评审证据时保持 null，因此总分待定。
  */
-export function scoreExecution(execution: ExecutionResult, manifest: TaskManifest): ExecutionScore {
+
+/** 质量维度输入：客观分（simplicity/maintainability/decoupling 用 static，performance 用 benchmark）与评审分。 */
+export type QualityDimension = keyof typeof qualityWeights;
+
+export interface QualityObjective {
+  readonly score: number;
+  readonly evidence: readonly string[];
+  readonly kind: 'static' | 'benchmark';
+}
+
+export interface QualityReview {
+  readonly score: number;
+  readonly evidence: readonly string[];
+}
+
+export interface QualityEvidence {
+  readonly objective?: Partial<Record<QualityDimension, QualityObjective>>;
+  readonly review?: Partial<Record<QualityDimension, QualityReview>>;
+}
+
+const qualityDimensions = Object.keys(qualityWeights) as QualityDimension[];
+
+/**
+ * 质量维度合成：维度分 = 客观分 × 客观权重 + 评审分 ×（1 − 客观权重）。
+ * 任一半缺失、或客观分证据类型不符（性能维度必须是 benchmark）时该维度保持 null，不做重新归一化。
+ */
+function composeQuality(evidence: QualityEvidence, reasons: string[]): { dimensions: Record<QualityDimension, number | null>; quality: number | null } {
+  const dimensions: Record<QualityDimension, number | null> = { simplicity: null, maintainability: null, decoupling: null, performance: null };
+  let total = 0;
+  let complete = true;
+  for (const key of qualityDimensions) {
+    const objective = evidence.objective?.[key];
+    const review = evidence.review?.[key];
+    if (objective === undefined || review === undefined) {
+      complete = false;
+      if (objective !== undefined && objective.evidence.length === 0) reasons.push('质量维度 ' + key + ' 的客观分缺少证据引用。');
+      if (review !== undefined && review.evidence.length === 0) reasons.push('质量维度 ' + key + ' 的评审分缺少证据引用。');
+      continue;
+    }
+    const expected = key === 'performance' ? 'benchmark' : 'static';
+    if (objective.kind !== expected) {
+      complete = false;
+      reasons.push('质量维度 ' + key + ' 的客观证据类型必须是 ' + expected + '，实际是 ' + objective.kind + '。');
+      continue;
+    }
+    if (objective.evidence.length === 0 || review.evidence.length === 0) {
+      complete = false;
+      reasons.push('质量维度 ' + key + ' 的分数必须引用证据。');
+      continue;
+    }
+    const weight = qualityWeights[key];
+    const value = round(objective.score * weight + review.score * (1 - weight));
+    dimensions[key] = value;
+    total += (value / 100) * 12.5;
+  }
+  return { dimensions, quality: complete ? round(total) : null };
+}
+export function scoreExecution(execution: ExecutionResult, manifest: TaskManifest, evidence: QualityEvidence = {}): ExecutionScore {
   const statusOf = (id: string) => execution.checks.find(check => check.id === id)?.status ?? 'not-run';
   const undone = execution.classification === 'infrastructure-error' || execution.classification === 'cancelled';
   const groups = executionGroups.map(group => {
@@ -148,7 +205,12 @@ export function scoreExecution(execution: ExecutionResult, manifest: TaskManifes
   const notRunTotal = groups.reduce((sum, group) => sum + group.notRun.length, 0);
   if (!undone && notRunTotal > 0) reasons.push('仍有 ' + notRunTotal + ' 项检查未取得结论，按被测失败记 0。');
   if (!criticalPassed) reasons.push('存在未通过的关键验收项。');
-  reasons.push('代码质量证据缺失：静态检查、性能基准与独立评审未接入，总分待定。');
+  const composed = composeQuality(evidence, reasons);
+  const total = functional !== null && composed.quality !== null ? round(functional + composed.quality) : null;
+  if (composed.quality === null) {
+    const missing = qualityDimensions.filter(key => composed.dimensions[key] === null);
+    reasons.push('代码质量维度仍缺证据：' + missing.join('、') + '（客观分需要 static/benchmark 证据，评审分需要 review 证据），总分待定。');
+  }
   const readiness: ExecutionScore['readiness'] = execution.classification === 'infrastructure-error' ? 'infra-error' : functional === null ? 'pending' : 'complete';
   return {
     schemaVersion: '0.1.0',
@@ -161,14 +223,14 @@ export function scoreExecution(execution: ExecutionResult, manifest: TaskManifes
     candidateTreeHash: execution.candidateTreeHash,
     classification: execution.classification,
     functional,
-    quality: null,
-    total: null,
+    quality: composed.quality,
+    total,
     groups,
-    dimensions: { simplicity: null, maintainability: null, decoupling: null, performance: null },
+    dimensions: composed.dimensions,
     criticalPassed,
     readiness,
-    // 总分需要质量证据，因此只有关键验收项明确失败时才给出确定的 false。
-    thresholdMet: criticalPassed ? null : false,
+    // 总分已知时按「总分 ≥70、可用验证 ≥40、关键项全过」判定；证据不全时只保留关键项失败的确定结论。
+    thresholdMet: total === null ? (criticalPassed ? null : false) : total >= 70 && (functional ?? 0) >= 40 && criticalPassed,
     reasons,
     evidenceRefs: execution.evidenceRefs,
     scoredAt: new Date().toISOString(),

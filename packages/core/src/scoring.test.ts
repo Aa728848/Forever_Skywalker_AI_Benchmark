@@ -140,7 +140,7 @@ describe('正式评分桥：执行结果 → 可用验证分', () => {
     expect(score.readiness).toBe('complete');
     expect(score.thresholdMet).toBeNull();
     expect(score.groups.map(group => group.score)).toEqual([100, 100, 100, 100, 100]);
-    expect(score.reasons.join(' ')).toContain('代码质量证据缺失');
+    expect(score.reasons.join(' ')).toContain('代码质量维度仍缺证据');
   });
 
   it('分组按权重折算，失败组记 0 而不是重新归一化', () => {
@@ -173,5 +173,70 @@ describe('正式评分桥：执行结果 → 可用验证分', () => {
       expect(score.functional).toBeNull();
       expect(score.readiness).toBe(classification === 'infrastructure-error' ? 'infra-error' : 'pending');
     }
+  });
+});
+
+describe('质量维度合成与总分', () => {
+  const allPassed = {
+    'public/behavior': 'passed' as const, 'public/boundary': 'passed' as const, 'public/state': 'passed' as const,
+    'public/regression': 'passed' as const, 'public/resources': 'passed' as const,
+  };
+  const objective = (kind: 'static' | 'benchmark', score: number) => ({ score, evidence: ['static-report'], kind });
+  const review = (score: number) => ({ score, evidence: ['review-1'] });
+
+  it('客观分与评审分齐备时按权重合成维度分与总分', () => {
+    const score = scoreExecution(executionFixture(allPassed, 'passed'), manifestFixture(), {
+      objective: {
+        simplicity: objective('static', 100), maintainability: objective('static', 100),
+        decoupling: objective('static', 100), performance: objective('benchmark', 100),
+      },
+      review: { simplicity: review(0), maintainability: review(0), decoupling: review(0), performance: review(0) },
+    });
+    expect(score.dimensions).toEqual({ simplicity: 40, maintainability: 30, decoupling: 50, performance: 80 });
+    expect(score.quality).toBe(25);
+    expect(score.functional).toBe(50);
+    expect(score.total).toBe(75);
+    expect(score.thresholdMet).toBe(true);
+  });
+
+  it('缺评审分时该维度与总分保持待定，并指出缺哪些维度', () => {
+    const score = scoreExecution(executionFixture(allPassed, 'passed'), manifestFixture(), {
+      objective: { simplicity: objective('static', 100), maintainability: objective('static', 100), decoupling: objective('static', 100) },
+      review: { simplicity: review(80), maintainability: review(70), decoupling: review(60) },
+    });
+    expect(score.dimensions.performance).toBeNull();
+    expect(score.quality).toBeNull();
+    expect(score.total).toBeNull();
+    expect(score.thresholdMet).toBeNull();
+    expect(score.reasons.join(' ')).toContain('performance');
+  });
+
+  it('性能维度的客观证据必须是 benchmark，类型不符时该维度为 null', () => {
+    const score = scoreExecution(executionFixture(allPassed, 'passed'), manifestFixture(), {
+      objective: { performance: objective('static', 90) },
+      review: { performance: review(90) },
+    });
+    expect(score.dimensions.performance).toBeNull();
+    expect(score.reasons.join(' ')).toContain('performance 的客观证据类型必须是 benchmark');
+  });
+
+  it('分数缺少证据引用时拒绝合成', () => {
+    const score = scoreExecution(executionFixture(allPassed, 'passed'), manifestFixture(), {
+      objective: { simplicity: { score: 90, evidence: [], kind: 'static' } },
+      review: { simplicity: review(90) },
+    });
+    expect(score.dimensions.simplicity).toBeNull();
+    expect(score.reasons.join(' ')).toContain('必须引用证据');
+  });
+
+  it('总分不足门槛时明确不合格', () => {
+    const score = scoreExecution(executionFixture({ 'public/behavior': 'passed' }, 'timeout'), manifestFixture(), {
+      objective: { simplicity: objective('static', 0), maintainability: objective('static', 0), decoupling: objective('static', 0), performance: objective('benchmark', 0) },
+      review: { simplicity: review(0), maintainability: review(0), decoupling: review(0), performance: review(0) },
+    });
+    expect(score.functional).toBe(20);
+    expect(score.quality).toBe(0);
+    expect(score.total).toBe(20);
+    expect(score.thresholdMet).toBe(false);
   });
 });
