@@ -1,0 +1,28 @@
+diff --git a/starter/src/invalidation.ts b/starter/src/invalidation.ts
+index dab8f20..7aeca08 100644
+--- a/starter/src/invalidation.ts
++++ b/starter/src/invalidation.ts
+@@ -31,11 +31,21 @@ export class Invalidator {
+ 
+   invalidate(changed: readonly string[]): readonly string[] {
+     const affected = new Set<string>();
++    const queue: string[] = [];
+     for (const id of changed) {
+       if (!this.#consumers.has(id)) throw new UnknownNodeError(id);
++      if (affected.has(id)) continue;
+       affected.add(id);
+-      // 缺陷：只失效直接依赖者，间接依赖与环内其它节点被漏掉。
+-      for (const consumer of this.#consumers.get(id) as string[]) affected.add(consumer);
++      queue.push(id);
++    }
++    // 一旦节点被标记就不再入队，环因此自然终止。
++    while (queue.length > 0) {
++      const current = queue.shift() as string;
++      for (const consumer of this.#consumers.get(current) as string[]) {
++        if (affected.has(consumer)) continue;
++        affected.add(consumer);
++        queue.push(consumer);
++      }
+     }
+     return [...affected].sort();
+   }

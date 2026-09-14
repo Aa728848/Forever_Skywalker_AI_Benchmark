@@ -970,7 +970,7 @@
     "domain": "递归与图算法",
     "difficulty": "extreme",
     "track": "core",
-    "status": "designed",
+    "status": "fixture-ready",
     "runtime": "typescript",
     "sources": [
       "cwtools-vscode",

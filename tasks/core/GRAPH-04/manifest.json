@@ -1,0 +1,141 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "GRAPH-04",
+  "taskVersion": "0.1.0",
+  "title": "循环依赖图的增量失效与全量等价",
+  "runtime": "typescript",
+  "runtimeRange": "node >=24.14.1 <25",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "public-tests/**/*.test.ts"
+    ],
+    "hidden": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "__checks__/**/*.test.ts"
+    ]
+  },
+  "grader": {
+    "checks": "graders/GRAPH-04/checks",
+    "referencePatch": "graders/GRAPH-04/reference.patch",
+    "alternative": "graders/GRAPH-04/alternative",
+    "defectDetectors": [
+      "hidden/cycles-converge",
+      "hidden/direct-dependents",
+      "hidden/transitive-matches-naive-scan",
+      "public/cycles-converge",
+      "public/direct-dependents",
+      "public/transitive-matches-naive-scan"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/direct-dependents",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "直接依赖者被失效。"
+    },
+    {
+      "id": "hidden/direct-dependents",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本：直接依赖者被失效。"
+    },
+    {
+      "id": "public/transitive-matches-naive-scan",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "传递依赖与朴素全量扫描一致。"
+    },
+    {
+      "id": "hidden/transitive-matches-naive-scan",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本：传递依赖与朴素全量扫描一致。"
+    },
+    {
+      "id": "public/cycles-converge",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "环内节点全部受影响且能收敛。"
+    },
+    {
+      "id": "hidden/cycles-converge",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本：环内节点全部受影响且能收敛。"
+    },
+    {
+      "id": "public/result-is-sorted-and-input-order-independent",
+      "kind": "public",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "结果排序且与输入顺序无关。"
+    },
+    {
+      "id": "hidden/result-is-sorted-and-input-order-independent",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本：结果排序且与输入顺序无关。"
+    },
+    {
+      "id": "public/rejects-unknown-nodes",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "未知节点抛 UnknownNodeError。"
+    },
+    {
+      "id": "hidden/rejects-unknown-nodes",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本：未知节点抛 UnknownNodeError。"
+    }
+  ]
+}
