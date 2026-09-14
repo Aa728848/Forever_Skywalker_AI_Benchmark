@@ -13,7 +13,7 @@ export interface LauncherIO {
 }
 
 export interface LaunchPlan {
-  command: 'dsh:compare' | 'task:export' | 'bench' | 'dev' | 'container:status';
+  command: 'dsh:compare' | 'task:export' | 'bench' | 'dev' | 'container:status' | 'setup';
   args: string[];
 }
 
@@ -180,7 +180,7 @@ async function dshPlan(io: LauncherIO, env: NodeJS.ProcessEnv, discover: typeof 
 }
 
 export async function selectLaunchPlan(io: LauncherIO, env: NodeJS.ProcessEnv = process.env, discover: typeof discoverDshModels = discoverDshModels): Promise<LaunchPlan | null> {
-  io.say('Forever Skywalker AI Benchmark · 快速启动\n输入编号选择；多选用逗号分隔；回车采用提示的默认值；任何一步输入 q 退出。\nLinux 评分需要 Docker Desktop 已启动。选项只作用于本次，不覆盖 .env 或 DSH 配置。');
+  io.say('Forever Skywalker AI Benchmark · 快速启动\n输入编号选择；多选用逗号分隔；回车采用提示的默认值；任何一步输入 q 退出。\nLinux 评分需要 Docker Desktop 已启动。测评参数只作用于本次；补齐 .env 须单独确认保存，DSH 配置保持不变。');
   try {
     const [mode] = await choose(io, '要做什么', [
       { id: 'dsh', label: '用 DSH 自动做题并评分' },
@@ -188,8 +188,10 @@ export async function selectLaunchPlan(io: LauncherIO, env: NodeJS.ProcessEnv = 
       { id: 'submit', label: '提交其他 AI 已完成的作答' },
       { id: 'web', label: '打开网页/API 服务' },
       { id: 'status', label: '检查 Linux 容器环境' },
+      { id: 'setup', label: '补齐 .env 环境配置' },
     ], ['dsh']);
     if (mode === 'dsh') return await dshPlan(io, env, discover);
+    if (mode === 'setup') return { command: 'setup', args: [] };
     if (mode === 'web') {
       io.say('将启动网页 http://127.0.0.1:4317 和 API；保持窗口运行，Ctrl+C 停止。');
       return { command: 'dev', args: [] };

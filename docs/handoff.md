@@ -6,6 +6,14 @@
 
 用户已自行重启Windows，固定Linux容器已配置并验收。实际模型评测仍暂停；不会因环境就绪自动调用真实裁判。
 
+## 最新交付：快速配置 .env
+
+`pnpm start`/`start.cmd` 在缺少 `.env` 或关键字段时先进入环境配置：生成本地 API 访问令牌，选择提交/运行目录和 Linux 或本机档案，复用已记录的固定镜像，补齐 DSH 项目/home/报告路径，并用本地校验器收集裁判供应商、端点、模型、隐藏令牌、思考参数和预算。已有非空环境变量、`.env` 注释/未知键和 DSH 原配置保留；OS 非空同名变量优先。令牌不进入普通提示、命令参数或报告，确认前不写文件，取消/放弃保存不会落盘；保存后新环境只传给本次及其子进程，不隐式改写当前 `process.env`。
+
+裁判表单支持8家原生供应商及 OpenAI-compatible，参数检查复用 `judgeConfigFromEnvironment`/`createEnvironmentJudge`，没有网络请求或真实模型调用。DSH 本地目录读取仍只返回 provider/model/已声明思考等级；没有目录或额外 profile 时保留手工输入。快速配置实现、保存并发保护、密钥终端行为见 [环境配置 Note](notes/implemented/feature/2026-09-14-env-setup.md)、[裁判表单 Note](notes/implemented/feature/2026-09-14-judge-setup.md) 和 [终端 Note](notes/implemented/feature/2026-09-14-terminal-secret-input.md)。
+
+本轮最终 `pnpm check` 通过247项测试、严格类型、55题目录与生产构建；配置相关聚焦测试38项。此前快速启动实测仍有效，新增环境配置测试使用系统临时目录和虚构令牌，未读取或修改用户真实 `.env`，未调用模型/裁判。
+
 ## 最新交付：终端分步启动
 
 新增 `pnpm start` 和 Windows 根目录 `start.cmd`。向导依次选择供应商/模型、DSH预设、思考等级、题目、预算和报告目录；最后展示组合次数、裁判状态与可复制命令，默认仅预检。还可导出外部作答、提交完成作答、启动网页/API或检查Linux环境。外部作答默认导出到仓库外的 `Documents/BenchAnswers`；不改写.env、原DSH配置或评分规则。
