@@ -1142,7 +1142,7 @@
     "domain": "性能优化",
     "difficulty": "medium",
     "track": "core",
-    "status": "designed",
+    "status": "fixture-ready",
     "runtime": "typescript",
     "sources": [
       "deepseek-harness",

@@ -1,0 +1,28 @@
+diff --git a/starter/src/window.ts b/starter/src/window.ts
+index 12ba43f..8d5bf13 100644
+--- a/starter/src/window.ts
++++ b/starter/src/window.ts
+@@ -14,12 +14,17 @@ export interface RenderedRange {
+   readonly items: readonly Row[];
+ }
+ 
++/** 只读窗口内的行：访问次数与窗口大小成正比，与列表长度无关。 */
+ export function updateRows(rows: readonly Row[], patch: Row, window: RenderWindow): RenderedRange {
+   if (!Number.isInteger(window.offset) || window.offset < 0) throw new RangeError('offset 必须是非负整数');
+   if (!Number.isInteger(window.size) || window.size < 1) throw new RangeError('size 必须是正整数');
+-  // 缺陷：先全量复制整张列表再切片，访问次数与列表长度成正比。
+-  const patched = rows.map(row => (row.id === patch.id ? { id: row.id, value: patch.value } : row));
+-  const start = Math.min(window.offset, patched.length);
+-  const end = Math.min(start + window.size, patched.length);
+-  return { start, end, items: patched.slice(start, end) };
++  const total = rows.length;
++  const start = Math.min(window.offset, total);
++  const end = Math.min(start + window.size, total);
++  const items: Row[] = [];
++  for (let index = start; index < end; index += 1) {
++    const row = rows[index] as Row;
++    items.push(row.id === patch.id ? { id: row.id, value: patch.value } : row);
++  }
++  return { start, end, items };
+ }
+\ No newline at end of file

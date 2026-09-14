@@ -1,0 +1,137 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "PERF-02",
+  "taskVersion": "0.1.0",
+  "title": "长列表局部更新与渲染范围",
+  "runtime": "typescript",
+  "runtimeRange": "node >=24.14.1 <25",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "public-tests/**/*.test.ts"
+    ],
+    "hidden": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "__checks__/**/*.test.ts"
+    ]
+  },
+  "grader": {
+    "checks": "graders/PERF-02/checks",
+    "referencePatch": "graders/PERF-02/reference.patch",
+    "alternative": "graders/PERF-02/alternative",
+    "defectDetectors": [
+      "hidden/accesses-do-not-grow-with-list-size",
+      "public/does-not-scan-whole-list"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/returns-window",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "返回窗口区间与窗口内的行。"
+    },
+    {
+      "id": "public/applies-patch-inside-window",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "只在窗口内应用更新且不修改输入。"
+    },
+    {
+      "id": "public/does-not-scan-whole-list",
+      "kind": "public",
+      "group": "resources",
+      "weight": 1,
+      "critical": true,
+      "summary": "访问次数必须与窗口大小同阶。"
+    },
+    {
+      "id": "public/rejects-invalid-window",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "非法窗口抛 RangeError。"
+    },
+    {
+      "id": "public/beyond-end-returns-empty-items",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "越界窗口返回空 items。"
+    },
+    {
+      "id": "hidden/returns-window",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的窗口。"
+    },
+    {
+      "id": "hidden/applies-patch-inside-window",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的补丁命中。"
+    },
+    {
+      "id": "hidden/accesses-do-not-grow-with-list-size",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "10 倍列表长度下访问次数不增长。"
+    },
+    {
+      "id": "hidden/rejects-invalid-window",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的非法窗口。"
+    },
+    {
+      "id": "hidden/beyond-end-returns-empty-items",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本下的越界窗口。"
+    }
+  ]
+}
