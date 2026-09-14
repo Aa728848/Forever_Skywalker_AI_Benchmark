@@ -5,11 +5,12 @@ import { availableParallelism, arch, platform, totalmem } from 'node:os';
 import { basename, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
-import { scoreExecution } from '@fsa/core';
+import { scoreExecution, type QualityEvidence } from '@fsa/core';
+import { analyzeWorkspace, type StaticPolicy } from '@fsa/static';
 import {
   executionResultValidator, executionScoreValidator, explainExecutionResult, runStatusValidator,
   type ExecutionArtifact, type ExecutionCheck, type ExecutionClassification,
-  type ExecutionManifest, type ExecutionResult, type ExecutionScore, type RunStatus, type TaskManifest,
+  type ExecutionManifest, type ExecutionResult, type ExecutionScore, type ReviewVerdict, type RunStatus, type TaskManifest,
 } from '@fsa/contracts';
 import { appendRunEvent, type RunStore, type SubmissionOutcome } from '@fsa/runs';
 import { installHiddenChecks, parseTap, type CheckOutcome } from '@fsa/tasks';
@@ -242,6 +243,12 @@ export interface ExecuteOptions {
   attemptId: string;
   artifactDirectory?: string;
   signal?: AbortSignal;
+  /** 静态客观分规则；给出时对冻结后的工作区做一次测量。 */
+  staticPolicy?: StaticPolicy;
+  /** 独立评审判决；由调用方通过评审适配器取得，执行器只负责落盘与校验。 */
+  review?: ReviewVerdict;
+  /** 额外的质量证据（例如性能维度必须提供的 benchmark 客观分）。 */
+  quality?: QualityEvidence;
 }
 
 function checkRows(manifest: TaskManifest, phases: readonly PhaseExecution[]): ExecutionCheck[] {
@@ -475,7 +482,55 @@ export async function executeAttempt(options: ExecuteOptions): Promise<Execution
   mkdirSync(artifactDirectory, { recursive: true });
 
   // 正式评分：可用验证分项由受控执行结果换算；质量证据缺失时保持 null（总分待定）。
-  const score = scoreExecution(result, task);
+  // 质量证据：静态客观分（可选规则）+ 评审判决（可选）+ 调用方补充（例如 benchmark）。
+  let objective: QualityEvidence['objective'] = { ...(options.quality?.objective ?? {}) };
+  let review: QualityEvidence['review'] = { ...(options.quality?.review ?? {}) };
+  if (options.staticPolicy !== undefined) {
+    const report = analyzeWorkspace(workspace, options.staticPolicy);
+    const staticPath = join(artifactDirectory, 'static.json');
+    writeFileSync(staticPath, JSON.stringify(report, null, 2) + '\n');
+    result.artifacts.push(artifactOf('static.json', staticPath, artifactDirectory));
+    result.evidenceRefs = [...result.evidenceRefs, 'static.json'];
+    objective = {
+      ...objective,
+      simplicity: { score: report.scores.simplicity, evidence: [report.evidenceId], kind: 'static' },
+      maintainability: { score: report.scores.maintainability, evidence: [report.evidenceId], kind: 'static' },
+      decoupling: { score: report.scores.decoupling, evidence: [report.evidenceId], kind: 'static' },
+    };
+    appendRunEvent(outcome.directory, {
+      type: 'static.analyzed',
+      actor: 'executor',
+      candidateHash: result.candidateTreeHash,
+      payload: { ruleVersion: report.ruleVersion, scores: report.scores, violations: report.violations.length },
+      evidenceRefs: ['static.json'],
+      id: eventId('static.analyzed'),
+    });
+    notes.push('静态客观分按规则版本 ' + report.ruleVersion + ' 测量，违规 ' + report.violations.length + ' 条；它只覆盖 simplicity/maintainability/decoupling。');
+  }
+  if (options.review !== undefined) {
+    const reviewPath = join(artifactDirectory, 'review.json');
+    writeFileSync(reviewPath, JSON.stringify(options.review, null, 2) + '\n');
+    result.artifacts.push(artifactOf('review.json', reviewPath, artifactDirectory));
+    result.evidenceRefs = [...result.evidenceRefs, 'review.json'];
+    const dimensions = options.review.dimensions;
+    review = {
+      ...review,
+      simplicity: { score: dimensions.simplicity.score, evidence: dimensions.simplicity.evidence },
+      maintainability: { score: dimensions.maintainability.score, evidence: dimensions.maintainability.evidence },
+      decoupling: { score: dimensions.decoupling.score, evidence: dimensions.decoupling.evidence },
+      performance: { score: dimensions.performance.score, evidence: dimensions.performance.evidence },
+    };
+    appendRunEvent(outcome.directory, {
+      type: 'review.finished',
+      actor: options.review.model,
+      candidateHash: result.candidateTreeHash,
+      payload: { model: options.review.model, promptVersion: options.review.promptVersion, cost: options.review.cost },
+      evidenceRefs: ['review.json'],
+      id: eventId('review.finished'),
+    });
+    notes.push('独立评审来自 ' + options.review.model + '（提示版本 ' + options.review.promptVersion + '），成本记录在 review.json。');
+  }
+  const score = scoreExecution(result, task, { objective, review });
   if (!executionScoreValidator.Check(score)) throw new Error('执行评分不符合 0.1.0 协议。');
   const scorePath = join(artifactDirectory, 'score.json');
   writeFileSync(scorePath, `${JSON.stringify(score, null, 2)}\n`);

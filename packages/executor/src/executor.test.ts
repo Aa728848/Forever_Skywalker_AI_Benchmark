@@ -275,3 +275,52 @@ describe('提交入口自动触发验证', () => {
     }
   });
 });
+
+describe('质量证据接入执行档案', () => {
+  it('静态规则与评审判决落盘并进入评分，缺 benchmark 客观分时总分保持待定', async () => {
+    const storeRoot = tempDirectory('fsa-quality-store-');
+    const candidate = tempDirectory('fsa-quality-candidate-');
+    try {
+      exportWorkspace(taskId, candidate);
+      const store = createRunStore(storeRoot);
+      const manifest = readManifest(taskId);
+      const envelope = createEnvelope(taskId, candidate, { idempotencyKey: `quality-${randomUUID()}` });
+      store.submit({ taskId, envelope, candidateDirectory: candidate, submittedBy: 'test' });
+      const dimension = () => ({ score: 80, evidence: ['review-1'] });
+      const review = {
+        schemaVersion: '0.1.0' as const,
+        runId: envelope.runId,
+        attemptId: envelope.attemptId,
+        taskId,
+        rubricVersion: '0.1.0',
+        model: 'bench-judge-1',
+        promptVersion: 'review-v1',
+        dimensions: { simplicity: dimension(), maintainability: dimension(), decoupling: dimension(), performance: dimension() },
+        notes: ['测试评审'],
+        cost: { calls: 1, inputTokens: 10, outputTokens: 5 },
+        reviewedAt: '2026-01-01T00:00:00.000Z',
+      };
+      const outcome = await executeAttempt({
+        store, runId: envelope.runId, attemptId: envelope.attemptId,
+        staticPolicy: { language: 'typescript', maxDecisionPointsPerFunction: 200, maxFunctionLines: 100000, forbiddenImports: [], evidenceId: 'static-report' },
+        review,
+      });
+      const directory = store.readAttempt(envelope.runId, envelope.attemptId)?.directory ?? '';
+      expect(outcome.artifacts.map(item => item.id)).toContain('static.json');
+      expect(outcome.artifacts.map(item => item.id)).toContain('review.json');
+      expect(outcome.evidenceRefs).toContain('static.json');
+      const types = readRunEvents(directory).map(event => event.type);
+      expect(types).toContain('static.analyzed');
+      expect(types).toContain('review.finished');
+      const score = readExecutionScore(directory);
+      expect(typeof score?.dimensions.simplicity).toBe('number');
+      expect(score?.dimensions.performance).toBeNull();
+      expect(score?.quality).toBeNull();
+      expect(score?.total).toBeNull();
+      expect(score?.reasons.join(' ')).toContain('performance');
+      expect(manifest.taskId).toBe(taskId);
+    } finally {
+      for (const path of [storeRoot, candidate]) rmSync(path, { recursive: true, force: true });
+    }
+  }, 180_000);
+});

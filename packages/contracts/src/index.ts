@@ -448,6 +448,8 @@ export const RunEventSchema = Type.Object({
     Type.Literal('execution.finished'),
     Type.Literal('execution.reused'),
     Type.Literal('score.finalized'),
+    Type.Literal('static.analyzed'),
+    Type.Literal('review.finished'),
   ]),
   actor: text,
   candidateHash: treeHash,

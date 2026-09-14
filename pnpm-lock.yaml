@@ -114,6 +114,9 @@ importers:
       '@fsa/runs':
         specifier: workspace:*
         version: link:../runs
+      '@fsa/static':
+        specifier: workspace:*
+        version: link:../static
       '@fsa/tasks':
         specifier: workspace:*
         version: link:../tasks

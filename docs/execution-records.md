@@ -40,7 +40,9 @@ data/runs/
       public.resources.json        # 资源采样原始数据（只对 node 命令生效）
       hidden.*                     # 隐藏检查同上
       execution.json               # 执行结论、逐项检查、资源数据与证据引用
-      score.json                   # 正式评分：可用验证分项（质量缺失时 total=null）
+      static.json                  # 静态客观分：规则版本、逐文件事实、违规清单（给出静态规则时）
+      review.json                  # 独立评审判决：模型、提示版本、四维分数与证据、成本（给出评审时）
+      score.json                   # 正式评分：可用验证 + 质量 + 总分（证据不全时保持 null）
 ```
 
 事件包含 `schemaVersion`、稳定 `id`、单调递增 `seq`、UTC 时间、`type`、`actor`、`candidateHash`、`payload`、`evidenceRefs`；同一 `id` 只追加一次（重复完成事件不会重复记账）。持续时间由执行器用单调时钟测量，不依赖墙钟差值。
@@ -56,6 +58,8 @@ data/runs/
 | agent.completed | 未实现 | 适配器来源、完成原因、提交键（M2 的宿主适配器） |
 | benchmark.sampled | 未实现 | 输入规模、重复轮次、耗时、吞吐、内存、校准标识（M2 的性能采样） |
 | review.finished | 未实现 | 模型/参数、提示模板哈希、四维证据、调用错误与成本（M2 的裁判） |
+| static.analyzed | 已实现 | 静态规则版本、三维分数与违规条数、证据引用 |
+| review.finished | 已实现 | 评审模型、提示版本、调用成本、证据引用 |
 | score.finalized | 已实现（可用验证分项） | 规则版本、分组权重、可用验证分与理由；代码质量与总分仍为 null，等裁判接入后补齐 |
 | run.failed/cancelled | 未实现 | 责任域与可重试原因；目前取消与超时记在 check.finished 的 payload 里 |
 

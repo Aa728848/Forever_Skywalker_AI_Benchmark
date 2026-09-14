@@ -8,6 +8,7 @@
     "@fsa/contracts": "workspace:*",
     "@fsa/runs": "workspace:*",
     "@fsa/tasks": "workspace:*",
-    "@fsa/core": "workspace:*"
+    "@fsa/core": "workspace:*",
+    "@fsa/static": "workspace:*"
   }
 }
