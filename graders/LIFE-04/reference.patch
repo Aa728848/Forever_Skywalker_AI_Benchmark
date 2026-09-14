@@ -1,0 +1,14 @@
+diff --git a/starter/src/acceptance.ts b/starter/src/acceptance.ts
+index f8e4318..29b6d52 100644
+--- a/starter/src/acceptance.ts
++++ b/starter/src/acceptance.ts
+@@ -46,7 +46,8 @@ export class AcceptanceRunner {
+   }
+ 
+   accept(): Promise<AcceptanceResult> {
+-    // 缺陷：不检查是否已有验收在途，第二次调用会直接启动第二个子进程。
++    // 重入隔离：在途验收未完成前不得再启动子进程。
++    if (this.#busy) return Promise.reject(new BusyError());
+     const child = this.#port.spawn();
+     this.#busy = true;
+     return new Promise<AcceptanceResult>(resolve => {

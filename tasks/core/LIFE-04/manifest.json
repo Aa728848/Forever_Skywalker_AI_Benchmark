@@ -1,0 +1,137 @@
+{
+  "schemaVersion": "0.1.0",
+  "taskId": "LIFE-04",
+  "taskVersion": "0.1.0",
+  "title": "子进程故障、回收和验收重入隔离",
+  "runtime": "typescript",
+  "runtimeRange": "node >=24.14.1 <25",
+  "workspace": {
+    "entries": [
+      {
+        "from": "task.md",
+        "to": "TASK.md"
+      },
+      {
+        "from": "starter",
+        "to": "starter"
+      },
+      {
+        "from": "public-tests",
+        "to": "public-tests"
+      }
+    ]
+  },
+  "commands": {
+    "public": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "public-tests/**/*.test.ts"
+    ],
+    "hidden": [
+      "node",
+      "--test",
+      "--test-isolation=none",
+      "--test-reporter=tap",
+      "__checks__/**/*.test.ts"
+    ]
+  },
+  "grader": {
+    "checks": "graders/LIFE-04/checks",
+    "referencePatch": "graders/LIFE-04/reference.patch",
+    "alternative": "graders/LIFE-04/alternative",
+    "defectDetectors": [
+      "hidden/rejects-concurrent-acceptance",
+      "public/rejects-concurrent-acceptance"
+    ]
+  },
+  "limits": {
+    "timeoutMs": 60000,
+    "memoryMb": 512,
+    "cpus": 1,
+    "network": false
+  },
+  "checks": [
+    {
+      "id": "public/classifies-normal-exit",
+      "kind": "public",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "正常退出被分类为 exited 并回收。"
+    },
+    {
+      "id": "hidden/classifies-normal-exit",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本：正常退出被分类为 exited 并回收。"
+    },
+    {
+      "id": "public/classifies-crash-and-signal",
+      "kind": "public",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "崩溃与信号终止被正确分类并回收。"
+    },
+    {
+      "id": "hidden/classifies-crash-and-signal",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本：崩溃与信号终止被正确分类并回收。"
+    },
+    {
+      "id": "public/rejects-concurrent-acceptance",
+      "kind": "public",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "在途验收期间拒绝重入，不启动第二个子进程。"
+    },
+    {
+      "id": "hidden/rejects-concurrent-acceptance",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本：在途验收期间拒绝重入，不启动第二个子进程。"
+    },
+    {
+      "id": "public/allows-accept-after-completion",
+      "kind": "public",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "完成后可以再次验收。"
+    },
+    {
+      "id": "hidden/allows-accept-after-completion",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本：完成后可以再次验收。"
+    },
+    {
+      "id": "public/reaps-every-child-even-on-failure",
+      "kind": "public",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "每个子进程都被回收。"
+    },
+    {
+      "id": "hidden/reaps-every-child-even-on-failure",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "隐藏样本：每个子进程都被回收。"
+    }
+  ]
+}
