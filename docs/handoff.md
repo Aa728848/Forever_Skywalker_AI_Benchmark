@@ -1,5 +1,9 @@
 # 开发交接与执行手册
 
+## 2026-09-15 DSH 评分启动错误修复
+
+归档实验 `b71463a5-468d-4250-900d-c6de8bf03ad8` 的 Linux 检查与性能采样均通过；失败根因为评分桥接插件访问 `ctx.tools` 时漏声明 `tools` 注入，随后超长错误堆栈又使 `notes` 超过协议限制。现已修复注入声明，并将超长说明完整保存为 `execution-notes.json`、摘要保持在协议长度内。33 项评分/执行专项测试及本地假 SSE 的真实 DSH SDK 两轮评分通过（未调用外部模型）。旧实验报告保留原样；重新运行同一命令即可取得新评分。
+
 ## 2026-09-15 评分待定排查
 
 已核对本机 `.env`：DSH 评分为 `command-code / deepseek/deepseek-v4.1-flash`、思考等级 `high`、`minimal` 评审预设，两轮使用独立 session；`pnpm bench judge-config` 通过。评分响应解析已兼容 JSON 前后的简短说明或 Markdown 围栏，仍严格校验协议身份和证据引用。`pnpm dsh:compare --check --provider command-code --model deepseek/deepseek-v4.1-flash --preset ptc --reasoning high --tasks CACHE-02` 在 Docker Desktop Linux 引擎可访问时通过；若终端提示 `docker_engine` 或 `.docker/config.json` access denied，应先使用有权限的用户启动 Docker Desktop，并确认 Docker context 为 `desktop-linux`。修复提交为 `64e07d3`，已推送公开仓库。

@@ -187,7 +187,7 @@ function preparePreset(installation: DshInstallation, preset: DshPreset, scratch
   // 预装失败阻止 SDK readiness。同步绑定在首个 prompt 前完成；子 Agent 已由 DSH setup 继承时保留原绑定。
   writeFileSync(bridge, `import { createScope } from ${JSON.stringify(pathToFileURL(scopeModule).href)};
 export const name = 'fsa-preset-bridge';
-export const inject = ['agentPresets', 'subagentModelSelection', 'codeRuntime', 'dynamicCordisRunner'];
+export const inject = ['agentPresets', 'subagentModelSelection', 'codeRuntime', 'dynamicCordisRunner'${reviewOnly ? ", 'tools'" : ''}];
 export async function apply(ctx) {
   const parent = createScope(ctx, {});
   ctx.effect(() => () => parent.dispose(), 'fsa.presetScope');

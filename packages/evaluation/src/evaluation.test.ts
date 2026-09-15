@@ -3,11 +3,38 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { expect, it } from 'vitest';
 import { createEnvelope, createRunStore } from '@fsa/runs';
-import { readExecutionScore, reviewCompletedAttempt, verifySubmission } from '@fsa/executor';
+import { readExecutionResult, readExecutionScore, readRunStatus, reviewCompletedAttempt, verifySubmission } from '@fsa/executor';
 import { sampleVerdict, type JudgeAdapter, type ReviewRequest } from '@fsa/judge';
 import { applyReferencePatch, exportWorkspace, readManifest } from '@fsa/tasks';
 import { createQualityProvider, summarizeRuns } from './index.ts';
 import { inspectRunSelection } from './suite.ts';
+
+it('裁判长堆栈不破坏已完成的执行记录，首次评分和补评都保留原始错误', async () => {
+  const scratch = mkdtempSync(join(tmpdir(), 'fsa-evaluation-'));
+  try {
+    const candidate = join(scratch, 'candidate');
+    exportWorkspace('CACHE-02', candidate);
+    expect(applyReferencePatch(readManifest('CACHE-02'), candidate, join(scratch, 'patch')).exitCode).toBe(0);
+    const store = createRunStore(join(scratch, 'runs'));
+    const message = 'cannot get property "tools" without inject\n' + 'DSH startup stack\n'.repeat(220);
+    const judge: JudgeAdapter = { model: 'test', promptVersion: 'review-v1', async review() { throw new Error(message); } };
+    const qualityProvider = createQualityProvider({ judge, env: {}, measurePerformance: false });
+    const envelope = createEnvelope('CACHE-02', candidate);
+    const outcome = await verifySubmission({ store, taskId: 'CACHE-02', envelope, candidateDirectory: candidate, submittedBy: 'test', qualityProvider });
+    const selection = { runId: envelope.runId, attemptId: envelope.attemptId };
+    expect(readRunStatus(store, selection.runId, selection.attemptId)).toMatchObject({ classification: 'passed', scoring: { functional: 50, quality: null } });
+    await reviewCompletedAttempt({ store, ...selection, qualityProvider });
+    for (const revision of ['execution', 'execution-2']) {
+      const directory = join(outcome.submission.directory, revision);
+      expect(JSON.parse(readFileSync(join(directory, 'review-error.json'), 'utf8')).message).toBe(message);
+      expect(JSON.parse(readFileSync(join(directory, 'execution-notes.json'), 'utf8')).some((note: string) => note.includes(message))).toBe(true);
+    }
+    const recorded = readExecutionResult(outcome.submission.directory)!;
+    expect(recorded.notes.every(note => note.length <= 2000)).toBe(true);
+    expect(recorded.notes.join(' ')).toContain('without inject');
+    expect(readExecutionScore(outcome.submission.directory)).toMatchObject({ functional: 50, total: null });
+  } finally { rmSync(scratch, { recursive: true, force: true }); }
+});
 
 it('真实执行后使用冻结材料评审，缺性能证据不补分，显式重评保留历史', async () => {
   const scratch = mkdtempSync(join(tmpdir(), 'fsa-evaluation-'));

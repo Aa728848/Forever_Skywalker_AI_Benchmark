@@ -608,7 +608,7 @@ export async function executeAttempt(options: ExecuteOptions): Promise<Execution
 
   const score = await scoreAttemptExecution(options, outcome, result, artifactDirectory, eventId);
   result.notes = result.notes.slice(-32);
-  if (!executionResultValidator.Check(result)) throw new Error('最终执行证据不符合协议。');
+  if (!executionResultValidator.Check(result)) throw new Error('最终执行证据不符合协议：' + explainExecutionResult(result).join('；'));
 
   const resultPath = join(artifactDirectory, 'execution.json');
   writeFileSync(resultPath + '.tmp', `${JSON.stringify(result, null, 2)}\n`);
@@ -733,6 +733,14 @@ async function scoreAttemptExecution(
     });
     notes.push('独立评审来自 ' + options.review.model + '（提示版本 ' + options.review.promptVersion + '），成本记录在 review.json。');
   }
+  // SDK 错误堆栈可能超过协议说明字段的 2000 字符上限；完整内容作为证据保留。
+  if (notes.some(note => note.length > 2000)) {
+    const notesPath = join(artifactDirectory, 'execution-notes.json');
+    writeFileSync(notesPath, JSON.stringify(notes, null, 2) + '\n');
+    result.artifacts.push(artifactOf('execution-notes', notesPath, artifactDirectory));
+    result.evidenceRefs.push('execution-notes');
+    result.notes = notes.map(note => note.length <= 2000 ? note : note.slice(0, 1900) + '…（完整说明见 execution-notes.json）');
+  }
   const score = scoreExecution(result, task, { ...qualityContext, objective, review });
   if (!executionScoreValidator.Check(score)) throw new Error('执行评分不符合 0.1.0 协议。');
   const scorePath = join(artifactDirectory, 'score.json');
@@ -827,7 +835,7 @@ export async function reviewCompletedAttempt(options: ExecuteOptions): Promise<E
   const running = (async () => {
     const score = await scoreAttemptExecution(options, outcome, result, artifactDirectory, eventId);
     result.notes = result.notes.slice(-32);
-    if (!executionResultValidator.Check(result)) throw new Error('补评执行证据不符合协议。');
+    if (!executionResultValidator.Check(result)) throw new Error('补评执行证据不符合协议：' + explainExecutionResult(result).join('；'));
     const resultPath = join(artifactDirectory, 'execution.json');
     writeFileSync(resultPath + '.tmp', JSON.stringify(result, null, 2) + '\n');
     renameSync(resultPath + '.tmp', resultPath);

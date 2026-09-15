@@ -1,6 +1,7 @@
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { checkDshInstallation, DshCleanupError, resolveDshPreset, resolveDshWorkspacePermission, runDsh, type DshHarness, type DshRunOptions } from './dsh.ts';
 
@@ -190,7 +191,11 @@ describe('DSH automation adapter', () => {
       const patch = JSON.parse(readFileSync(launch.patches[0]!, 'utf8')) as Array<Record<string, unknown>>;
       expect(patch.flatMap(item => Array.isArray(item.insert) ? item.insert : [])).toContainEqual(expect.objectContaining({ id: 'agent-presets', config: expect.objectContaining({ includeShippedRoot: false }) }));
       expect(readFileSync(join(options.scratchDirectory!, 'review', 'preset-bridge.mjs'), 'utf8')).toContain('tools.restrict({ allow: [] })');
-      return { close: async () => {}, run: async () => ({ ...result('completed'), events: [{ type: 'agent-preset/selected', data: { agentPreset: 'minimal' } }, { type: 'turn/end', data: { reason: { kind: 'completed' } } }] }) };
+      return { close: async () => {}, run: async () => {
+        const bridge = await import(pathToFileURL(join(options.scratchDirectory!, 'review', 'preset-bridge.mjs')).href);
+        expect(bridge.inject).toContain('tools');
+        return { ...result('completed'), events: [{ type: 'agent-preset/selected', data: { agentPreset: 'minimal' } }, { type: 'turn/end', data: { reason: { kind: 'completed' } } }] };
+      } };
     } });
     expect(report.finishReason).toBe('completed');
   });
