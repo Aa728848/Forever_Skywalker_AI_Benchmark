@@ -30,7 +30,7 @@ flowchart LR
   API --> Evaluation[证据组合]
   CLI --> Evaluation
   Evaluation --> Static[语言静态分析]
-  Evaluation --> Judge[独立 HTTP 裁判]
+  Evaluation --> Judge[独立 DSH 评分 Agent]
   Evaluation --> Executor
   Executor --> Core[纯评分计算]
   Evaluation --> Core
@@ -71,7 +71,7 @@ flowchart LR
 
 CLI 提供 list/show/score、submit/status/runs、review/report/summary。bench score 是预览；submit 才执行候选，完成原因可为 agent-completed、operator-submit、patch-import。当前提交接收工作区快照；补丁先在导出的独立工作区应用，再以 patch-import 提交。
 
-裁判配置可用 `bench judge-config` 离线检查。judge包按供应商协议生成请求、校验模型参数并处理usage，evaluation包只消费统一判决与配置指纹。当前支持8家供应商及4种协议，详情见 [供应商矩阵](judge-providers.md)；没有为各供应商引入SDK。`task:mutants`是题目作者的独立验收入口，不属于候选可调用的裁判工具。
+评分配置可用 `bench judge-config` 离线检查。正式评分由 evaluation 包启动独立 DSH session，沿用 DSH 的 root/home/profile/权限配置；HTTP judge 包保留为旧材料兼容入口，不是默认路径。`task:mutants`是题目作者的独立验收入口，不属于候选可调用的评分工具。
 
 API 监听127.0.0.1:4318，Vite 同源代理。BENCH_RUN_DIR 指定运行存储，默认 data/runs。提交写入口需 BENCH_SUBMISSIONS_DIR 和 BENCH_RUN_TOKEN；请求上限256KiB，候选目录做 realpath 校验。接口不接受 shell 命令。公开托管、多租户及作答模型自动编排不在范围内。
 

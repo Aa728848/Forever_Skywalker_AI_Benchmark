@@ -81,9 +81,6 @@ export function dshJudgeOptionsFromEnvironment(env: NodeJS.ProcessEnv = process.
   };
   const effort = required('BENCH_JUDGE_DSH_REASONING_EFFORT', 'default');
   if (!/^[a-z][a-z0-9-]{0,31}$/.test(effort)) throw new JudgeUnavailableError('评分思考等级必须是一个 DSH 等级 ID（如 default/high）。');
-  if (env.BENCH_DSH_PROVIDER?.trim() === env.BENCH_JUDGE_DSH_PROVIDER?.trim() && env.BENCH_DSH_MODEL?.trim() === env.BENCH_JUDGE_DSH_MODEL?.trim()) {
-    throw new JudgeUnavailableError('评分 Agent 不能与作答模型使用同一供应商和模型，请单独配置 BENCH_JUDGE_DSH_*。');
-  }
   const timeoutMs = integer('BENCH_JUDGE_DSH_TIMEOUT_MS', 300_000);
   if (timeoutMs > 3_600_000) throw new JudgeUnavailableError('DSH 评分限时不能超过一小时。');
   return { ...dshWorkspaceOptionsFromEnvironment(env),

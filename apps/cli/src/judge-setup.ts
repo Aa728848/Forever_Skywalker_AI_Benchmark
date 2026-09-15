@@ -106,7 +106,7 @@ export async function collectJudgeSetup(io: JudgeSetupIO, env: NodeJS.ProcessEnv
       io.say('\n独立 DSH 评分 Agent 配置（工作区权限、root、home、profile 沿用 DSH 作答配置）：');
       const dshFields: Field[] = [
         { key: 'DSH_PROVIDER', label: '评分 Agent 的 DSH 供应商 ID' },
-        { key: 'DSH_MODEL', label: '评分 Agent 模型 ID（必须与作答模型分开）' },
+        { key: 'DSH_MODEL', label: '评分 Agent 模型 ID（可与作答模型相同）' },
         { key: 'DSH_REASONING_EFFORT', label: '评分 Agent 思考等级（default/low/high/max）', fallback: 'default' },
         { key: 'DSH_MAX_TOKENS', label: '评分 Agent 每轮最大输出 Token', fallback: '16384' },
         { key: 'DSH_TIMEOUT_MS', label: '评分 Agent 单轮超时（毫秒）', fallback: '300000' },

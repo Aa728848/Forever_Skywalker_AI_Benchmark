@@ -4,7 +4,7 @@
 
 `createQualityProvider()` 现在默认使用 `createDshJudgeFromEnvironment`，不再自动路由到 HTTP 裁判。评分 Agent 每轮创建独立 DSH session，采用 review-only 无工具预设，严格校验 JSON、题目/运行身份、版本和证据引用；两轮需保持 DSH 版本、预设指纹和模型路由一致。评分模型通过 `BENCH_JUDGE_DSH_PROVIDER`、`BENCH_JUDGE_DSH_MODEL`、`BENCH_JUDGE_DSH_REASONING_EFFORT`、`BENCH_JUDGE_DSH_MAX_TOKENS`、`BENCH_JUDGE_DSH_TIMEOUT_MS` 配置。`BENCH_DSH_ROOT/HOME/PROFILE/WORKSPACE_PERMISSION` 沿用作答 DSH 配置，未知用量记为 null。评分超时、无效响应或回收失败继续保持质量分待定，不生成假分数。
 
-本轮离线验证：`dsh-judge.test.ts` 与 `evaluation.test.ts` 共 6 项通过；未调用真实模型。真实 DSH 供应商认证和正式评分校准仍需用户另行运行，不能把离线结果当作模型成绩。
+本轮离线验证：`dsh-judge.test.ts` 与 `evaluation.test.ts` 共 6 项通过；未调用真实模型。评分模型可以与作答模型相同，但仍是不同 session。真实 DSH 供应商认证和正式评分校准仍需用户另行运行，不能把离线结果当作模型成绩。
 
 更新：2026-09-14。本文件描述当前状态；历史 M0/M1 Note 保留当时事实，不用于推断当前完成度。
 
@@ -123,7 +123,7 @@ pnpm score:rehearse
 
 ## 裁判与发布校准
 
-本项目 .env 已创建并配置独立 API 令牌、提交目录和运行目录；裁判字段留空，由用户填写自己的模型、端点及令牌，不得读取其他项目凭据。BENCH_MEASURE_PERFORMANCE=1 已启用；裁判填妥后 submit 自动采集客观证据并调用两轮裁判，既有作答用 `bench review ... --measure` 追加修订。人工复核不覆盖历史。
+本项目 .env 已创建并配置本地访问令牌、提交目录和运行目录；DSH 评分 Agent 使用共用 DSH home 的供应商凭据，模型字段由用户填写。`BENCH_MEASURE_PERFORMANCE=1` 已启用；评分 Agent 配置完成后 submit 自动采集客观证据并调用两轮 DSH 评分，既有作答用 `bench review ... --measure` 追加修订。人工复核不覆盖历史。
 
 PERF-02/03/04 有专用负载，其它题测完整验证成本并包含启动/断言开销。内部计时/RSS仅作诊断，外部阶段时间用于配对。性能比值和静态规则尚未发布校准，不能自动标正式成绩。
 
