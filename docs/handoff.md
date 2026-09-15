@@ -1,5 +1,9 @@
 # 开发交接与执行手册
 
+## 2026-09-15 评分待定排查
+
+已核对本机 `.env`：DSH 评分为 `command-code / deepseek/deepseek-v4.1-flash`、思考等级 `high`、`minimal` 评审预设，两轮使用独立 session；`pnpm bench judge-config` 通过。评分响应解析已兼容 JSON 前后的简短说明或 Markdown 围栏，仍严格校验协议身份和证据引用。`pnpm dsh:compare --check --provider command-code --model deepseek/deepseek-v4.1-flash --preset ptc --reasoning high --tasks CACHE-02` 在 Docker Desktop Linux 引擎可访问时通过；若终端提示 `docker_engine` 或 `.docker/config.json` access denied，应先使用有权限的用户启动 Docker Desktop，并确认 Docker context 为 `desktop-linux`。修复提交为 `64e07d3`，已推送公开仓库。
+
 ## 最新交付：DSH 评分 Agent 已接入质量链
 
 `createQualityProvider()` 现在默认使用 `createDshJudgeFromEnvironment`，不再自动路由到 HTTP 裁判。评分 Agent 每轮创建独立 DSH session，采用 review-only 无工具预设，严格校验 JSON、题目/运行身份、版本和证据引用；两轮需保持 DSH 版本、预设指纹和模型路由一致。评分模型通过 `BENCH_JUDGE_DSH_PROVIDER`、`BENCH_JUDGE_DSH_MODEL`、`BENCH_JUDGE_DSH_REASONING_EFFORT`、`BENCH_JUDGE_DSH_MAX_TOKENS`、`BENCH_JUDGE_DSH_TIMEOUT_MS` 配置。`BENCH_DSH_ROOT/HOME/PROFILE/WORKSPACE_PERMISSION` 沿用作答 DSH 配置，未知用量记为 null。评分超时、无效响应或回收失败继续保持质量分待定，不生成假分数。
