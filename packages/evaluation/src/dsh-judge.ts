@@ -44,7 +44,31 @@ function configuration(options: DshJudgeOptions, version: string): JudgeConfigur
 function parseResponse(text: string): unknown {
   const trimmed = text.trim();
   const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)?.[1] ?? trimmed;
-  try { return JSON.parse(fenced); } catch { throw new JudgeUnavailableError('DSH 评分 Agent 响应不是合法 JSON。'); }
+  try { return JSON.parse(fenced); } catch { /* 兼容模型在 JSON 前后附带一句说明。 */ }
+  const start = fenced.indexOf('{');
+  if (start < 0) throw new JudgeUnavailableError('DSH 评分 Agent 响应不是合法 JSON。');
+  let depth = 0;
+  let quoted = false;
+  let escaped = false;
+  for (let index = start; index < fenced.length; index += 1) {
+    const character = fenced[index]!;
+    if (quoted) {
+      if (escaped) escaped = false;
+      else if (character === '\\') escaped = true;
+      else if (character === '"') quoted = false;
+      continue;
+    }
+    if (character === '"') { quoted = true; continue; }
+    if (character === '{') depth += 1;
+    else if (character === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        try { return JSON.parse(fenced.slice(start, index + 1)); }
+        catch { break; }
+      }
+    }
+  }
+  throw new JudgeUnavailableError('DSH 评分 Agent 响应不是合法 JSON。');
 }
 
 function verifyVerdict(value: unknown, request: ReviewRequest, options: DshJudgeOptions): ReviewVerdict {

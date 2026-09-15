@@ -16,8 +16,8 @@ HTTP 自动路由裁判在真实评审中容易因端点、超时或协议差异
 
 ## Consequences
 
-评分模型必须在 DSH home 中可用，并通过 `BENCH_JUDGE_DSH_PROVIDER/MODEL/REASONING_EFFORT` 单独配置；与作答模型相同的 provider+model 会被拒绝。评分失败、超时、非法 JSON、身份或证据错误保持质量分待定。正常评分临时工作区和 DSH runtime 会回收；SDK close 未确认时保留现场。
+评分模型必须在 DSH home 中可用，并通过 `BENCH_JUDGE_DSH_PROVIDER/MODEL/REASONING_EFFORT` 单独配置；评分模型可以与作答模型相同，但仍使用独立 session。评分失败、超时、非法 JSON、身份或证据错误保持质量分待定。评分响应允许常见的 Markdown 代码围栏或简短说明包裹，但最终仍必须通过严格协议校验。正常评分临时工作区和 DSH runtime 会回收；SDK close 未确认时保留现场。
 
 ## Verification
 
-`node node_modules/vitest/vitest.mjs run packages/evaluation/src/dsh-judge.test.ts packages/evaluation/src/evaluation.test.ts`：6 tests passed。使用注入的 DSH harness 验证合法/fenced JSON、证据校验、两轮独立 session、只读权限透传与无工具 review-only 标志；未调用真实模型。
+`node node_modules/vitest/vitest.mjs run packages/evaluation/src/dsh-judge.test.ts packages/evaluation/src/evaluation.test.ts`：7 tests passed。使用注入的 DSH harness 验证合法/包裹 JSON、证据校验、两轮独立 session、只读权限透传与无工具 review-only 标志；未调用真实模型。

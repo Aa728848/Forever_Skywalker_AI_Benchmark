@@ -46,6 +46,19 @@ it('accepts fenced JSON but rejects identity or evidence mismatches', async () =
   await expect(judge.review({ ...request, materials: [{ id: 'only', kind: 'task', text: 'contract' }, { id: 'candidate-2', kind: 'candidate', text: 'source' }] })).rejects.toThrow('未提供');
 });
 
+it('accepts a valid verdict surrounded by short model commentary', async () => {
+  const { env } = fixture();
+  const run: DshJudgeDependencies['run'] = vi.fn(async (options: DshRunOptions): Promise<DshRunResult> => ({
+    finishReason: 'completed',
+    finalResponse: '评审结果如下：\n' + JSON.stringify(sampleVerdict(request, { simplicity: 80, maintainability: 80, decoupling: 80, performance: 80 }, ['candidate-1'], env.BENCH_JUDGE_DSH_MODEL, request.promptVersion)) + '\n以上。',
+    usage: null,
+    requestedModel: { provider: options.provider, model: options.model, reasoningEffort: options.reasoningEffort ?? null, maxTokens: options.maxTokens },
+    requestedPreset: 'minimal', observedPresets: ['minimal'], presetFingerprint: 'f'.repeat(64),
+    observedRoutes: [{ provider: options.provider, model: options.model }], responseModels: [], dshVersion: '1.2.3', runtimeClosed: true, cleanupScope: 'sdk-runtime', durationMs: 1,
+  }));
+  await expect(createDshJudgeFromEnvironment(env, { run }).review(request)).resolves.toMatchObject({ verdict: { model: env.BENCH_JUDGE_DSH_MODEL } });
+});
+
 it('creates independent sessions for two rounds and refuses a third uncached call', async () => {
   const { env } = fixture(); const ids: string[] = [];
   const judge = createDshJudgeFromEnvironment(env, { run: async (options: DshRunOptions): Promise<DshRunResult> => { ids.push(options.sessionId); return { finishReason: 'completed', finalResponse: JSON.stringify(sampleVerdict(request, { simplicity: 1, maintainability: 1, decoupling: 1, performance: 1 }, ['candidate-1'], env.BENCH_JUDGE_DSH_MODEL, request.promptVersion)), usage: null, requestedModel: { provider: options.provider, model: options.model, reasoningEffort: null, maxTokens: options.maxTokens }, requestedPreset: 'minimal', observedPresets: ['minimal'], presetFingerprint: 'f'.repeat(64), observedRoutes: [{ provider: options.provider, model: options.model }], responseModels: [], dshVersion: '1.2.3', runtimeClosed: true, cleanupScope: 'sdk-runtime', durationMs: 1 }; } });
