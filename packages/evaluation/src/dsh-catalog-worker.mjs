@@ -7,34 +7,67 @@ import https from 'node:https';
 import dgram from 'node:dgram';
 import childProcess from 'node:child_process';
 import { createRequire, syncBuiltinESMExports } from 'node:module';
-import { join } from 'node:path';
+import path, { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-const { modules, dshHome } = JSON.parse(process.argv[2]);
+const { modules, dshHome, extraPlugins = [] } = JSON.parse(process.argv[2]);
 const blocked = () => { throw new Error('local catalog operation is unavailable'); };
 
-// 只读目录查询不需要任何传输、子进程、监听器或持久写入。
+// 目录查询不发起任何传输、子进程或监听；订阅渠道插件需要把凭据物化到本次临时
+// DSH home，因此除该临时 home 外的写入被拒绝（见下方写路径守卫）。
 globalThis.fetch = blocked;
 for (const owner of [http, https]) for (const name of ['request', 'get']) owner[name] = blocked;
 for (const name of ['connect', 'createConnection']) net[name] = blocked;
 net.Socket.prototype.connect = blocked; net.Server.prototype.listen = blocked;
 tls.connect = blocked; dgram.createSocket = blocked;
 for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execFileSync', 'fork']) childProcess[name] = blocked;
-for (const name of ['writeFile', 'appendFile', 'mkdir', 'rm', 'rmdir', 'unlink', 'rename', 'copyFile', 'cp', 'truncate', 'chmod', 'chown', 'symlink', 'link', 'mkdtemp']) {
-  if (name in fsPromises) fsPromises[name] = blocked;
-  if (name in fs) fs[name] = blocked;
-  if (name + 'Sync' in fs) fs[name + 'Sync'] = blocked;
-}
-for (const name of ['write', 'writeSync', 'writev', 'writevSync', 'createWriteStream']) fs[name] = blocked;
 const sensitive = /(?:^|[\\/])(?:\.credentials(?:\.(?:yaml|yml|json))?|\.env(?:\.[^\\/]*)?|auth\.json|tokens?\.json)$/i;
-const readable = path => { if (sensitive.test(String(path))) blocked(); };
+const readable = target => { if (sensitive.test(String(target))) blocked(); };
 for (const owner of [fs, fsPromises]) for (const name of ['readFile', 'readFileSync', 'createReadStream']) if (name in owner) {
-  const original = owner[name]; owner[name] = function(path, ...args) { readable(path); return original.call(this, path, ...args); };
+  const original = owner[name]; owner[name] = function(target, ...args) { readable(target); return original.call(this, target, ...args); };
+}
+// 目录查询只允许插件把派生状态（凭据、模型设置）物化到本次查询的临时 DSH home；
+// 其它位置的写入一律拒绝：查询过程不得改写用户的真实 DSH home、项目文件或任何配置。
+// 凭据文件本身仍不可读，插件只能写入自己的派生状态。
+const temporaryRoots = [dshHome].map(entry => {
+  try { return fs.realpathSync(entry); } catch { return path.resolve(entry); }
+}).map(entry => (process.platform === 'win32' ? entry.toLowerCase() : entry));
+const withinTemporaryRoot = target => {
+  const absolute = process.platform === 'win32' ? path.resolve(String(target)).toLowerCase() : path.resolve(String(target));
+  for (const candidate of [absolute, path.dirname(absolute)]) {
+    for (const root of temporaryRoots) {
+      const suffix = path.relative(root, candidate);
+      if (suffix === '' || (!suffix.startsWith('..') && !path.isAbsolute(suffix))) return true;
+    }
+  }
+  return false;
+};
+// 每个入口要检查的路径参数位置：symlink 的第一个参数是链接目标而非被写入的路径。
+const writeTargets = {
+  writeFile: [0], appendFile: [0], mkdir: [0], rm: [0], rmdir: [0], unlink: [0], truncate: [0],
+  chmod: [0], chown: [0], mkdtemp: [0], createWriteStream: [0],
+  rename: [0, 1], copyFile: [0, 1], cp: [0, 1], link: [0, 1], symlink: [1],
+};
+const guarded = (entry, positions, owner) => {
+  if (!(entry in owner)) return;
+  const original = owner[entry];
+  owner[entry] = function(target, ...args) {
+    for (const index of positions) {
+      const candidate = index === 0 ? target : args[index - 1];
+      if (typeof candidate === 'string' || Buffer.isBuffer(candidate)) { if (!withinTemporaryRoot(candidate)) blocked(); }
+    }
+    return original.call(this, target, ...args);
+  };
+};
+for (const owner of [fs, fsPromises]) for (const [name, positions] of Object.entries(writeTargets)) {
+  guarded(name, positions, owner);
+  if (name + 'Sync' in owner) guarded(name + 'Sync', positions, owner);
 }
 for (const owner of [fs, fsPromises]) for (const name of ['open', 'openSync']) if (name in owner) {
-  const original = owner[name]; owner[name] = function(path, flags, ...args) {
-    readable(path); if (flags !== undefined && flags !== 'r' && flags !== 0) blocked();
-    return original.call(this, path, flags, ...args);
+  const original = owner[name]; owner[name] = function(target, flags, ...args) {
+    readable(target);
+    if (flags !== undefined && flags !== 'r' && flags !== 0) { if (!withinTemporaryRoot(target)) blocked(); }
+    return original.call(this, target, flags, ...args);
   };
 }
 syncBuiltinESMExports();
@@ -53,6 +86,31 @@ try {
   await context.plugin(LlmRuntime);
   await context.plugin(deepseek, {});
   await context.plugin(pi, {});
+  // 订阅渠道等额外内置插件：只读目录之外的路由由 DSH 设置的插件提供，父进程按同一
+  // profile 派生出本次查询要装载的本地插件包。单个插件装载失败只记录失败，不阻断
+  // 其它本地目录，也不阻断手工输入入口。
+  //
+  // 这里不启动 CLI/profile，也不建立代理会话或凭据提供方。但插件声明注入的宿主服务
+  // （Web 路由、工具注册表、附件、Loader、Web provider 选择）在本进程并不存在，
+  // 缺少它们会让插件停在 pending，于是它的路由完全不可见。因此这里提供惰性占位：
+  // 只满足同步注册（返回可释放句柄），任何真正产生副作用或读取数据的调用都抛出
+  // 明确错误，而不是静默返回假数据。
+  const disposer = () => () => {};
+  const unused = name => () => { throw new Error('目录查询不提供 ' + name); };
+  context.provide('webServer', { host: '127.0.0.1', port: 0, register: disposer, route: disposer, use: disposer, on: disposer });
+  context.provide('tools', { register: disposer, guard: disposer, restrict: disposer, get: () => undefined });
+  context.provide('attachments', { read: unused('attachments.read'), store: unused('attachments.store') });
+  context.provide('loader', { entries: () => [], create: unused('loader.create'), await: async () => {} });
+  context.provide('web', { registerSearchProvider: disposer, registerFetchProvider: disposer });
+  const extraFailures = [];
+  for (const spec of extraPlugins) {
+    try {
+      const loaded = await import(spec.specifier);
+      await context.plugin(loaded, {});
+    } catch (error) {
+      extraFailures.push(spec.id + '：' + (error instanceof Error ? error.message : String(error)));
+    }
+  }
   const providers = [];
   for (const provider of context.llm.listProviders()) {
     const models = [];
@@ -69,7 +127,7 @@ try {
     providers.push({ id: provider.id, name: provider.name, models });
   }
   await context.fiber.dispose(); context = undefined;
-  process.stdout.write(JSON.stringify({ providers }));
+  process.stdout.write(JSON.stringify({ providers, extraFailures }));
 } catch {
   try { await context?.fiber.dispose(); } catch { /* 父进程超时兜底，原错误详情不输出。 */ }
   process.exitCode = 1;
