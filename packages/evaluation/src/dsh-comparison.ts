@@ -136,7 +136,14 @@ export function renderComparison(report: DshComparisonReport): string {
     '| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
     ...groups.map(group => `| ${group.track === 'core' ? '核心题' : '来源集成题'} | ${group.preset} | ${group.mode} | ${group.completed}/${group.planned} | ${group.graded} | ${group.passed} | ${number(group.functional)} | ${number(group.quality)} | ${number(group.total)} |`), '',
     ...drift.map(issue => `对比无效：${issue}，已停止合并分数。`),
-    ...report.issues.map(issue => `记录：${cell(issue)}`), '',
+    ...report.issues.map(issue => `记录：${cell(issue)}`),
+    ...report.rows.flatMap(row => {
+      const status = row.evaluation?.status;
+      if (status === undefined) return [];
+      const refs = status.evidenceRefs.filter(ref => ref === 'review-error' || /^review-round-.+-error$/.test(ref));
+      if (refs.length === 0) return [];
+      return [`待定原因：${row.taskId} 独立评审未通过协议校验，质量分与总分保持待定；失败轮的原始响应与字段路径见 ${refs.map(ref => cell(ref)).join('、')}（在 evidence.json.gz 内）。`];
+    }), '',
     '| 题目 | DSH 预设 | 思考等级 | 次数 | 作答结束原因 | 验证 | 作答秒数 | 分数 /100 | 运行/尝试 |',
     '| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
     ...report.rows.map(row => `| ${row.taskId} ${row.taskVersion} | ${row.preset} | ${row.mode} | ${row.repetition} | ${cell(row.error ?? row.solver?.finishReason ?? row.phase)} | ${row.evaluation?.status.classification ?? '未评分'} | ${row.solver ? (row.solver.durationMs / 1000).toFixed(1) : '—'} | ${number(row.evaluation?.status.scoring.total ?? null)} | ${row.evaluation ? `${row.evaluation.status.runId}/${row.evaluation.status.attemptId}` : '—'} |`), '',

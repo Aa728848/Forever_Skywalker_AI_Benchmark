@@ -57,6 +57,12 @@ it('最终输入结束或q取消不会生成会启动模型的计划', async () 
   }
 });
 
+it('裁判模型入口只返回配置命令，不读取DSH目录也不启动模型', async () => {
+  const context = terminal(['judge']);
+  expect(await selectLaunchPlan(context.io, {}, async () => { throw new Error('不应读取DSH'); })).toEqual({ command: 'bench', args: ['judge-setup'] });
+  expect(context.output.join('\n')).toContain('设置裁判模型');
+});
+
 it('外部作答无需DSH目录，明确跳过性能可覆盖.env中的开启设置', async () => {
   const context = terminal(['submit', 'CACHE-02', 'data/submissions/answer', 'repeatable-key', 'no', 'yes']);
   const plan = await selectLaunchPlan(context.io, {}, async () => { throw new Error('不应读取DSH'); });

@@ -23,6 +23,7 @@ const usage = [
   '  bench report <runId> <attemptId> [--format json|markdown] [--root <运行存储目录>]',
   '  bench summary <作答选择JSON> [--root <运行存储目录>]   # [{runId, attemptId}]，每题显式选择一次',
   '  bench judge-config   # 本地检查裁判有效参数与配置指纹，不发起模型请求，不输出密钥',
+  '  bench judge-setup    # 选择 DSH 评分 Agent 的供应商/模型/思考等级与预算，确认后写回 .env',
   '',
   'submit 是正式提交入口：冻结候选快照并自动触发受控验证，输出不含调用方自报分数。',
 ].join('\n');
@@ -70,7 +71,7 @@ try {
   const asJson = values.format === 'json';
   if (!['text', 'json', 'markdown'].includes(values.format)) throw new Error('--format 必须为 text、json 或 markdown。');
   if (positionals.length > 3) throw new Error('位置参数过多。');
-  const arity: Record<string, number> = { list: 1, show: 2, score: 2, submit: 3, status: 3, runs: 1, review: 3, 'review-export': 3, report: 3, summary: 2, 'judge-config': 1 };
+  const arity: Record<string, number> = { list: 1, show: 2, score: 2, submit: 3, status: 3, runs: 1, review: 3, 'review-export': 3, report: 3, summary: 2, 'judge-config': 1, 'judge-setup': 1 };
   if (command && arity[command] !== undefined && positionals.length !== arity[command]) throw new Error('位置参数数量不正确。\n' + usage);
 
   if (command === 'list' && first === undefined) {
@@ -177,6 +178,13 @@ try {
     const { createDshJudgeFromEnvironment } = await import('@fsa/evaluation');
     const judge = createDshJudgeFromEnvironment();
     console.log(JSON.stringify({ configuration: judge.configuration, networkCall: false }, null, 2));
+  } else if (command === 'judge-setup') {
+    const [{ configureDshJudgeFromTerminal }, { createTerminalIO }] = await Promise.all([
+      import('./judge-dsh-setup.ts'), import('./terminal.ts'),
+    ]);
+    const terminal = createTerminalIO();
+    try { await configureDshJudgeFromTerminal(terminal, { root: repositoryRoot, env: process.env }); }
+    finally { terminal.close(); }
   } else if (command === 'runs') {
     const statuses = listRunStatuses(createRunStore(values.root));
     if (asJson) console.log(JSON.stringify(statuses, null, 2));

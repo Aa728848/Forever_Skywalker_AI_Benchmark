@@ -514,3 +514,8 @@ export const suiteReportValidator = Schema.Compile(SuiteReportSchema);
 export function explainExecutionResult(input: unknown): string[] {
   return Value.Errors(ExecutionResultSchema, input).map(error => `${error.instancePath || '/'}：${error.message}`);
 }
+
+/** 评审判决校验失败时的字段路径；评分 Agent 输出的排障依赖它，不允许只报一句协议错误。 */
+export function explainReviewVerdict(input: unknown): string[] {
+  return Value.Errors(ReviewVerdictSchema, input).map(error => `${error.instancePath || '/'}：${error.message}`);
+}

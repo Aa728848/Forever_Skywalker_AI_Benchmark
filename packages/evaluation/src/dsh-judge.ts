@@ -2,8 +2,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { lstatSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
-import { JudgeUnavailableError, sampleVerdict, type JudgeAdapter, type JudgeConfiguration, type ReviewOutcome, type ReviewRequest } from '@fsa/judge';
-import { reviewVerdictValidator, type ReviewVerdict } from '@fsa/contracts';
+import { JudgeProtocolError, JudgeUnavailableError, sampleVerdict, type JudgeAdapter, type JudgeConfiguration, type ReviewOutcome, type ReviewRequest } from '@fsa/judge';
+import { explainReviewVerdict, reviewVerdictValidator, type ReviewVerdict } from '@fsa/contracts';
 import { checkDshInstallation, DshCleanupError, dshReviewPreset, dshWorkspaceOptionsFromEnvironment, resolveDshWorkspacePermission, runDsh, type DshRunOptions, type DshRunResult } from './dsh.ts';
 
 export interface DshJudgeOptions {
@@ -41,12 +41,62 @@ function configuration(options: DshJudgeOptions, version: string): JudgeConfigur
     parametersFingerprint: createHash('sha256').update(JSON.stringify([options.dshRoot, options.dshHome, base, dshReviewPreset, judgeInstructions])).digest('hex') };
 }
 
-function parseResponse(text: string): unknown {
+/** 证据留档上限：原始响应只用于排障，不进入协议字段，也不回灌到下一轮材料。 */
+const rawResponseLimit = 65_536;
+/** 判决长度上限；执行说明字段限 2000 字符，留出执行器拼接余量。 */
+const protocolMessageLimit = 1900;
+
+const verdictFields = ['schemaVersion', 'runId', 'attemptId', 'taskId', 'rubricVersion', 'model', 'promptVersion', 'dimensions', 'notes'] as const;
+const dimensionNames = ['simplicity', 'maintainability', 'decoupling', 'performance'] as const;
+const dimensionFields = ['score', 'evidence'] as const;
+const boundedRaw = (text: string): string => text.length > rawResponseLimit ? text.slice(0, rawResponseLimit) + '…（原始响应已截断）' : text;
+
+/** 把模型输出归一化到契约形状：平台字段由平台写入，装饰性偏差记录后丢弃，分数与证据引用不做任何修补。 */
+function normalizeVerdict(value: unknown, platform: { cost: { calls: number; inputTokens: null; outputTokens: null }; reviewedAt: string }): { verdict: unknown; normalizations: string[] } {
+  const changed = new Set<string>();
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return { verdict: value, normalizations: [] };
+  const source = value as Record<string, unknown>;
+  const verdict: Record<string, unknown> = {};
+  for (const key of verdictFields) if (key in source) verdict[key] = source[key];
+  for (const key of Object.keys(source)) if (!(verdictFields as readonly string[]).includes(key)) changed.add('忽略未知字段 /' + key);
+  if (!('notes' in verdict)) { verdict.notes = []; changed.add('补空 notes：模型未给出 notes'); }
+  const dimensions = source.dimensions;
+  if (dimensions !== null && typeof dimensions === 'object' && !Array.isArray(dimensions)) {
+    const entries = dimensions as Record<string, unknown>;
+    const cleaned: Record<string, unknown> = {};
+    for (const name of dimensionNames) {
+      const item = entries[name];
+      if (item === null || typeof item !== 'object' || Array.isArray(item)) { cleaned[name] = item; continue; }
+      const entry = item as Record<string, unknown>;
+      const next: Record<string, unknown> = {};
+      for (const field of dimensionFields) if (field in entry) next[field] = entry[field];
+      for (const key of Object.keys(entry)) if (!(dimensionFields as readonly string[]).includes(key)) changed.add('忽略未知字段 /dimensions/' + name + '/' + key);
+      if (Array.isArray(next.evidence)) {
+        const unique = [...new Set(next.evidence as unknown[])];
+        if (unique.length !== (next.evidence as unknown[]).length) { changed.add('去重证据 /dimensions/' + name + '/evidence'); next.evidence = unique; }
+      }
+      cleaned[name] = next;
+    }
+    for (const key of Object.keys(entries)) if (!(dimensionNames as readonly string[]).includes(key)) changed.add('忽略未知字段 /dimensions/' + key);
+    verdict.dimensions = cleaned;
+  }
+  // cost 与 reviewedAt 由平台拥有；提示词已声明覆盖，模型是否回显不影响判决。
+  verdict.cost = platform.cost;
+  verdict.reviewedAt = platform.reviewedAt;
+  return { verdict, normalizations: [...changed] };
+}
+
+function protocolMessage(prefix: string, roundId: string, issues: readonly string[]): string {
+  return (prefix + '（第 ' + roundId + ' 轮）：' + issues.join('；')).slice(0, protocolMessageLimit);
+}
+
+function parseResponse(text: string, roundId: string): unknown {
   const trimmed = text.trim();
   const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)?.[1] ?? trimmed;
   try { return JSON.parse(fenced); } catch { /* 兼容模型在 JSON 前后附带一句说明。 */ }
   const start = fenced.indexOf('{');
-  if (start < 0) throw new JudgeUnavailableError('DSH 评分 Agent 响应不是合法 JSON。');
+  if (start < 0) throw new JudgeProtocolError(protocolMessage('DSH 评分 Agent 响应不是合法 JSON', roundId, ['响应中找不到 JSON 对象']),
+    { roundId, rawResponse: boundedRaw(text), issues: ['响应中找不到 JSON 对象'] });
   let depth = 0;
   let quoted = false;
   let escaped = false;
@@ -68,21 +118,35 @@ function parseResponse(text: string): unknown {
       }
     }
   }
-  throw new JudgeUnavailableError('DSH 评分 Agent 响应不是合法 JSON。');
+  const issues = ['响应中存在未闭合或不可解析的 JSON 对象'];
+  throw new JudgeProtocolError(protocolMessage('DSH 评分 Agent 响应不是合法 JSON', roundId, issues),
+    { roundId, rawResponse: boundedRaw(text), issues });
 }
 
-function verifyVerdict(value: unknown, request: ReviewRequest, options: DshJudgeOptions): ReviewVerdict {
-  if (!reviewVerdictValidator.Check(value)) throw new JudgeUnavailableError('DSH 评分 Agent 判决不符合 0.1.0 协议。');
-  const verdict = value as ReviewVerdict;
+function verifyVerdict(value: unknown, request: ReviewRequest, options: DshJudgeOptions, context: { roundId: string; rawResponse: string }): { verdict: ReviewVerdict; normalizations: string[] } {
+  const { verdict: normalized, normalizations } = normalizeVerdict(value, {
+    cost: { calls: 1, inputTokens: null, outputTokens: null }, reviewedAt: new Date().toISOString(),
+  });
+  if (!reviewVerdictValidator.Check(normalized)) {
+    const issues = explainReviewVerdict(normalized).slice(0, 5);
+    throw new JudgeProtocolError(protocolMessage('DSH 评分 Agent 判决不符合 0.1.0 协议', context.roundId, issues),
+      { roundId: context.roundId, rawResponse: boundedRaw(context.rawResponse), issues });
+  }
+  const verdict = normalized as ReviewVerdict;
   if (verdict.runId !== request.runId || verdict.attemptId !== request.attemptId || verdict.taskId !== request.taskId
     || verdict.model !== options.model || verdict.promptVersion !== options.promptVersion || verdict.rubricVersion !== '0.1.0') {
-    throw new JudgeUnavailableError('DSH 评分 Agent 判决的身份或版本与请求不一致。');
+    const issues = ['判决的身份或版本与请求不一致'];
+    throw new JudgeProtocolError(protocolMessage('DSH 评分 Agent 判决的身份或版本与请求不一致', context.roundId, issues),
+      { roundId: context.roundId, rawResponse: boundedRaw(context.rawResponse), issues });
   }
   const ids = new Set(request.materials.map(material => material.id));
-  if (Object.values(verdict.dimensions).some(dimension => dimension.evidence.some(id => !ids.has(id)))) {
-    throw new JudgeUnavailableError('DSH 评分 Agent 引用了未提供的评审材料。');
+  const quoted = Object.entries(verdict.dimensions).flatMap(([name, dimension]) => dimension.evidence.filter(id => !ids.has(id)).map(id => name + '/' + id));
+  if (quoted.length > 0) {
+    const issues = ['引用了未提供的评审材料：' + quoted.slice(0, 5).join('、')];
+    throw new JudgeProtocolError(protocolMessage('DSH 评分 Agent 引用了未提供的评审材料', context.roundId, issues),
+      { roundId: context.roundId, rawResponse: boundedRaw(context.rawResponse), issues });
   }
-  return verdict;
+  return { verdict, normalizations };
 }
 
 function promptFor(request: ReviewRequest, options: DshJudgeOptions): string {
@@ -129,6 +193,7 @@ export function createDshJudgeFromEnvironment(env: NodeJS.ProcessEnv = process.e
       if (frozen.promptVersion !== options.promptVersion || frozen.materials.length === 0
         || new Set(frozen.materials.map(material => material.id)).size !== frozen.materials.length
         || frozen.materials.some(material => !material.id.trim() || !material.text.trim())) throw new JudgeUnavailableError('DSH 评分请求材料或提示版本无效。');
+      const roundId = frozen.roundId ?? '1';
       const key = createHash('sha256').update(JSON.stringify(frozen)).digest('hex');
       if (cache.has(key)) return structuredClone(cache.get(key)!);
       if (calls >= 2) throw new JudgeUnavailableError('DSH 评分每次作答仅允许两轮独立会话；重评请创建新的评分修订。');
@@ -143,14 +208,19 @@ export function createDshJudgeFromEnvironment(env: NodeJS.ProcessEnv = process.e
           provider: options.provider, model: options.model, reasoningEffort: options.reasoningEffort, agentPreset: options.preset,
           workspacePermission: options.workspacePermission, reviewOnly: true, maxTokens: options.maxTokens, sessionId,
           prompt, timeoutMs: options.timeoutMs, env: { ...env }, ...(dependencies.signal ? { signal: dependencies.signal } : {}) });
-        if (result.finishReason !== 'completed') throw new JudgeUnavailableError(`DSH 评分 Agent 未完成：${result.finishReason}。`);
+        if (result.finishReason !== 'completed') {
+          const issues = ['会话结束原因 ' + result.finishReason + '，没有完整判决'];
+          throw new JudgeProtocolError(protocolMessage('DSH 评分 Agent 未完成', roundId, issues),
+            { roundId, rawResponse: boundedRaw(result.finalResponse), issues });
+        }
         if (result.dshVersion !== installation.version || result.observedRoutes.length === 0
           || result.observedRoutes.some(route => route.provider !== options.provider || route.model !== options.model)) {
           throw new JudgeUnavailableError('DSH 评分实际版本或模型路由与冻结配置不一致。');
         }
-        const verdict = verifyVerdict(parseResponse(result.finalResponse), frozen, options);
-        const outcome: ReviewOutcome = { verdict: { ...verdict, reviewedAt: new Date().toISOString(), cost: { calls: 1, inputTokens: null, outputTokens: null } },
+        const { verdict, normalizations } = verifyVerdict(parseResponse(result.finalResponse, roundId), frozen, options, { roundId, rawResponse: result.finalResponse });
+        const outcome: ReviewOutcome = { verdict: { ...verdict },
           calls, inputTokens: null, outputTokens: null, source: 'model', configuration: structuredClone(config),
+          ...(normalizations.length === 0 ? {} : { normalizations }),
           dshSession: { id: sessionId, version: result.dshVersion, presetFingerprint: result.presetFingerprint,
             durationMs: result.durationMs, observedRoutes: result.observedRoutes } };
         cache.set(key, structuredClone(outcome));

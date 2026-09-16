@@ -7,6 +7,7 @@ import { dshJudgeOptionsFromEnvironment } from '../../../packages/evaluation/src
 import { readProjectEnvironment, saveProjectEnvironment } from './env-file.ts';
 import { collectJudgeSetup, type JudgeSetupIO } from './judge-setup.ts';
 import { dshWorkspacePermissionLabels, resolveDshWorkspacePermission } from '../../../packages/evaluation/src/dsh.ts';
+import type { discoverDshModels } from '../../../packages/evaluation/src/dsh-catalog.ts';
 
 export interface EnvironmentSetupResult { env: NodeJS.ProcessEnv; saved: boolean; cancelled: boolean }
 class SetupCancelled extends Error {}
@@ -66,7 +67,7 @@ function recordedImage(root: string): string | null {
 }
 
 /** 只收集并补齐本项目环境；确认保存前不写文件、不创建会话或调用模型。 */
-export async function configureProjectEnvironment(io: JudgeSetupIO, options: { root: string; env: NodeJS.ProcessEnv; force?: boolean }): Promise<EnvironmentSetupResult> {
+export async function configureProjectEnvironment(io: JudgeSetupIO, options: { root: string; env: NodeJS.ProcessEnv; force?: boolean; discover?: typeof discoverDshModels }): Promise<EnvironmentSetupResult> {
   const snapshot = readProjectEnvironment(options.root, options.env);
   const env = snapshot.effectiveEnv;
   const result = (cancelled = false): EnvironmentSetupResult => ({ env, saved: false, cancelled });
@@ -132,7 +133,7 @@ export async function configureProjectEnvironment(io: JudgeSetupIO, options: { r
     io.say('DSH 作答供应商的密钥仍由 DSH 自己管理，不复制到本项目。');
 
     io.say('\n配置 3/3：独立裁判。');
-    const judge = await collectJudgeSetup(io, merged());
+    const judge = await collectJudgeSetup(io, merged(), options.discover === undefined ? {} : { discover: options.discover });
     if (judge === null) throw new SetupCancelled();
     Object.assign(updates, judge);
     if (Object.keys(updates).length === 0) { io.say('没有需要补齐的项目，.env 保持不变。'); return result(); }

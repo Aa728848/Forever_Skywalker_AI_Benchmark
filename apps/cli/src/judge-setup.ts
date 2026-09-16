@@ -1,5 +1,5 @@
 import { createEnvironmentJudge, judgeConfigFromEnvironment, JudgeUnavailableError } from '@fsa/judge';
-import { dshJudgeOptionsFromEnvironment } from '../../../packages/evaluation/src/dsh-judge.ts';
+import { collectDshJudgeSetup, type DshJudgeSetupOptions } from './judge-dsh-setup.ts';
 
 export interface JudgeSetupIO {
   ask(prompt: string): Promise<string | null>;
@@ -68,7 +68,7 @@ async function action(io: JudgeSetupIO, prompt: string, choices: string[], fallb
 }
 
 /** 收集缺失裁判配置，只返回更新；保存和 secret 终端行为由上层启动向导负责。 */
-export async function collectJudgeSetup(io: JudgeSetupIO, env: NodeJS.ProcessEnv): Promise<Record<string, string> | null> {
+export async function collectJudgeSetup(io: JudgeSetupIO, env: NodeJS.ProcessEnv, options: DshJudgeSetupOptions = {}): Promise<Record<string, string> | null> {
   const updates: Record<string, string> = {};
   const fixed = (field: Field): boolean => nonempty(env[prefix + field.key]);
   const current = (): NodeJS.ProcessEnv => ({ ...env, ...updates });
@@ -103,21 +103,11 @@ export async function collectJudgeSetup(io: JudgeSetupIO, env: NodeJS.ProcessEnv
   };
   try {
     if (nonempty(env.BENCH_DSH_ROOT) && nonempty(env.BENCH_DSH_HOME) && !nonempty(env.BENCH_JUDGE_ENDPOINT)) {
-      io.say('\n独立 DSH 评分 Agent 配置（工作区权限、root、home、profile 沿用 DSH 作答配置）：');
-      const dshFields: Field[] = [
-        { key: 'DSH_PROVIDER', label: '评分 Agent 的 DSH 供应商 ID' },
-        { key: 'DSH_MODEL', label: '评分 Agent 模型 ID（可与作答模型相同）' },
-        { key: 'DSH_REASONING_EFFORT', label: '评分 Agent 思考等级（default/low/high/max）', fallback: 'default' },
-        { key: 'DSH_MAX_TOKENS', label: '评分 Agent 每轮最大输出 Token', fallback: '16384' },
-        { key: 'DSH_TIMEOUT_MS', label: '评分 Agent 单轮超时（毫秒）', fallback: '300000' },
-      ];
-      for (const field of dshFields) await readField(field);
-      while (true) {
-        try { dshJudgeOptionsFromEnvironment({ ...env, ...updates });
-          io.say(`DSH 评分 Agent 参数检查通过：${updates.BENCH_JUDGE_DSH_PROVIDER ?? env.BENCH_JUDGE_DSH_PROVIDER} / ${updates.BENCH_JUDGE_DSH_MODEL ?? env.BENCH_JUDGE_DSH_MODEL}`);
-          return updates;
-        } catch (error) { if (!(error instanceof JudgeUnavailableError) && !(error instanceof Error)) throw error; tell('DSH 评分配置未通过：' + (error instanceof Error ? error.message : String(error))); return null; }
-      }
+      io.say('\n独立 DSH 评分 Agent（工作区权限、root、home、profile 沿用作答 DSH 配置；本步骤不调用模型）：');
+      const dsh = await collectDshJudgeSetup(io, current(), options);
+      if (dsh === null) return null;
+      Object.assign(updates, dsh);
+      return updates;
     }
     io.say('\n裁判配置只做本地检查，本步骤不调用模型。输入 q 取消，本次输入不会交给上层保存。');
     const start = await action(io, '1. 现在补齐裁判配置  2. 暂时跳过（完整代码质量分和总分待定） [回车：2]：', ['1', '2'], '2');

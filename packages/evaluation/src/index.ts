@@ -5,7 +5,7 @@ import { requireTask } from '@fsa/catalog';
 import { reviewVerdictValidator, type ExecutionArtifact, type ReviewVerdict } from '@fsa/contracts';
 import { scoreExecution, type QualityEvidence } from '@fsa/core';
 import type { QualityProvider } from '@fsa/executor';
-import { compareReviews, JudgeUnavailableError, type JudgeAdapter, type ReviewMaterial } from '@fsa/judge';
+import { compareReviews, JudgeProtocolError, JudgeUnavailableError, type JudgeAdapter, type ReviewMaterial } from '@fsa/judge';
 import { analyzeWorkspace, defaultPolicy } from '@fsa/static';
 import { listFiles, taskPackageDir } from '@fsa/tasks';
 import { measureVerificationCost } from './benchmark.ts';
@@ -34,11 +34,21 @@ export function createQualityProvider(options: EvaluationOptions = {}): QualityP
     let benchmarkCalibrated = false;
     const materials: ReviewMaterial[] = [];
     const env = options.env ?? process.env;
-    const writeEvidence = (id: string, filename: string, value: unknown) => {
+    const writeArtifact = (id: string, filename: string, value: unknown): string => {
       const text = JSON.stringify(value, null, 2) + '\n';
       writeFileSync(join(context.artifactDirectory, filename), text);
       artifacts.push({ id, path: filename, sha256: createHash('sha256').update(text).digest('hex'), bytes: Buffer.byteLength(text) });
-      materials.push({ id, kind: 'evidence', text });
+      return text;
+    };
+    const writeEvidence = (id: string, filename: string, value: unknown) => {
+      materials.push({ id, kind: 'evidence', text: writeArtifact(id, filename, value) });
+    };
+    // 失败轮次的原始响应只作证据留档，不进评审材料，也不影响后续轮次输入。
+    const writeRoundFailure = (roundId: string, error: unknown) => {
+      const detail = error instanceof JudgeProtocolError
+        ? { roundId, message: error.message, issues: error.issues, rawResponse: error.rawResponse, at: new Date().toISOString() }
+        : { roundId, message: error instanceof Error ? error.message : String(error), at: new Date().toISOString() };
+      writeArtifact('review-round-' + roundId + '-error', 'review-round-' + roundId + '-error.json', detail);
     };
     const task = context.manifest.task;
     materials.push({ id: 'task-contract', kind: 'task', text: readFileSync(join(taskPackageDir(task.taskId), 'task.md'), 'utf8') });
@@ -112,10 +122,19 @@ export function createQualityProvider(options: EvaluationOptions = {}): QualityP
         const request = { runId: context.execution.runId, attemptId: context.execution.attemptId, taskId: task.taskId, promptVersion: judge.promptVersion, materials: [...materials] };
         writeEvidence('review-materials', 'review-materials.json', { ...request, candidateHash: context.execution.candidateTreeHash,
           ...(frozenConfiguration ? { configuration: frozenConfiguration } : {}) });
-        const first = await judge.review({ ...request, roundId: '1' });
+        const reviewRound = async (roundId: string) => {
+          try { return await judge.review({ ...request, roundId }); }
+          catch (error) { writeRoundFailure(roundId, error); throw error; }
+        };
+        const first = await reviewRound('1');
         writeEvidence('review-round-1', 'review-round-1.json', first);
-        const second = await judge.review({ ...request, roundId: '2' });
+        const second = await reviewRound('2');
         writeEvidence('review-round-2', 'review-round-2.json', second);
+        for (const [roundId, outcome] of [['1', first], ['2', second]] as const) {
+          if (outcome.normalizations !== undefined && outcome.normalizations.length > 0) {
+            notes.push('第 ' + roundId + ' 轮判决经平台归一化：' + outcome.normalizations.join('、') + '；四维分数与证据引用未改动。');
+          }
+        }
         const comparison = compareReviews(first.verdict, second.verdict);
         if (first.configuration?.parametersFingerprint !== second.configuration?.parametersFingerprint
           || (frozenConfiguration && [first, second].some(round => round.configuration?.parametersFingerprint !== frozenConfiguration.parametersFingerprint))) {
@@ -148,7 +167,8 @@ export function createQualityProvider(options: EvaluationOptions = {}): QualityP
         if (error instanceof DshCleanupError) options.onJudgeCleanupError?.(error);
         const message = error instanceof Error ? error.message : String(error);
         notes.push(error instanceof JudgeUnavailableError ? message : '独立评审未完成：' + message);
-        writeEvidence('review-error', 'review-error.json', { message, at: new Date().toISOString(), totalRemainsPending: true });
+        writeEvidence('review-error', 'review-error.json', { message, at: new Date().toISOString(), totalRemainsPending: true,
+          ...(error instanceof JudgeProtocolError ? { roundId: error.roundId, issues: error.issues } : {}) });
       }
     }
     return { objective, ...(rehearsal ? { mode: 'rehearsal' as const } : {}), ...(review === undefined ? {} : { review }), artifacts, notes,

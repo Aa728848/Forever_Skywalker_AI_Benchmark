@@ -4,7 +4,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { expect, it } from 'vitest';
 import { createEnvelope, createRunStore } from '@fsa/runs';
 import { readExecutionResult, readExecutionScore, readRunStatus, reviewCompletedAttempt, verifySubmission } from '@fsa/executor';
-import { sampleVerdict, type JudgeAdapter, type ReviewRequest } from '@fsa/judge';
+import { JudgeProtocolError, sampleVerdict, type JudgeAdapter, type ReviewRequest } from '@fsa/judge';
 import { applyReferencePatch, exportWorkspace, readManifest } from '@fsa/tasks';
 import { createQualityProvider, summarizeRuns } from './index.ts';
 import { inspectRunSelection } from './suite.ts';
@@ -35,6 +35,45 @@ it('裁判长堆栈不破坏已完成的执行记录，首次评分和补评都�
     expect(readExecutionScore(outcome.submission.directory)).toMatchObject({ functional: 50, total: null });
   } finally { rmSync(scratch, { recursive: true, force: true }); }
 });
+
+it('第 2 轮判决不符合协议时保留该轮原始响应与字段路径，总分继续待定', async () => {
+  const scratch = mkdtempSync(join(tmpdir(), 'fsa-evaluation-round-'));
+  try {
+    const candidate = join(scratch, 'candidate');
+    exportWorkspace('CACHE-02', candidate);
+    expect(applyReferencePatch(readManifest('CACHE-02'), candidate, join(scratch, 'patch')).exitCode).toBe(0);
+    const store = createRunStore(join(scratch, 'runs'));
+    const raw = '{"dimensions":{"simplicity":{"score":80}}}';
+    const judge: JudgeAdapter = {
+      model: 'test', promptVersion: 'review-v1',
+      async review(request) {
+        if (request.roundId === '2') {
+          throw new JudgeProtocolError('DSH 评分 Agent 判决不符合 0.1.0 协议（第 2 轮）：/dimensions：必须包含四项。',
+            { roundId: '2', rawResponse: raw, issues: ['/dimensions：必须包含四项'] });
+        }
+        return { source: 'scripted', calls: 1, inputTokens: null, outputTokens: null,
+          verdict: sampleVerdict(request, { simplicity: 80, maintainability: 80, decoupling: 80, performance: 80 },
+            ['task-contract', 'execution-evidence', 'source-0'], 'test') };
+      },
+    };
+    const qualityProvider = createQualityProvider({ judge, env: {}, measurePerformance: false });
+    const envelope = createEnvelope('CACHE-02', candidate, { idempotencyKey: 'evaluation-round-error' });
+    const outcome = await verifySubmission({ store, taskId: 'CACHE-02', envelope, candidateDirectory: candidate, submittedBy: 'test', qualityProvider });
+    const directory = join(outcome.submission.directory, 'execution');
+    const roundError = JSON.parse(readFileSync(join(directory, 'review-round-2-error.json'), 'utf8')) as { roundId: string; rawResponse: string; issues: string[] };
+    expect(roundError.roundId).toBe('2');
+    expect(roundError.rawResponse).toBe(raw);
+    expect(roundError.issues.join(' ')).toContain('/dimensions');
+    const reviewError = JSON.parse(readFileSync(join(directory, 'review-error.json'), 'utf8')) as { roundId: string; totalRemainsPending: boolean };
+    expect(reviewError.roundId).toBe('2');
+    expect(reviewError.totalRemainsPending).toBe(true);
+    expect(readExecutionScore(outcome.submission.directory)).toMatchObject({ functional: 50, quality: null, total: null });
+  } finally {
+    const target = resolve(scratch);
+    if (dirname(target) !== resolve(tmpdir()) || !basename(target).startsWith('fsa-evaluation-round-')) throw new Error('测试临时目录越界。');
+    rmSync(target, { recursive: true, force: true });
+  }
+}, 30000);
 
 it('真实执行后使用冻结材料评审，缺性能证据不补分，显式重评保留历史', async () => {
   const scratch = mkdtempSync(join(tmpdir(), 'fsa-evaluation-'));

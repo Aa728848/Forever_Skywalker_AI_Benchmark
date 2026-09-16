@@ -106,9 +106,50 @@ function emptyAssignments(text: string): Map<string, EmptyAssignment | null> {
   return assignments;
 }
 
-function updatedText(snapshot: ProjectEnvironmentSnapshot, updates: Record<string, string>): string | null {
+/**
+ * 定位可安全覆写的单行非空赋值。多行引号值或空值返回 null，由只补空值的路径处理；
+ * 任何不确定的形态都返回 null 让调用方拒绝写入，而不是猜测值边界。
+ */
+function replaceableSpans(text: string): Map<string, { start: number; end: number } | null> {
+  const spans = new Map<string, { start: number; end: number } | null>();
+  let offset = 0;
+  let multilineQuote: string | undefined;
+  for (const match of text.matchAll(/[^\n]*(?:\n|$)/g)) {
+    const line = match[0]; if (line === '') break;
+    const body = line.replace(/\r?\n$/, '');
+    if (multilineQuote !== undefined) {
+      if (body.includes(multilineQuote)) multilineQuote = undefined;
+      offset += line.length; continue;
+    }
+    const assignment = /^[ \t]*(?:export[ \t]+)?([A-Za-z_][A-Za-z0-9_]*)[ \t]*=[ \t]*/.exec(body);
+    if (assignment) {
+      const name = assignment[1]!;
+      const start = assignment[0].length;
+      spans.set(name, null);
+      const quote = body[start];
+      if (quote === "'" || quote === '"' || quote === '`') {
+        const end = body.indexOf(quote, start + 1);
+        if (end < 0) multilineQuote = quote;
+        else if (body.slice(start + 1, end).trim() !== '') spans.set(name, { start: offset + start, end: offset + end + 1 });
+      } else {
+        let cut = body.length;
+        for (let index = start; index < body.length; index += 1) {
+          if (body[index] === '#' && (index === start || /[ \t]/.test(body[index - 1]!))) { cut = index; break; }
+        }
+        let end = cut;
+        while (end > start && /[ \t]/.test(body[end - 1]!)) end -= 1;
+        if (end > start) spans.set(name, { start: offset + start, end: offset + end });
+      }
+    }
+    offset += line.length;
+  }
+  return spans;
+}
+
+function updatedText(snapshot: ProjectEnvironmentSnapshot, updates: Record<string, string>, replace: ReadonlySet<string>): string | null {
   const text = snapshot.text ?? '';
   const spans = emptyAssignments(text);
+  const overwrites = replace.size > 0 ? replaceableSpans(text) : new Map<string, { start: number; end: number } | null>();
   const replacements: Array<{ start: number; end: number; value: string }> = [];
   const appended: string[] = [];
   const expected = { ...snapshot.fileValues };
@@ -117,15 +158,22 @@ function updatedText(snapshot: ProjectEnvironmentSnapshot, updates: Record<strin
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(requestedName) || typeof value !== 'string') throw new Error('环境变量名称或值类型无效，原文件保持不变。');
     const normalize = (name: string) => process.platform === 'win32' ? name.toUpperCase() : name;
     const aliases = Object.keys(snapshot.fileValues).filter(name => normalize(name) === normalize(requestedName));
-    if (value.trim() === '' || aliases.some(name => snapshot.fileValues[name]!.trim() !== '')) continue;
+    const existing = aliases.some(name => snapshot.fileValues[name]!.trim() !== '');
+    if (value.trim() === '' || (existing && !replace.has(normalize(requestedName)))) continue;
     if (aliases.length > 1 || changedNames.has(normalize(requestedName))) throw new Error('环境变量名称存在重复或大小写歧义，原文件保持不变。');
     changedNames.add(normalize(requestedName));
     const name = aliases[0] ?? requestedName;
     const encoded = encode(name, value);
     if (Object.hasOwn(snapshot.fileValues, name)) {
-      const span = spans.get(name);
-      if (!span) throw new Error('无法安全定位 .env 中的空值赋值，原文件保持不变。');
-      replacements.push({ start: span.start, end: span.end, value: encoded + (span.comment ? ' ' : '') });
+      if (existing) {
+        const span = overwrites.get(name);
+        if (!span) throw new Error('无法安全定位 .env 中该字段的赋值，原文件保持不变。');
+        replacements.push({ start: span.start, end: span.end, value: encoded });
+      } else {
+        const span = spans.get(name);
+        if (!span) throw new Error('无法安全定位 .env 中的空值赋值，原文件保持不变。');
+        replacements.push({ start: span.start, end: span.end, value: encoded + (span.comment ? ' ' : '') });
+      }
     } else appended.push(`${name}=${encoded}`);
     expected[name] = value;
   }
@@ -148,12 +196,17 @@ function assertCurrent(path: string, snapshot: ProjectEnvironmentSnapshot): void
   if (state.text !== snapshot.text || state.revision !== snapshot.revision) throw new EnvironmentFileConflictError();
 }
 
-/** 只补缺失/空值；返回新effectiveEnv供当前启动流程及其子进程使用，不隐式修改process.env。 */
-export function saveProjectEnvironment(root: string, updates: Record<string, string>, priorSnapshot: ProjectEnvironmentSnapshot): ProjectEnvironmentSnapshot {
+/**
+ * 默认只补缺失/空值；options.replace 显式列出的字段才允许覆写已有非空赋值。
+ * 返回新effectiveEnv供当前启动流程及其子进程使用，不隐式修改process.env。
+ */
+export function saveProjectEnvironment(root: string, updates: Record<string, string>, priorSnapshot: ProjectEnvironmentSnapshot,
+  options: { replace?: readonly string[] } = {}): ProjectEnvironmentSnapshot {
   const path = join(realpathSync(root), '.env');
   if (priorSnapshot.path !== path) throw new Error('环境快照不属于当前项目，已拒绝写入。');
   assertCurrent(path, priorSnapshot);
-  const next = updatedText(priorSnapshot, updates);
+  const replace = new Set((options.replace ?? []).map(name => process.platform === 'win32' ? name.toUpperCase() : name));
+  const next = updatedText(priorSnapshot, updates, replace);
   if (next === priorSnapshot.text) return readProjectEnvironment(root, priorSnapshot.inheritedEnv);
   const lockPath = path + '.fsa-lock';
   let lock: number;

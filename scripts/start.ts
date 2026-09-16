@@ -4,7 +4,7 @@ import { createTerminalIO } from '../apps/cli/src/terminal.ts';
 import { configureProjectEnvironment } from '../apps/cli/src/env-setup.ts';
 import { repositoryRoot } from '../packages/tasks/src/index.ts';
 
-const help = '用法：pnpm start\n缺少 .env 或关键配置时先引导补齐，确认后保存，令牌输入不回显。\n分步选择 DSH 供应商、模型、模式、思考等级、题目、预算和报告目录；也可导出/提交外部作答或启动网页。\n输入 q 或 Ctrl+C 退出；最后可选仅预检，不调用模型。Windows 可双击根目录 start.cmd。';
+const help = '用法：pnpm start\n缺少 .env 或关键配置时先引导补齐，确认后保存，令牌输入不回显。\n分步选择 DSH 供应商、模型、模式、思考等级、题目、预算和报告目录；也可在菜单里单独设置裁判模型、导出/提交外部作答或启动网页。\n输入 q 或 Ctrl+C 退出；最后可选仅预检，不调用模型。Windows 可双击根目录 start.cmd。';
 
 async function execute(plan: LaunchPlan, env: NodeJS.ProcessEnv): Promise<number> {
   if (plan.command === 'setup') throw new Error('环境配置应由启动菜单处理。');

@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
-import { sampleVerdict, type ReviewRequest } from '@fsa/judge';
+import { JudgeProtocolError, sampleVerdict, type ReviewRequest } from '@fsa/judge';
 import { createDshJudgeFromEnvironment, type DshJudgeDependencies } from './dsh-judge.ts';
 import type { DshRunOptions, DshRunResult } from './dsh.ts';
 
@@ -57,6 +57,53 @@ it('accepts a valid verdict surrounded by short model commentary', async () => {
     observedRoutes: [{ provider: options.provider, model: options.model }], responseModels: [], dshVersion: '1.2.3', runtimeClosed: true, cleanupScope: 'sdk-runtime', durationMs: 1,
   }));
   await expect(createDshJudgeFromEnvironment(env, { run }).review(request)).resolves.toMatchObject({ verdict: { model: env.BENCH_JUDGE_DSH_MODEL } });
+});
+
+it('accepts a verdict when the platform-owned fields are missing and records harmless decorations', async () => {
+  const { env } = fixture();
+  const modelVerdict = structuredClone(sampleVerdict(request, { simplicity: 70, maintainability: 60, decoupling: 80, performance: 50 }, ['candidate-1'], env.BENCH_JUDGE_DSH_MODEL, request.promptVersion)) as unknown as Record<string, unknown>;
+  delete modelVerdict.cost; delete modelVerdict.reviewedAt;
+  const dimensions = modelVerdict.dimensions as Record<string, unknown>;
+  dimensions.simplicity = { score: 70, evidence: ['candidate-1', 'candidate-1'], note: '重复引用' };
+  modelVerdict.summary = '总评';
+  const run: DshJudgeDependencies['run'] = vi.fn(async (options: DshRunOptions): Promise<DshRunResult> => ({ finishReason: 'completed', finalResponse: JSON.stringify(modelVerdict), usage: null,
+    requestedModel: { provider: options.provider, model: options.model, reasoningEffort: null, maxTokens: options.maxTokens }, requestedPreset: 'minimal', observedPresets: ['minimal'], presetFingerprint: 'f'.repeat(64), observedRoutes: [{ provider: options.provider, model: options.model }], responseModels: [], dshVersion: '1.2.3', runtimeClosed: true, cleanupScope: 'sdk-runtime', durationMs: 1 }));
+  const outcome = await createDshJudgeFromEnvironment(env, { run }).review(request);
+  expect(outcome.verdict.dimensions.simplicity.score).toBe(70);
+  expect(outcome.verdict.dimensions.simplicity.evidence).toEqual(['candidate-1']);
+  expect(outcome.verdict.cost).toEqual({ calls: 1, inputTokens: null, outputTokens: null });
+  expect(outcome.verdict.reviewedAt).toBeTruthy();
+  const normalizations = outcome.normalizations?.join(' ') ?? '';
+  expect(normalizations).toContain('忽略未知字段 /summary');
+  expect(normalizations).toContain('忽略未知字段 /dimensions/simplicity/note');
+  expect(normalizations).toContain('去重证据 /dimensions/simplicity/evidence');
+});
+
+it('keeps the raw response and field paths when a verdict violates the protocol', async () => {
+  const { env } = fixture();
+  const sample = structuredClone(sampleVerdict(request, { simplicity: 70, maintainability: 60, decoupling: 80, performance: 50 }, ['candidate-1'], env.BENCH_JUDGE_DSH_MODEL, request.promptVersion)) as unknown as Record<string, unknown>;
+  const sampleDimensions = sample.dimensions as Record<string, { score: number; evidence: string[] }>;
+  sampleDimensions.simplicity = { score: 120, evidence: ['candidate-1'] };
+  const broken = JSON.stringify(sample);
+  const run: DshJudgeDependencies['run'] = vi.fn(async (options: DshRunOptions): Promise<DshRunResult> => ({ finishReason: 'completed', finalResponse: broken, usage: null,
+    requestedModel: { provider: options.provider, model: options.model, reasoningEffort: null, maxTokens: options.maxTokens }, requestedPreset: 'minimal', observedPresets: ['minimal'], presetFingerprint: 'f'.repeat(64), observedRoutes: [{ provider: options.provider, model: options.model }], responseModels: [], dshVersion: '1.2.3', runtimeClosed: true, cleanupScope: 'sdk-runtime', durationMs: 1 }));
+  const error = await createDshJudgeFromEnvironment(env, { run }).review(request).then(() => null, (reason: unknown) => reason);
+  expect(error).toBeInstanceOf(JudgeProtocolError);
+  expect((error as JudgeProtocolError).roundId).toBe('1');
+  expect((error as JudgeProtocolError).rawResponse).toBe(broken);
+  expect((error as JudgeProtocolError).issues.join(' ')).toContain('/dimensions/simplicity');
+  expect((error as JudgeProtocolError).message).toContain('第 1 轮');
+});
+
+it('keeps the partial response when the review session does not finish', async () => {
+  const { env } = fixture();
+  const partial = '{"dimensions":{"simplicity":';
+  const run: DshJudgeDependencies['run'] = vi.fn(async (options: DshRunOptions): Promise<DshRunResult> => ({ finishReason: 'timeout', finalResponse: partial, usage: null,
+    requestedModel: { provider: options.provider, model: options.model, reasoningEffort: null, maxTokens: options.maxTokens }, requestedPreset: 'minimal', observedPresets: ['minimal'], presetFingerprint: 'f'.repeat(64), observedRoutes: [{ provider: options.provider, model: options.model }], responseModels: [], dshVersion: '1.2.3', runtimeClosed: true, cleanupScope: 'sdk-runtime', durationMs: 1 }));
+  const error = await createDshJudgeFromEnvironment(env, { run }).review(request).then(() => null, (reason: unknown) => reason);
+  expect(error).toBeInstanceOf(JudgeProtocolError);
+  expect((error as JudgeProtocolError).rawResponse).toBe(partial);
+  expect((error as JudgeProtocolError).message).toContain('未完成');
 });
 
 it('creates independent sessions for two rounds and refuses a third uncached call', async () => {

@@ -12,6 +12,23 @@ export { resolveJudgeConfiguration, type JudgeConfiguration } from './configurat
 export class JudgeUnavailableError extends Error {}
 export class JudgeBudgetExceededError extends Error {}
 
+/**
+ * 判决不符合协议：保留原始响应与字段路径，否则“判决不符合协议”无法排障。
+ * 原始响应只用于证据留档，绝不回灌到下一轮评审材料。
+ */
+export class JudgeProtocolError extends JudgeUnavailableError {
+  readonly roundId: string;
+  readonly rawResponse: string;
+  readonly issues: readonly string[];
+  constructor(message: string, details: { roundId?: string; rawResponse?: string; issues?: readonly string[] } = {}) {
+    super(message);
+    this.name = 'JudgeProtocolError';
+    this.roundId = details.roundId ?? '1';
+    this.rawResponse = details.rawResponse ?? '';
+    this.issues = details.issues ?? [];
+  }
+}
+
 export interface ReviewRequest {
   readonly runId: string;
   readonly attemptId: string;
@@ -37,6 +54,8 @@ export interface ReviewOutcome {
   readonly configuration?: JudgeConfiguration;
   readonly usageDetails?: Readonly<Record<string, number>>;
   readonly responseModel?: string;
+  /** 平台替换或丢弃的判决字段；非空说明模型输出经过可审计归一化，不改变四维分数与证据引用。 */
+  readonly normalizations?: readonly string[];
   readonly dshSession?: { id: string; version: string; presetFingerprint: string; durationMs: number; observedRoutes: { provider: string; model: string }[] };
 }
 

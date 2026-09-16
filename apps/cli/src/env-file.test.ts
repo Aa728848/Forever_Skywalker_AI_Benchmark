@@ -54,6 +54,35 @@ it('只改真实空赋值，保留非空值、注释、未知键、多行文本�
   expect(unchanged.text).toBe(after.text); expect(unchanged.revision).toBe(after.revision);
 });
 
+it('显式replace才覆写非空值，保留注释、CRLF与未列出的键', () => {
+  writeFileSync(file, '# 保留\r\nKEEP=original # 行尾注释\r\nOTHER="x y"\r\nUNKNOWN=kept\r\n');
+  const before = readProjectEnvironment(root, {});
+  const after = saveProjectEnvironment(root, { KEEP: 'updated', OTHER: 'z', UNLISTED: 'added' }, before, { replace: ['KEEP', 'OTHER'] });
+  expect(after.fileValues).toMatchObject({ KEEP: 'updated', OTHER: 'z', UNLISTED: 'added', UNKNOWN: 'kept' });
+  expect(after.text).toContain('# 保留\r\n');
+  expect(after.text).toContain('KEEP=updated # 行尾注释\r\n');
+  expect(after.text).toContain('OTHER=z\r\n');
+  const plain = saveProjectEnvironment(root, { KEEP: 'ignored' }, after);
+  expect(plain.fileValues.KEEP).toBe('updated'); expect(plain.text).toBe(after.text);
+  const caseInsensitive = 'KEY=value\n';
+  writeFileSync(file, caseInsensitive);
+  const snapshot = readProjectEnvironment(root, {});
+  const overwritten = saveProjectEnvironment(root, { KEY: 'new value' }, snapshot, { replace: ['KEY'] });
+  expect(overwritten.fileValues.KEY).toBe('new value');
+});
+
+it('无法安全定位赋值时拒绝覆写，多行值保持原样且不落盘', () => {
+  const original = "BODY='first\r\nKEEP=not-a-setting\r\nlast'\r\nTARGET=value # 注释\r\n";
+  writeFileSync(file, original);
+  const before = readProjectEnvironment(root, {});
+  expect(() => saveProjectEnvironment(root, { BODY: 'replacement' }, before, { replace: ['BODY'] })).toThrow('无法安全定位');
+  expect(readFileSync(file, 'utf8')).toBe(original);
+  const after = saveProjectEnvironment(root, { TARGET: 'new value' }, before, { replace: ['TARGET'] });
+  expect(after.fileValues.TARGET).toBe('new value');
+  expect(after.fileValues.BODY).toBe(before.fileValues.BODY);
+  expect(after.text).toContain('TARGET=new value # 注释\r\n');
+});
+
 it('Node dotenv无损往返空格、井号、引号、反斜杠、美元和多行值', () => {
   const samples = [
     ' plain words ', String.raw`C:\fixture\new\$VALUE#comment`, 'has "double" # value', "has 'single' # value",

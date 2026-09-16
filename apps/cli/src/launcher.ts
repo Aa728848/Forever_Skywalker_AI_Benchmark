@@ -95,7 +95,7 @@ function describeJudge(io: LauncherIO, env: NodeJS.ProcessEnv): void {
     io.say(`DSH 评分 Agent：${config.provider} / ${config.model}；思考：${config.reasoningEffort}；每题两轮独立会话。`);
   } catch (error) {
     if (!(error instanceof JudgeUnavailableError)) throw error;
-    io.say(`裁判：${error.message} 完整质量分和总分将保持待定。`);
+    io.say(`裁判：${error.message} 完整质量分和总分将保持待定。可运行 pnpm bench judge-setup 选择评分模型。`);
   }
 }
 
@@ -105,7 +105,7 @@ export function displayLaunchCommand(plan: LaunchPlan): string {
 }
 
 async function dshPlan(io: LauncherIO, env: NodeJS.ProcessEnv, discover: typeof discoverDshModels): Promise<LaunchPlan> {
-  io.say('\n阶段 1/5：供应商和模型。正在读取本地 DSH 模型目录，不调用模型……');
+  io.say('\n阶段 1/5：供应商和模型。正在读取本地 DSH 模型目录（含该 profile 已安装的订阅渠道插件），不调用模型……');
   const catalog = await discover({
     dshRoot: resolve(env.BENCH_DSH_ROOT || join(homedir(), 'Documents', 'deepseek-harness')),
     dshHome: resolve(env.BENCH_DSH_HOME || env.DSH_HOME || join(homedir(), '.dsh')),
@@ -197,9 +197,11 @@ export async function selectLaunchPlan(io: LauncherIO, env: NodeJS.ProcessEnv = 
       { id: 'submit', label: '提交其他 AI 已完成的作答' },
       { id: 'web', label: '打开网页/API 服务' },
       { id: 'status', label: '检查 Linux 容器环境' },
+      { id: 'judge', label: '设置裁判模型（DSH 供应商/模型，写入 .env）' },
       { id: 'setup', label: '补齐 .env 环境配置' },
     ], ['dsh']);
     if (mode === 'dsh') return await dshPlan(io, env, discover);
+    if (mode === 'judge') return { command: 'bench', args: ['judge-setup'] };
     if (mode === 'setup') return { command: 'setup', args: [] };
     if (mode === 'web') {
       io.say('将启动网页 http://127.0.0.1:4317 和 API；保持窗口运行，Ctrl+C 停止。');

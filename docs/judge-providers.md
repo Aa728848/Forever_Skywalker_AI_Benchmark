@@ -19,7 +19,18 @@ BENCH_JUDGE_PROMPT_VERSION=dsh-review-v1
 
 评分默认使用 `minimal` 的无工具评分配置，并要求两轮使用新的 DSH session。工作区权限仍从 DSH 链传入；建议设为 `read-only`。评分 Agent 不读取隐藏检查、参考补丁或其它作答，无法解析 JSON、身份/证据不匹配、超时或回收失败都会保持质量分待定。
 
+`cost` 与 `reviewedAt` 属于平台字段，提示词声明由平台覆盖，适配器在校验前自行写入，模型是否回显不影响判决。模型附带的未知字段、维度内的装饰字段与重复证据引用会被记录后归一化（写入 `normalizations` 与执行说明），四维分数、证据引用、身份与版本仍严格校验。判决被拒时保留失败轮次、原始响应（≤64 KiB）与字段路径：执行目录写入 `review-round-<n>-error.json`，`review-error.json` 记录 `roundId` 与 `issues`；报告对这类行输出「待定原因」。两轮任何一轮不通过都仍保持质量分待定，不做补分。
+
 DSH 评分 Agent 只需在本项目 `.env` 填入 `BENCH_JUDGE_DSH_PROVIDER`、`BENCH_JUDGE_DSH_MODEL` 与思考/预算字段；供应商密钥继续由共用的 DSH home 管理。旧 HTTP 入口的端点与令牌不参与自动评分。
+
+### 评分模型的设置过程
+
+选择评分模型不需要手写 ID：
+
+- 环境补齐向导（`pnpm start` → 补齐 `.env`，或启动菜单“设置裁判模型”）在 DSH 目录就绪时，用与作答模型相同的本地目录读取流程列出供应商、按关键词过滤模型，并从该模型声明的思考等级中选择；目录读不到时退回手工输入。
+- 独立命令 `pnpm bench judge-setup` 可随时重设：读取当前 `.env`、显示现有 DSH 评分 Agent、重新走一遍目录选择、列出将写入的字段，确认 `y` 后才落盘。它只覆写列出的 `BENCH_JUDGE_DSH_*` / `BENCH_JUDGE_PROMPT_VERSION`，其它键与注释保持原样。
+- 环境补齐向导仍只补缺失/空值；要改动已有非空值请用上面这条独立命令（或先清空该字段）。
+- 全程不调用模型、不请求网络；`BENCH_JUDGE_DSH_*` 与预算仍由 `dshJudgeOptionsFromEnvironment` 做同一套本地校验。供应商密钥始终留在共用的 DSH home，不进入本项目 `.env`。
 
 以下参数矩阵属于历史 HTTP 兼容适配器，供导入旧评审材料使用；正式自动评分不读取这些字段。所有供应商共用同一裁判提示、材料和判决 Schema，但各家的“high”不代表相同算力。模型名称、思考模式、输出限制和采样参数共同决定裁判配置。
 
