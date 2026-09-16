@@ -32,6 +32,8 @@ DSH模型列表从本地已安装适配器和配置读取，不向供应商探�
 
 测评菜单中的模型、模式等选择只作用于本次；环境配置仅在单独确认后补齐 `.env`，原DSH配置不改动。评分 Agent 从本项目 `.env` 的 `BENCH_JUDGE_DSH_*` 读取；没有配置时完整质量分和总分待定。Linux评分前打开Docker Desktop。下面保留直接命令用法，便于脚本化使用。
 
+评分模型（裁判）可以在启动菜单选择“设置裁判模型”，也可以随时运行 `pnpm bench judge-setup`：它读取本地 DSH 目录，列出供应商、模型和该模型声明的思考等级，确认后写回 `.env`；不调用模型。环境补齐向导只补缺失/空值，改已有值请用这条命令。
+
 下面所有 `pnpm` 命令都在 Windows PowerShell 中输入，工作目录是本评测项目，不是在 DSH 聊天框中输入。
 
 ```powershell
@@ -140,7 +142,37 @@ pnpm dev
 - 内置供应商使用已安装的模型目录；供应商 ID 例如 `deepseek-official`、`openai`、`anthropic`。使用实际 ID，不使用自定义显示名称。
 - 自定义供应商的 Provider ID 是创建时填写的小写标识。在它的模型目录中点 **获取可用模型**，可以向已配置端点探测模型列表；端点不支持探测时，按供应商给出的名称手动添加模型 ID。
 - 手工添加的模型可能没有声明可选思考等级，此时使用 `--reasoning default` 沿用供应商默认，不传思考参数；要指定 `high` 等等级，先确认该模型在 DSH 中声明了对应能力。`off` 表示明确关闭思考，与不指定参数不同。
-- 同一个 DSH home 下的标准 SDK 配置读取同一份供应商设置。若自行改变了 SDK profile 的插件组合，应确认对应适配器仍存在；运行时不会靠模型名称猜另一个供应商。
+- 订阅渠道（例如 ChatGPT 订阅、Command Code、Kimi Code）同样列在 **设置 → 模型** 中；它们的模型 id 直接填入，不需要 API 密钥。
+- 启动向导列出的供应商 = 本地 DSH 设置里的供应商 + 原生适配器 + **当前 profile 已安装的插件包**。同一个 DSH home 下，订阅渠道插件只装在某个 profile（例如 `web`）时，默认的 `sdk` profile 看不到它，因为 SDK 启动的是 `sdk` profile，插件必须真的在那里装载才提供路由。要把订阅渠道用于自动作答，任选一种：
+  1. 把插件装进自动作答使用的 profile（推荐，见下方两步）。
+  2. 让本项目改用该 profile：在 `.env` 中设置 `BENCH_DSH_PROFILE=web`。实测 `web` profile 能在自动作答的 SDK 会话里装载，但它会绑定 `127.0.0.1:3080`——与正在运行的 DSH 网页界面同一个端口，界面开着时启动会以 `EADDRINUSE` 失败；它还会在每个会话进程里打开浏览器、且 `patchReload` 是 `live`（会挂 HMR 并热重载用户 patch），与 `sdk` 的 `startup` 冻结语义不同。除非先停掉网页界面并接受这些差异，否则不要用于正式评测。
+  3. 仍然只做手工输入：向导的“手工填写供应商 ID / 模型 ID”始终可用。注意如果插件没装进当前 profile，运行时会报“没有为该供应商注册适配器”，所以这一种只在插件已装好的前提下有效。
+- 同一个 DSH home 下的其它 profile 读取同一份供应商设置。若自行改变了 profile 的插件组合，应确认对应适配器仍存在；运行时不会靠模型名称猜另一个供应商。
+
+### 把订阅渠道装进 sdk profile
+
+只装插件还不够：这类插件声明注入 `webServer`（它要注册登录/额度路由），而 `sdk` profile 不挂载这个服务，插件会整体停在 pending——**连它自己的订阅路由一起都不注册**，实测运行时报 `no adapter registered for provider "codex-chatgpt"`。两步都要做。
+
+第一步，安装插件（构建是必需的，缺 `--allow-build` 会报 `ERR_PNPM_IGNORED_BUILDS`）：
+
+```powershell
+dsh plugin --profile sdk add file:C:/Users/A/Documents/ChatGPT/dsh-chatgpt-subscription --allow-build=@eddyskywalker/dsh-chatgpt-subscription
+```
+
+第二步，编辑 `%USERPROFILE%\.dsh\profiles\sdk\cordis.patch.yml`，只补上这一个 loopback 服务：
+
+```yaml
+# 订阅渠道插件声明注入 webServer；sdk profile 默认不挂它，插件会停在 pending。
+# port 0 = 由操作系统分配空闲端口，不与网页界面的 3080 冲突。
+- insert:
+    - id: local-webserver
+      name: '@deepseek-ai/dsh-host-webserver'
+      config:
+        host: 127.0.0.1
+        port: 0
+```
+
+这样做只影响 `sdk` profile：`web` profile 的清单、`node_modules` 与入口行都不变，网页界面照常使用。装完后 `pnpm start` 的供应商列表里会出现 `codex-chatgpt`（模型 `gpt-6-astra`，思考等级 `low/medium/high/xhigh/max`）。插件是否需要登录、额度是否足够，由 DSH 在运行时判断；模型目录本身不验证这些。
 
 **模型的选择由“供应商 ID + 模型 ID”共同确定。** 假设在 DSH 中建立了两个自定义供应商 `gateway-a` 和 `gateway-b`，它们都有 `same-model`：
 

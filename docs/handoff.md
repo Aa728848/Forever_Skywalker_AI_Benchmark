@@ -1,5 +1,27 @@
 # 开发交接与执行手册
 
+## 2026-09-16 订阅渠道进入 DSH 模型目录
+
+DSH 模型目录发现现在按 BENCH_DSH_PROFILE 读取该 profile 的 dsh.profile.bundles，把 DSH 安装目录之外的本地插件包（订阅渠道）装进目录子进程再枚举 provider/model，因此 ChatGPT 订阅、Command Code、Kimi Code 等会出现在启动向导与 pnpm bench judge-setup 的供应商列表里；插件装载失败只丢该插件的路由并提示手工填写，不影响其余目录。查询仍然禁网、禁子进程、禁读 .credentials*/.env*，文件写入被收窄到本次查询的临时 DSH home（插件把凭据物化在 $DSH_HOME 下），真实 home 只读并在查询后整体回收。未初始化或非法的 profile 名直接返回手工输入提示。
+
+本轮离线验证：dsh-catalog.test.ts 12/12；真实本机读取（未调用模型、未联网）在 profile=web 下得到 deepseek-official / antigravity / kimi-code / command-code / codex-chatgpt，profile=sdk 下与改动前一致只有 deepseek-official；tsc --noEmit 通过，全量 pnpm check 见下。订阅渠道是否可用仍取决于用户在该 profile 里是否已登录，目录只列路由、不验证凭据与额度。订阅渠道插件声明注入 webServer，sdk profile 默认不挂该服务、插件会整体停在 pending；把插件装进 sdk 后还必须在 profiles/sdk/cordis.patch.yml 补一个 loopback webserver（port 0），两步都已写入 docs/quick-start.md。详见 [订阅渠道目录 Note](notes/implemented/feature/2026-09-16-dsh-subscription-channel-catalog.md)。
+
+## 2026-09-15 裁判模型的 DSH 供应商/模型设置过程
+
+新增裁判模型的设置流程：环境补齐向导在 DSH 目录就绪时，改用与作答模型相同的本地目录发现（`discoverDshModels`）列出供应商、按关键词过滤模型、从模型声明的思考等级中选择，并补齐每轮输出上限、单轮超时与提示版本；目录不可用时手工输入。新增独立命令 `pnpm bench judge-setup`，可随时重设裁判模型：读取当前 `.env`、显示现有 DSH 评分 Agent、重新选择、列出待写字段，确认 `y` 后才落盘；启动菜单新增“设置裁判模型”入口。全程不调用模型、不请求网络。
+
+`.env` 写入器新增显式 `replace` 选项：默认仍只补缺失/空值（向导行为不变），只有独立命令在确认后覆写列出的 `BENCH_JUDGE_DSH_*`/`BENCH_JUDGE_PROMPT_VERSION`，其它键、注释与 CRLF 保持原样；多行引号值等无法安全定位的赋值直接拒绝写入。已有但无效的非空值会被重新询问，不再因“已填写”而放行。详见 [裁判模型设置 Note](notes/implemented/feature/2026-09-15-dsh-judge-model-setup.md)。
+
+本轮离线验证：`tsc --noEmit` 通过；`env-file.test.ts`、`judge-dsh-setup.test.ts`、`judge-setup.test.ts`、`env-setup.test.ts` 共 40/40 通过；`launcher.test.ts` 新增入口用例通过（仅有既存的 `spawnSync EPERM` 沙箱失败）。未调用模型或裁判。
+
+## 2026-09-15 评分判决协议中断与缺失评分修复
+
+最新 CACHE-02 实验（`187fb412`）执行与性能采样通过、功能分 50，但第 2 轮评分判决未过 `ReviewVerdict` 协议校验，四维评审分缺失使质量分与总分继续待定，且失败轮原始响应被丢弃、报告不写原因。已修复三处：平台自有字段 `cost`/`reviewedAt` 改由平台注入（不再要求模型回显）；模型附带的装饰字段与重复证据引用按记录式归一化处理，写入 `normalizations` 与执行说明，四维分数与证据引用仍严格校验；`JudgeProtocolError` + `explainReviewVerdict` 保留失败轮 `roundId`、原始响应（≤64 KiB）与字段路径，落盘为 `review-round-<n>-error.json`，`review-error.json` 增加 `roundId`/`issues`，报告对这类行输出「待定原因」。
+
+历史实验目录不改写；要拿到质量分必须用同一作答（`bench review`）或重新运行实验。两轮独立判决的规则未变：任一轮不通过仍保持质量分待定，不得补分。详见 [协议中断诊断 Note](notes/implemented/bug-fix/2026-09-15-dsh-judge-protocol-diagnostics.md)。
+
+本轮离线验证：`tsc --noEmit` 通过；`dsh-judge.test.ts` 7/7（含 3 项新增）。
+
 ## 2026-09-15 DSH 评分启动错误修复
 
 归档实验 `b71463a5-468d-4250-900d-c6de8bf03ad8` 的 Linux 检查与性能采样均通过；失败根因为评分桥接插件访问 `ctx.tools` 时漏声明 `tools` 注入，随后超长错误堆栈又使 `notes` 超过协议限制。现已修复注入声明，并将超长说明完整保存为 `execution-notes.json`、摘要保持在协议长度内。33 项评分/执行专项测试及本地假 SSE 的真实 DSH SDK 两轮评分通过（未调用外部模型）。旧实验报告保留原样；重新运行同一命令即可取得新评分。
