@@ -18,5 +18,5 @@
 - 独立评审的模型、端点与预算由用户在环境变量里配置（`BENCH_JUDGE_ENDPOINT` / `BENCH_JUDGE_MODEL` / `BENCH_JUDGE_TOKEN` 及预算项）；未配置时评审必须拒绝工作并保持质量分待定，不得读取他人私有凭据。
 - 临时测试数据使用系统临时目录并释放；执行产物放入已忽略的 `data/`。
 - 容器环境和证据见docs/container-setup.md；执行器改动用pnpm container:verify验收实际边界，完整题库用pnpm container:trial --all --alternatives。当前镜像已固定，不要在每次评测前重建或替换它。
-- 每次非平凡变更按 `docs/notes/README.md` 在同一变更中记录中文 Agent Note。
+- 每次非平凡变更前先查阅历史决策，并在同一变更中记录或就地更新中文 Agent Note（见 `docs/notes/README.md` 与 `docs/notes/implemented/AGENTS.md`）。修改题目包设计、评分协议、执行器机制或评审适配器前，先检索 `docs/notes/implemented/` 审阅 Owning Note 的历史约束与被否决方案；已有 Note 拥有该决策时就地更新事实即满足要求，仅在无 Note 拥有时新建。交付态笔记写现在时客观事实，遵循「一个事实只有一个家（One home per fact）」。
 - 如果根目录存在 `.codegraph/`，代码定位优先 CodeGraph；否则使用 `rg`，不主动建立索引。
