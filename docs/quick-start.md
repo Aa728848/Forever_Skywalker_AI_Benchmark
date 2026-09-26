@@ -40,6 +40,20 @@ DSH模型列表从本地已安装适配器和配置读取，不向供应商探�
 Set-Location -LiteralPath 'C:\Users\A\Documents\ChatGPT\Forever_Skywalker_AI_Benchmark'
 ```
 
+## DSH 或插件升级后：先跑一次体检
+
+DSH 与订阅插件是外部依赖，升级可能改名或移动本项目读取的资产。历史上发生过三次，症状都是「探测静默变空」或「真实作答直接失败」，排查成本很高。升级后用一条命令逐项核对：
+
+```powershell
+pnpm dsh:doctor
+```
+
+它只读本地文件与已安装包，不联网、不调用模型、不写任何配置。输出逐项列出：DSH 版本、九个运行期资产路径是否存在、当前 profile 的 bundle 组成、预设注册表行由谁提供、关键包能否从该 profile 解析、订阅插件与旧预设目录状态、固定镜像记录。结尾汇总「需要同步适配」的条目。
+
+命令**始终以 0 退出**——它是体检报告而非判据，其中某些 FAIL 是本组合已知且有意的取舍（例如 sdk 不挂 `web-app` bundle，插件因而无法在运行期注册预设，而自动作答不需要该能力）。要机器判读请解析输出中的 `FAIL` 行。
+
+用 `BENCH_DSH_PROFILE` 可对其它 profile 体检，例如 `$env:BENCH_DSH_PROFILE='web'; pnpm dsh:doctor`。
+
 ## 先分清三个角色
 
 | 角色 | 用途 | 什么时候需要 |

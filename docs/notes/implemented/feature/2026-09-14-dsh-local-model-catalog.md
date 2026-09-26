@@ -58,4 +58,6 @@ discoverDshModels({ dshRoot, dshHome, profile? })
 | sdk（base + sdk-app + 订阅插件） | 无 | 未注册 | 写旧目录 `.agent-presets/dispatch` | 0 条 |
 | web（含 web-app bundle） | 有 | 注册成功 `dispatch` | 不写旧目录 | 0 条 |
 
-注册表行由 **web-app bundle** 提供（`base` 与 `sdk-app` 都不声明 `id: agent-preset-registry`），而 sdk 的 bundles 不含 web-app。因此两条路径分岔：web 组合有注册表服务，插件把 `dispatch` **注册进活动注册表**，不落任何文件；sdk 组合没有该服务，插件**静默降级**为写 `$DSH_HOME/.agent-presets/`，而 DSH 0.1.7 已不读该目录（其自带 `editing-cordis-compositions` 技能明写 “Nothing reads that directory any more”）。该降级**不打日志**（两种组合下插件都只走 info 级、本探针捕获 0 条），只能靠 `apply()` 的返回值或落盘差异区分。`@deepseek-ai/dsh-agent-preset` 包在 sdk 下**可以解析**（由 `profiles/node_modules` 里指向 DSH checkout 的 junction 提供），所以「重装插件」改变不了 sdk 的结果——缺的是注册表服务，不是包。
+注册表行由 **web-app bundle** 提供（`base` 与 `sdk-app` 都不声明 `id: agent-preset-registry`），而 sdk 的 bundles 不含 web-app。因此两条路径分岔：web 组合有注册表服务，插件把 `dispatch` **注册进活动注册表**，不落任何文件；sdk 组合没有该服务，插件**静默降级**为写 `$DSH_HOME/.agent-presets/`，而 DSH 0.1.7 已不读该目录（其自带 `editing-cordis-compositions` 技能明写 “Nothing reads that directory any more”）。该降级**不打日志**（两种组合下插件都只走 info 级、本探针捕获 0 条），只能靠 `apply()` 的返回值或落盘差异区分。
+
+上述耦合点已固化为可重复的体检命令（`pnpm dsh:doctor`，scripts/dsh-doctor.ts）：逐项核对 DSH 版本、九个运行期资产路径、当前 profile 的 bundle 组成、预设注册表行由谁声明、关键包能否从该 profile 解析、订阅插件与旧预设目录状态、固定镜像记录，并汇总需要同步适配的条目。它只读本地文件与已安装包，不联网、不调用模型、不写配置，且**始终以 0 退出**——体检报告不是判据，某些 FAIL 是本组合已知且有意的取舍。`@deepseek-ai/dsh-agent-preset` 包在 sdk 下**可以解析**（由 `profiles/node_modules` 里指向 DSH checkout 的 junction 提供），所以「重装插件」改变不了 sdk 的结果——缺的是注册表服务，不是包。

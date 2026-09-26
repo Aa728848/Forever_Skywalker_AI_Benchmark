@@ -28,6 +28,7 @@
     "run:rehearse": "node scripts/run.ts",
     "trial": "node scripts/trial.ts",
     "score:rehearse": "node scripts/score-rehearse.ts",
+    "dsh:doctor": "node --import tsx scripts/dsh-doctor.ts",
     "container:status": "node scripts/container.ts status",
     "container:build": "node scripts/container.ts build",
     "container:verify": "node scripts/container-verify.ts",
