@@ -13,6 +13,7 @@ import { scoreAssessment } from '@fsa/core';
 import { openStore } from './store.ts';
 import { openRunEntry } from './runs.ts';
 import { ReportAccessError, defaultReportsRoot, openReports } from './reports.ts';
+import { CleanupError } from './cleanup.ts';
 import { ConfigValidationError, EnvironmentFileConflictError, apiRepositoryRoot, createConfigProvider, type ConfigFieldError } from './config.ts';
 import { LaunchError, createLaunches, listSubmissionCandidates, type LaunchRequest } from './launches.ts';
 
@@ -237,6 +238,15 @@ export function buildApp(databasePath = ':memory:', options: AppOptions = {}) {
       return reply.type('application/octet-stream').header('content-disposition', 'attachment').send(bytes);
     } catch (error) { return reply.code(404).send({ error: error instanceof Error ? error.message : '未找到证据。' }); }
   });
+  // 清理运行记录：移进回收目录；正在执行的 attempt 会被拒绝。
+  app.delete<{ Params: { runId: string; attemptId: string } }>('/api/runs/:runId/:attemptId', (request, reply) => {
+    if (!authorized(request.headers['x-bench-token'])) return reply.code(401).send({ error: '清理运行记录需要有效的 x-bench-token 头。' });
+    try { return runs.clean(request.params.runId, request.params.attemptId); }
+    catch (error) {
+      if (error instanceof CleanupError) return reply.code(error.status).send({ error: error.message });
+      return reply.code(400).send({ error: error instanceof Error ? error.message : '清理失败。' });
+    }
+  });
   app.post<{ Params: { runId: string; attemptId: string } }>('/api/runs/:runId/:attemptId/cancel', (request, reply) => {
     if (!authorized(request.headers['x-bench-token'])) return reply.code(401).send({ error: '取消操作需要有效令牌。' });
     return { cancelled: runs.cancel(request.params.runId, request.params.attemptId) };
@@ -280,6 +290,15 @@ export function buildApp(databasePath = ':memory:', options: AppOptions = {}) {
     throw error;
   };
   app.get('/api/reports', () => reports().list());
+  // 清理报告：移进报告根下的回收目录，可手动恢复。写操作，要求令牌。
+  app.delete<{ Params: { reportId: string } }>('/api/reports/:reportId', (request, reply) => {
+    if (!authorized(request.headers['x-bench-token'])) return reply.code(401).send({ error: '清理报告需要有效的 x-bench-token 头。' });
+    try { return reports().clean(request.params.reportId); }
+    catch (error) {
+      if (error instanceof CleanupError) return reply.code(error.status).send({ error: error.message });
+      return reportFailure(reply, error);
+    }
+  });
   // 自动测评：发起、纯读进度、取消。写操作一律要求 x-bench-token。
   app.post<{ Body: unknown }>('/api/experiments', async (request, reply) => {
     if (!authorized(request.headers['x-bench-token'])) return reply.code(401).send({ error: '发起测评需要有效的 x-bench-token 头。' });
@@ -324,6 +343,16 @@ export function buildApp(databasePath = ':memory:', options: AppOptions = {}) {
   });
   // 纯读：不写账本、不触发对账。GET 前后启动记录字节必须不变。
   app.get('/api/experiments', () => ({ launches: launches.list() }));
+  // 清理启动记录：移进回收目录；未落定（进行中/状态未知）的记录会被拒绝。
+  app.delete<{ Params: { launchId: string } }>('/api/experiments/:launchId', (request, reply) => {
+    if (!authorized(request.headers['x-bench-token'])) return reply.code(401).send({ error: '清理启动记录需要有效的 x-bench-token 头。' });
+    try { return launches.clean(request.params.launchId); }
+    catch (error) {
+      if (error instanceof CleanupError) return reply.code(error.status).send({ error: error.message });
+      if (error instanceof LaunchError) return reply.code(error.status).send({ error: error.message });
+      return reply.code(400).send({ error: error instanceof Error ? error.message : '清理失败。' });
+    }
+  });
   app.post<{ Params: { launchId: string } }>('/api/experiments/:launchId/cancel', async (request, reply) => {
     if (!authorized(request.headers['x-bench-token'])) return reply.code(401).send({ error: '取消操作需要有效令牌。' });
     try { return await launches.cancel(request.params.launchId); }

@@ -18,6 +18,7 @@
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync, lstatSync, mkdirSync, readdirSync } from 'node:fs';
+import { moveToTrash, trashDirectoryName } from './cleanup.ts';
 import { join, resolve } from 'node:path';
 import { tasks } from '@fsa/catalog';
 import { validateComparison, type DshComparisonOptions } from '../../../packages/evaluation/src/dsh-comparison.ts';
@@ -428,6 +429,11 @@ export interface Launches {
   planOf(request: LaunchRequest): LaunchPlan;
   launch(request: LaunchRequest): Promise<LaunchView>;
   cancel(launchId: string): Promise<CancelOutcome>;
+  /**
+   * 把一条启动记录（账本 json、exit.json、日志与取消标记）移进回收目录。
+   * 进程仍在运行时拒绝：账本是对账所依赖的事实来源，移走它会让 sweeper 失去依据。
+   */
+  clean(launchId: string): { trashPath: string; moved: string[] };
   /** 对账并原子写回；由进程内定时器调用，GET 路由绝不调用它。 */
   sweep(): void;
   close(): void;
@@ -583,6 +589,8 @@ export function createLaunches(options: LaunchesOptions): Launches {
   const listIds = (): string[] => {
     try {
       return readdirSync(root)
+        // 回收目录不是启动记录；清理过的账本不得再出现在列表里。
+        .filter(name => name !== trashDirectoryName)
         .filter(name => name.endsWith('.json') && !name.endsWith('.exit.json'))
         .map(name => name.slice(0, -5));
     } catch { return []; }
@@ -795,6 +803,22 @@ export function createLaunches(options: LaunchesOptions): Launches {
     planOf,
     launch,
     cancel,
+    clean: (launchId: string) => {
+      if (!launchIdPattern.test(launchId)) throw new LaunchError(400, '启动标识不合法。');
+      const record = readRecord(launchId);
+      if (record === null) throw new LaunchError(404, '未找到该启动记录：' + launchId + '。');
+      // 只有已落定的记录才可清：运行中的账本是 sweeper 对账的依据，移走它会让进程失管。
+      const state = textOf(record.state);
+      if (!settled.includes(state as RecordState)) {
+        throw new LaunchError(409, '该测评仍在进行或状态未知，请先取消并等待落定，再清理记录。');
+      }
+      // 一次测评涉及四个同级文件；全部移走，否则列表里会留下孤立的 exit.json 或取消标记。
+      const targets = [launchId + '.json', launchId + '.exit.json', launchId + '.log']
+        .filter(name => existsSync(join(root, name)));
+      const requested = join(root, launchId + '.cancel-requested');
+      if (existsSync(requested)) targets.push(launchId + '.cancel-requested');
+      return moveToTrash({ root, paths: targets, reason: '启动记录清理' });
+    },
     sweep,
     close: () => { for (const timer of timers) clearTimeout(timer); timers.clear(); },
   };

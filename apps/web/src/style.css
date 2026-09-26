@@ -35,6 +35,10 @@
 .warn p { color: inherit; margin: 6px 0; }
 .warn ul { margin: 6px 0 0; padding-left: 20px; }
 .warn li { margin-bottom: 6px; }
+.cleanup-block { border: 1px solid #e2e7f0; border-radius: 8px; padding: 14px 17px; margin: 12px 0 18px; background: #fbfcfe; }
+.cleanup-block > p { margin-top: 0; }
+.cleanup-block code { background: #eef2f9; border-radius: 4px; padding: 1px 5px; font-size: 11px; }
+.ok-note { border: 1px solid #cfe6d4; background: #f3fbf5; color: #2f6b41; border-radius: 8px; padding: 10px 13px; margin: 10px 0; font-size: 11px; line-height: 1.6; word-break: break-all; }
 .rows-table td, .rows-table th { white-space: nowrap; }
 .rows-table td small { font-size: 9px; color: #96a2b7; }
 .artifact-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }

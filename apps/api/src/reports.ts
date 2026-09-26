@@ -6,6 +6,7 @@ import {
   explainExperimentDetail, explainExperimentSummary,
   type ExperimentDetail, type ExperimentList, type ExperimentPhaseCounts, type ExperimentRow, type ExperimentSummary,
 } from '@fsa/contracts';
+import { moveToTrash, trashDirectoryName } from './cleanup.ts';
 
 /** 报告根默认位置与 CLI 的 BENCH_DSH_REPORT_DIR 缺省值一致：<仓库根>/data/experiments。 */
 export const defaultReportsRoot = fileURLToPath(new URL('../../../data/experiments', import.meta.url));
@@ -31,6 +32,8 @@ export interface Reports {
   list(): ExperimentList;
   detail(reportId: string): ExperimentDetail;
   artifact(reportId: string, artifactId: string): ReportArtifact;
+  /** 把一份实验报告移进回收目录；不会删除任何字节。 */
+  clean(reportId: string): { trashPath: string; moved: string[] };
 }
 
 /** 路由层据此选择 HTTP 状态；404 是"这里没有这个东西"，422 是"有，但读不出内容"。 */
@@ -260,8 +263,9 @@ function downloadName(id: string, artifactId: ReportArtifactId): string {
 }
 
 /**
- * 报告中心：只读地列出、读取与下载实验报告产物。
- * 本模块不写任何文件；损坏的报告仍以 unreadable 出现在列表里并带原因，不静默跳过。
+ * 报告中心：列出、读取与下载实验报告产物，并支持把一份报告移进回收目录。
+ * 除 `clean()` 的移动外，本模块不写入任何文件；`list/detail/artifact` 始终是纯读。
+ * 损坏的报告仍以 unreadable 出现在列表里并带原因，不静默跳过。
  */
 export function openReports(options: ReportsOptions = {}): Reports {
   const configured = resolve(options.root ?? defaultReportsRoot);
@@ -303,6 +307,8 @@ export function openReports(options: ReportsOptions = {}): Reports {
     // 报告根不存在或不可读时视为没有报告，不报错。
     let names: string[];
     try { names = readdirSync(root); } catch { return []; }
+    // 回收目录不是实验报告：清理过的条目移进去后不得再出现在列表里。
+    names = names.filter(name => name !== trashDirectoryName);
     const summaries = names.map(name => {
       const entry = readEntry(name);
       if (!('settings' in entry)) return entry;
@@ -351,6 +357,11 @@ export function openReports(options: ReportsOptions = {}): Reports {
     },
     detail(reportId: string): ExperimentDetail {
       return findDetail(reportId);
+    },
+    clean(reportId: string) {
+      // 只按不透明 reportId 寻址：调用方给不了裸目录名，也就无法指向报告根之外的任何东西。
+      const summary = find(reportId);
+      return moveToTrash({ root: rootKey(), paths: [summary.directoryName], reason: '实验报告清理' });
     },
     artifact(reportId: string, artifactId: string): ReportArtifact {
       if (!(reportArtifactIds as readonly string[]).includes(artifactId)) throw new ReportAccessError(404, `未知的产物标识：${artifactId}。`);

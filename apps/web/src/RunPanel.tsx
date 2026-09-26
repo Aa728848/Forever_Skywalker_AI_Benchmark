@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { difficultyLabels, runDetailValidator, runStatusesValidator, suiteReportValidator, type RunDetail, type RunStatus, type SuiteReport } from '@fsa/contracts';
+import { useBenchToken } from './token.ts';
 
 const scoreText = (value: number | null) => value === null ? '待定' : String(value);
 const modeLabels = { local: '本机诊断', rehearsal: '校准/演练', formal: '正式成绩', pending: '待验证' } as const;
@@ -13,6 +14,34 @@ export function RunPanel() {
   const [loading, setLoading] = useState(true);
   const [selectedRuns, setSelectedRuns] = useState<string[]>([]);
   const [summary, setSummary] = useState<SuiteReport | null>(null);
+  // 清理是破坏性操作（移走运行目录），两步确认；成功失败都要有可见结论。
+  const [pendingCleanup, setPendingCleanup] = useState<string | null>(null);
+  const [cleanupBusy, setCleanupBusy] = useState(false);
+  const [cleanupResult, setCleanupResult] = useState<{ key: string; message: string; ok: boolean } | null>(null);
+  const { token, setToken, authHeaders } = useBenchToken();
+
+  /** 清理一条运行记录：移入 <运行根>/.trash，可手动恢复。 */
+  async function cleanRun(runId: string, attemptId: string) {
+    setCleanupBusy(true);
+    const key = runId + '/' + attemptId;
+    try {
+      const response = await fetch('/api/runs/' + encodeURIComponent(runId) + '/' + encodeURIComponent(attemptId), { method: 'DELETE', headers: authHeaders() });
+      const value: unknown = await response.json().catch(() => null);
+      const detail = typeof value === 'object' && value !== null && 'error' in value ? String((value as { error: unknown }).error) : '';
+      if (!response.ok) {
+        setCleanupResult({ key, ok: false, message: response.status === 401 ? '令牌无效或已失效：' + (detail || '请检查运行令牌。') : '清理失败（' + response.status + '）：' + (detail || '服务端未给出原因。') });
+        return;
+      }
+      const trash = typeof value === 'object' && value !== null && 'trashPath' in value ? String((value as { trashPath: unknown }).trashPath) : '';
+      setCleanupResult({ key, ok: true, message: '已移入回收目录：' + trash + '。需要恢复就把里面的目录移回运行根。' });
+      setPendingCleanup(null);
+      setSelection('');
+      setSelectedRuns(current => current.filter(item => item !== key));
+      setRevision(current => current + 1);
+    } catch (cause) {
+      setCleanupResult({ key, ok: false, message: '清理失败：' + (cause instanceof Error ? cause.message : '网络错误。') });
+    } finally { setCleanupBusy(false); }
+  }
   async function summarize() {
     try {
       const response = await fetch('/api/summaries', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(selectedRuns.map(key => { const [runId, attemptId] = key.split('/'); return { runId, attemptId }; })) });
@@ -69,10 +98,34 @@ export function RunPanel() {
           <p>{status?.scoring.reason}</p>
           <p>隔离：{detail.execution?.isolation === 'container' ? 'Linux 容器' : '无容器隔离'} · 题目版本 {status?.taskVersion}</p>
           <div className="report-actions"><a className="secondary" href={`${path}/report`} download>下载 Markdown 报告</a><a className="secondary" href={`${path}/detail`} download>下载 JSON 与事件</a></div>
-          <h3>代码质量分项</h3>{Object.entries({ simplicity: '简洁度', maintainability: '人工可维护性', decoupling: '解耦性', performance: '性能' } as const).map(([key, label]) => <div className="metric" key={key}><span>{label}</span><b>{scoreText(detail.score?.dimensions[key as keyof NonNullable<RunDetail['score']>['dimensions']] ?? null)} /100</b></div>)}
+          <h3>代码质量分项</h3>{Object.entries({ simplicity: '简洁度', maintainability: '人工可维护性', decoupling: '解耦性' } as const).map(([key, label]) => <div className="metric" key={key}><span>{label}</span><b>{scoreText(detail.score?.dimensions[key as keyof NonNullable<RunDetail['score']>['dimensions']] ?? null)} /100</b></div>)}
           <h3>检查结果</h3><div className="checks-table"><table><thead><tr><th>检查</th><th>状态</th><th>关键项</th></tr></thead><tbody>{detail.execution?.checks.map(check => <tr key={check.id}><td>{check.id}</td><td>{check.status}</td><td>{check.critical ? '是' : '否'}</td></tr>)}</tbody></table></div>
           <h3>执行时间线</h3><ol className="timeline">{detail.events.map(event => <li key={event.id}><b>{event.seq}. {event.type}</b><time>{new Date(event.at).toLocaleString('zh-CN')}</time><span>{event.actor}</span></li>)}</ol>
           <h3>可复核证据</h3>{status?.artifacts.map(artifact => <div className="evidence" key={artifact.id}><a href={`${path}/artifacts/${encodeURIComponent(artifact.id)}`} download>{artifact.id} ↗</a><p>{artifact.bytes} 字节 · SHA-256 {artifact.sha256.slice(0, 16)}…</p></div>)}
+          <h3>清理这条记录</h3>
+          <div className="cleanup-block">
+            <p>清理会把该作答的目录移进运行根下的 <code>.trash</code>，运行记录列表立即不再显示它；文件不会删除，随时可以手动移回。正在执行或重评中的记录会被服务端拒绝。</p>
+            <div className="token-bar">
+              <label htmlFor="run-token">运行令牌</label>
+              <input id="run-token" type="password" autoComplete="off" value={token} placeholder="x-bench-token" onChange={event => setToken(event.target.value)} />
+              <span>清理属于写操作，必须提供有效令牌。</span>
+            </div>
+            {pendingCleanup === `${status?.runId}/${status?.attemptId}`
+              ? <div className="warn broken" role="alert">
+                <b>确认清理 {status?.runId} / {status?.attemptId}？</b>
+                <p>该作答目录会整体移入回收目录，包含冻结快照、执行结果、评分与全部证据。</p>
+                <div className="report-actions">
+                  <button className="primary" disabled={cleanupBusy} onClick={() => void cleanRun(status!.runId, status!.attemptId)}>确认清理</button>
+                  <button className="secondary" disabled={cleanupBusy} onClick={() => setPendingCleanup(null)}>取消</button>
+                </div>
+              </div>
+              : <div className="report-actions">
+                <button className="secondary" disabled={cleanupBusy || status === undefined} onClick={() => { setCleanupResult(null); setPendingCleanup(`${status?.runId}/${status?.attemptId}`); }}>清理这条记录…</button>
+                <span>不会删除文件，只移入回收目录。</span>
+              </div>}
+            {cleanupResult !== null && status !== undefined && cleanupResult.key === `${status.runId}/${status.attemptId}` &&
+              <div className={cleanupResult.ok ? 'ok-note' : 'error'} role="status">{cleanupResult.message}</div>}
+          </div>
           <footer className="report-meta">候选摘要 {status?.candidateTreeHash}<br />{status?.runId} / {status?.attemptId}</footer>
         </article>
       </div>}

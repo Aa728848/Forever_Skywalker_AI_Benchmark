@@ -255,6 +255,12 @@ export interface RunStore {
   read(idempotencyKey: string): SubmissionOutcome | null;
   readAttempt(runId: string, attemptId: string): SubmissionOutcome | null;
   list(): readonly IndexEntry[];
+  /**
+   * 丢弃目录已经不存在的索引条目，返回被丢弃的条目。
+   * 记录被移进回收目录后，索引里若留着指向它的条目，list() 会去读 freeze.json 而抛错，
+   * 整个运行记录列表都会打不开；幂等键也仍被认为「已用过」，挡住同键重提。
+   */
+  forgetMissing(): readonly IndexEntry[];
   materialize(runId: string, attemptId: string, destination: string): MaterializedCandidate;
 }
 
@@ -524,6 +530,19 @@ export function createRunStore(root: string = defaultRunRoot, options: { exclude
 
     list(): readonly IndexEntry[] {
       return readIndex().entries;
+    },
+
+    forgetMissing(): readonly IndexEntry[] {
+      const index = readIndex();
+      const kept: IndexEntry[] = [];
+      const dropped: IndexEntry[] = [];
+      for (const entry of index.entries) {
+        // 目录是整个 attempt 的载体（含 freeze.json 与 manifest.json）；它不在就没有可读的记录。
+        if (existsSync(attemptDirectory(entry.taskId, entry.runId, entry.attemptId))) kept.push(entry);
+        else dropped.push(entry);
+      }
+      if (dropped.length > 0) writeIndex({ ...index, entries: kept });
+      return dropped;
     },
 
     materialize(runId: string, attemptId: string, destination: string): MaterializedCandidate {

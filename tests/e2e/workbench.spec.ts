@@ -1,6 +1,12 @@
 import { expect, test } from '@playwright/test';
 import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { exportWorkspace, applyReferencePatch, readManifest } from '../../packages/tasks/src/index.ts';
+
+// 直接读文件而不是 import：Node ESM 导入 JSON 需要 import attribute，写法更脆。
+const sample = JSON.parse(readFileSync(new URL('../../examples/assessment.json', import.meta.url), 'utf8')) as {
+  evidence: unknown[];
+};
 
 test('筛选题目、保存示例预览并在刷新后显示证据', async ({ page }, testInfo) => {
   await page.goto('/');
@@ -20,7 +26,9 @@ test('筛选题目、保存示例预览并在刷新后显示证据', async ({ pa
   await page.reload();
   await page.getByRole('button', { name: /评分预览/ }).click();
   await expect(page.locator('.score-hero strong')).toHaveText(/85\s*\/\s*100/);
-  await expect(page.locator('.evidence')).toHaveCount(4);
+  // 性能维度移除后，示例夹具的证据只剩 test/static/review 三类（原第四类 benchmark 随之删除）。
+  // 这里断言随夹具走，避免把「示例里正好几类证据」写成与实际数据脱钩的魔法数字。
+  await expect(page.locator('.evidence')).toHaveCount(sample.evidence.length);
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('report-mobile.png'), fullPage: true });

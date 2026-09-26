@@ -114,6 +114,28 @@ export function LaunchPanel({ tasks }: { tasks: Task[] }) {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [cancelResult, setCancelResult] = useState<{ launchId: string; outcome: CancelOutcome } | null>(null);
+  // 清理启动记录：只对已落定的记录开放；进行中或状态未知的记录由服务端拒绝。
+  const [pendingCleanup, setPendingCleanup] = useState<string | null>(null);
+  const [cleanupResult, setCleanupResult] = useState<{ launchId: string; message: string; ok: boolean } | null>(null);
+
+  /** 清理一条启动记录：账本 json、退出事实、日志与取消标记一并移入 <启动根>/.trash。 */
+  async function cleanLaunch(launchId: string) {
+    try {
+      const response = await fetch('/api/experiments/' + encodeURIComponent(launchId), { method: 'DELETE', headers: authHeaders });
+      const value: unknown = await response.json().catch(() => null);
+      const detail = typeof value === 'object' && value !== null && 'error' in value ? String((value as { error: unknown }).error) : '';
+      if (!response.ok) {
+        setCleanupResult({ launchId, ok: false, message: response.status === 401 ? '令牌无效或已失效：' + (detail || '请检查运行令牌。') : '清理失败（' + response.status + '）：' + (detail || '服务端未给出原因。') });
+        return;
+      }
+      const trash = typeof value === 'object' && value !== null && 'trashPath' in value ? String((value as { trashPath: unknown }).trashPath) : '';
+      setCleanupResult({ launchId, ok: true, message: '已移入回收目录：' + trash + '。需要恢复就把里面的文件移回启动记录根。' });
+      setPendingCleanup(null);
+      setRevision(current => current + 1);
+    } catch (cause) {
+      setCleanupResult({ launchId, ok: false, message: '清理失败：' + (cause instanceof Error ? cause.message : '网络错误。') });
+    }
+  }
   const [candidates, setCandidates] = useState<{ root: string | null; candidates: Candidate[]; truncated: boolean; warning: string | null } | null>(null);
   const [submission, setSubmission] = useState({ candidateDirectory: '', taskId: 'CACHE-02', idempotencyKey: '', reason: 'agent-completed', measure: false });
   const [submissionResult, setSubmissionResult] = useState('');
@@ -128,6 +150,12 @@ export function LaunchPanel({ tasks }: { tasks: Task[] }) {
   }, []);
 
   const headers = useMemo(() => ({ 'content-type': 'application/json', 'x-bench-token': token }), [token]);
+  /**
+   * 无请求体请求（DELETE）专用：**不能**带 content-type: application/json。
+   * Fastify 见到该头却收到空体会以 400 FST_ERR_CTP_EMPTY_JSON_BODY 拒绝，
+   * 清理请求根本到不了业务逻辑。
+   */
+  const authHeaders = useMemo(() => ({ 'x-bench-token': token }), [token]);
 
   // 仅在存在进行中的启动记录时轮询：已落定的记录不重复请求。
   useEffect(() => {
@@ -410,6 +438,30 @@ export function LaunchPanel({ tasks }: { tasks: Task[] }) {
               </>}
               {current.experiment.exists && shown === null && <p className="empty" role="status">实验目录已建立，正在读取逐条作答与进度…</p>}
             </>}
+            <h3>清理这条启动记录</h3>
+            <div className="cleanup-block">
+              <p>清理会把该次测评的账本、退出事实、日志与取消标记一并移进启动记录根下的 <code>.trash</code>，启动记录列表不再显示它；文件不会删除。运行中或状态未知的记录会被服务端拒绝——账本是对账依据，移走会让进程失管。</p>
+              <div className="token-bar">
+                <label htmlFor="launch-clean-token">运行令牌</label>
+                <input id="launch-clean-token" type="password" autoComplete="off" value={token} placeholder="x-bench-token" onChange={event => setToken(event.target.value)} />
+                <span>与上方发起测评共用同一个令牌。</span>
+              </div>
+              {pendingCleanup === current.launchId
+                ? <div className="warn broken" role="alert">
+                  <b>确认清理 {current.launchId}？</b>
+                  <p>该次测评的启动记录会整体移入回收目录。报告目录（data/experiments）不在此次清理范围内，对应条目请在「报告中心」单独清理。</p>
+                  <div className="report-actions">
+                    <button className="primary" onClick={() => void cleanLaunch(current.launchId)}>确认清理</button>
+                    <button className="secondary" onClick={() => setPendingCleanup(null)}>取消</button>
+                  </div>
+                </div>
+                : <div className="report-actions">
+                  <button className="secondary" disabled={current.merged.process === 'live' || current.merged.process === 'unknown'} onClick={() => { setCleanupResult(null); setPendingCleanup(current.launchId); }}>清理这条记录…</button>
+                  {cancelDisabledReason(false, current.merged.process)}
+                </div>}
+              {cleanupResult !== null && cleanupResult.launchId === current.launchId &&
+                <div className={cleanupResult.ok ? 'ok-note' : 'error'} role="status">{cleanupResult.message}</div>}
+            </div>
           </>}
         </article>
       </div>}

@@ -3,6 +3,7 @@ import {
   experimentDetailValidator, experimentListValidator,
   type ExperimentDetail, type ExperimentPhaseCounts, type ExperimentRow, type ExperimentSummary,
 } from '@fsa/contracts';
+import { useBenchToken } from './token.ts';
 
 const phaseLabels: Record<ExperimentRow['phase'], string> = {
   pending: '待作答', solving: '作答中', grading: '验证评分中', done: '已完成', 'solver-stopped': '作答中止', error: '出错',
@@ -92,6 +93,37 @@ function consistencyHints(detail: ExperimentDetail): string[] {
  */
 export function ReportCenter({ onCount }: { onCount?: (count: number) => void }) {
   const [experiments, setExperiments] = useState<ExperimentSummary[]>([]);
+  // 清理是破坏性操作（会移走报告目录），因此走「先确认、再执行」两步，不做单击即清。
+  const [pendingCleanup, setPendingCleanup] = useState<string | null>(null);
+  const [cleanupBusy, setCleanupBusy] = useState(false);
+  const [cleanupResult, setCleanupResult] = useState<{ reportId: string; message: string; ok: boolean } | null>(null);
+  const { token, setToken, authHeaders } = useBenchToken();
+
+  /**
+   * 清理一份报告：移到报告根的 .trash 下，可手动恢复。
+   * 成功与失败都必须看得见——失败时把服务端的原话显示出来，不吞掉原因。
+   */
+  async function cleanReport(reportId: string) {
+    setCleanupBusy(true);
+    try {
+      const response = await fetch('/api/reports/' + encodeURIComponent(reportId), { method: 'DELETE', headers: authHeaders() });
+      const value: unknown = await response.json().catch(() => null);
+      const detail = typeof value === 'object' && value !== null && 'error' in value ? String((value as { error: unknown }).error) : '';
+      if (!response.ok) {
+        setCleanupResult({ reportId, ok: false, message: response.status === 401 ? '令牌无效或已失效：' + (detail || '请检查运行令牌。') : '清理失败（' + response.status + '）：' + (detail || '服务端未给出原因。') });
+        return;
+      }
+      const moved = typeof value === 'object' && value !== null && 'moved' in value ? (value as { moved: string[] }).moved : [];
+      const trash = typeof value === 'object' && value !== null && 'trashPath' in value ? String((value as { trashPath: unknown }).trashPath) : '';
+      setCleanupResult({ reportId, ok: true, message: '已移入回收目录：' + trash + '（原条目 ' + moved.join('、') + '）。需要恢复就把里面的条目移回报告根。' });
+      setPendingCleanup(null);
+      loadedRef.current = '';
+      setDetail(null);
+      setRevision(current => current + 1);
+    } catch (cause) {
+      setCleanupResult({ reportId, ok: false, message: '清理失败：' + (cause instanceof Error ? cause.message : '网络错误。') });
+    } finally { setCleanupBusy(false); }
+  }
   const [selection, setSelection] = useState('');
   const [detail, setDetail] = useState<ExperimentDetail | null>(null);
   // 明细失败按 reportId 记录：切换选择时旧的失败原因不会串到另一份报告上。
@@ -169,6 +201,9 @@ export function ReportCenter({ onCount }: { onCount?: (count: number) => void })
       <select aria-label="报告状态" value={filter} onChange={event => setFilter(event.target.value as ReportFilter)}>{filterKeys.map(key => <option key={key} value={key}>{filterLabels[key]}</option>)}</select>
     </div>
     {error && <div className="error" role="alert">{error} <button onClick={() => setRevision(value => value + 1)}>重新加载</button></div>}
+    {/* 清理结论必须放在列表之外：被清理的报告会立刻从列表消失，明细区随之换成空状态，
+        若把结论渲染在明细区里，用户永远看不到自己刚做的事成功了没有。 */}
+    {cleanupResult !== null && <div className={cleanupResult.ok ? 'ok-note' : 'error'} role="status">{cleanupResult.message}</div>}
     {loading ? <div className="empty" role="status">正在加载实验报告…</div>
       : experiments.length === 0 ? <div className="empty"><h3>还没有实验报告</h3><p>运行 pnpm dsh:compare 产出实验目录后，报告会出现在这里。</p></div>
       : <div className="report-layout">
@@ -227,6 +262,28 @@ export function ReportCenter({ onCount }: { onCount?: (count: number) => void })
                   <a href={'/api/reports/' + encodeURIComponent(shown.reportId) + '/artifacts/' + id} download>{artifactLabels[id]} ↗</a>
                   <p>{id === 'evidence' ? shown.evidence === null ? '证据未归档（experiment.json 未登记 evidence）。' : shown.evidence.filename + ' · SHA-256 ' + shown.evidence.sha256.slice(0, 16) + '… · ' + shown.evidence.fileCount + ' 个文件' : artifactNotes[id]}</p>
                 </div>)}</div>
+                <h3>清理这份报告</h3>
+                <div className="cleanup-block">
+                  <p>清理会把报告目录移进报告根下的 <code>.trash</code>，列表立即不再显示它；文件不会删除，随时可以手动移回。清理后本页需要刷新才能看到变化。</p>
+                  <div className="token-bar">
+                    <label htmlFor="report-token">运行令牌</label>
+                    <input id="report-token" type="password" autoComplete="off" value={token} placeholder="x-bench-token" onChange={event => setToken(event.target.value)} />
+                    <span>清理属于写操作，必须提供有效令牌；与「发起测评」用的是同一个令牌。</span>
+                  </div>
+                  {pendingCleanup === shown.reportId
+                    ? <div className="warn broken" role="alert">
+                      <b>确认清理「{shown.id ?? shown.directoryName}」？</b>
+                      <p>该报告目录会整体移入回收目录。它包含 experiment.json、report.md 与证据压缩包；移走后本页与报告列表都不再显示它。</p>
+                      <div className="report-actions">
+                        <button className="primary" disabled={cleanupBusy} onClick={() => void cleanReport(shown.reportId)}>确认清理</button>
+                        <button className="secondary" disabled={cleanupBusy} onClick={() => setPendingCleanup(null)}>取消</button>
+                      </div>
+                    </div>
+                    : <div className="report-actions">
+                      <button className="secondary" disabled={cleanupBusy} onClick={() => { setCleanupResult(null); setPendingCleanup(shown.reportId); }}>清理这份报告…</button>
+                      <span>不会删除文件，只移入回收目录。</span>
+                    </div>}
+                </div>
                 <footer className="report-meta">实验 {shown.id ?? shown.directoryName} · 状态 {shown.state ?? '未登记'}<br />experiment.json · {shown.rows.length} 条记录 · {shown.progress.length} 条进度</footer>
               </>}
           </>}

@@ -1,10 +1,27 @@
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, realpathSync, rmdirSync, statSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import type { HumanReview, RunDetail, RunStatus, RunSubmission } from '@fsa/contracts';
 import { createEnvelope, createRunStore, defaultRunRoot, readRunEvents } from '@fsa/runs';
 import { completedExecutionDirectory, listRunStatuses, readExecutionResult, readExecutionScore, readRunStatus, renderRunReport, retryCompletedAttempt, reviewCompletedAttempt, verifySubmission, type QualityProvider } from '@fsa/executor';
 import { createQualityProvider } from '@fsa/evaluation';
+import { moveToTrash } from './cleanup.ts';
+
+/**
+ * 自下而上收掉已经空掉的目录（attempt 目录移走后会留下空的 runId/taskId 层）。
+ * 只用 rmdirSync：它拒绝删除非空目录，因此这里在结构上不可能删掉任何内容——
+ * 与仓库「不得递归删除」的约定一致，也不会穿过链接。
+ */
+function pruneEmptyRunDirectories(runRoot: string, relativePath: string): void {
+  const segments = relativePath.split(/[\\/]/).filter(Boolean);
+  for (let depth = segments.length; depth >= 1; depth -= 1) {
+    const directory = join(runRoot, ...segments.slice(0, depth));
+    try {
+      if (!existsSync(directory) || readdirSync(directory).length > 0) return;
+      rmdirSync(directory);
+    } catch { return; }
+  }
+}
 
 /**
  * 质量证据提供者工厂：每次操作按当时的有效配置构造，因此裁判/性能测量配置保存后立即生效。
@@ -53,6 +70,8 @@ export interface RunEntry {
   review(runId: string, attemptId: string, human?: HumanReview): Promise<RunStatus>;
   retry(runId: string, attemptId: string): Promise<RunStatus>;
   cancel(runId: string, attemptId: string): boolean;
+  /** 把一条运行记录移进回收目录；正在执行的 attempt 拒绝清理，索引同步丢弃该条目。 */
+  clean(runId: string, attemptId: string): { trashPath: string; moved: string[] };
   close(): Promise<void>;
 }
 
@@ -196,6 +215,23 @@ export function openRunEntry(options: RunEntryOptions = {}): RunEntry {
       if (!task) return false;
       task.controller.abort(new Error('操作者取消本次执行。'));
       return true;
+    },
+    clean(runId: string, attemptId: string) {
+      // 正在执行的 attempt 不能清：日志、事件与评分还在往这个目录里写。
+      if (active.has(`${runId}/${attemptId}`)) throw new Error('该运行正在执行或重评中，结束后才能清理。');
+      const outcome = store.readAttempt(runId, attemptId);
+      if (outcome === null) throw new Error(`未找到运行记录：${runId}/${attemptId}。`);
+      const taskId = outcome.attempt.taskId;
+      // attempt 目录位于 <runRoot>/<taskId>/<runId>/<attemptId>，所以要按相对路径逐层移动，
+      // 且移动后要把沿途空掉的目录收掉，否则列表里会留下一堆空壳。
+      const result = moveToTrash({
+        root: runRoot,
+        paths: [`${taskId}/${runId}/${attemptId}`],
+        reason: '运行记录清理',
+      });
+      store.forgetMissing();
+      pruneEmptyRunDirectories(runRoot, join(taskId, runId));
+      return result;
     },
     async close() {
       for (const task of active.values()) task.controller.abort(new Error('运行服务正在关闭。'));
