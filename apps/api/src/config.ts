@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 // apps/api 的 package.json 不在本阶段允许改动清单内，因此按仓库既有先例（apps/api/src/app.test.ts）直接相对导入包源码。
 import { EnvironmentFileConflictError, maskedConfigView, readProjectEnvironment, saveProjectEnvironment, secretKeyPattern, validateConfigPatch, type ConfigFieldError, type MaskedConfigEntry, type ProjectEnvironmentSnapshot } from '../../../packages/config/src/index.ts';
-import { discoverDshModels } from '@fsa/evaluation';
+import { discoverDshModels, discoverDshPresets } from '@fsa/evaluation';
 
 /** 仓库根：apps/api/src/config.ts 上溯三层，与 apps/api/src/reports.ts 的 defaultReportsRoot 同一基准。 */
 export const apiRepositoryRoot = fileURLToPath(new URL('../../../', import.meta.url));
@@ -104,6 +104,15 @@ export type ModelCatalogView = {
   readonly warning: string;
 };
 
+/**
+ * 预设目录视图：与模型目录同源，但只读本地声明式 YAML，不做任何进程级探测。
+ * 失败时保持空数组与可读原因，前端据此回退到内置预设。
+ */
+export type PresetCatalogView = {
+  readonly presets: ReturnType<typeof discoverDshPresets>['presets'];
+  readonly warning: string;
+};
+
 /** 校验失败：字段级错误由路由转成 400，绝不写入文件。 */
 export class ConfigValidationError extends Error {
   readonly errors: readonly ConfigFieldError[];
@@ -121,6 +130,8 @@ export interface ConfigProviderOptions {
   env?: NodeJS.ProcessEnv;
   /** 模型目录发现实现；缺省读取本地 DSH，不联网、不调用模型。 */
   discover?: typeof discoverDshModels;
+  /** 预设目录发现实现；缺省读取本地 DSH 安装的声明式 YAML，不启动 DSH、不联网。 */
+  discoverPresets?: typeof discoverDshPresets;
 }
 
 export interface ConfigProvider {
@@ -134,6 +145,8 @@ export interface ConfigProvider {
   plan(patch: Record<string, string | undefined>): ConfigPlan;
   save(patch: Record<string, string | undefined>): ConfigSaveResult;
   models(): Promise<ModelCatalogView>;
+  /** 本地 DSH 声明的 Agent 预设；同步只读，失败时返回空数组与原因，不抛异常。 */
+  presets(): PresetCatalogView;
 }
 
 /** 只保留 patch 中真实出现的键：undefined 表示「不设置」，与 readProjectEnvironment 的合并语义一致。 */
@@ -150,6 +163,7 @@ export function createConfigProvider(options: ConfigProviderOptions = {}): Confi
   const root = options.root ?? apiRepositoryRoot;
   const inherited = options.env ?? process.env;
   const discover = options.discover ?? discoverDshModels;
+  const discoverPresets = options.discoverPresets ?? discoverDshPresets;
   let state: ProjectEnvironmentSnapshot = readProjectEnvironment(root, inherited);
 
   const current = (): NodeJS.ProcessEnv => state.effectiveEnv;
@@ -218,17 +232,33 @@ export function createConfigProvider(options: ConfigProviderOptions = {}): Confi
     return { view: view(), changedKeys: plan(patch).changedKeys };
   };
 
-  const models = async (): Promise<ModelCatalogView> => {
+  /** 目录发现共用的本地路径：与 /api/health 之外的既有默认值一致。 */
+  const dshLocations = (): { dshRoot: string; dshHome: string; profile: string } => {
     const env = current();
-    const catalog = await discover({
+    return {
       dshRoot: resolve(env.BENCH_DSH_ROOT || join(homedir(), 'Documents', 'deepseek-harness')),
       dshHome: resolve(env.BENCH_DSH_HOME || env.DSH_HOME || join(homedir(), '.dsh')),
       profile: env.BENCH_DSH_PROFILE || 'sdk',
-    });
+    };
+  };
+
+  const models = async (): Promise<ModelCatalogView> => {
+    const { dshRoot, dshHome, profile } = dshLocations();
+    const catalog = await discover({ dshRoot, dshHome, profile });
     return { providers: catalog.providers, warning: catalog.warning ?? '目录来自本地 DSH 配置；列表不验证凭据、额度或远程可用性。' };
   };
 
-  return { current, snapshot: () => ({ ...current() }), view, validate, plan, save, models };
+  const presets = (): PresetCatalogView => {
+    // discoverDshPresets 自己吞掉所有失败并给出原因；这里再兜一层，保证路由永不因它 500。
+    try {
+      const catalog = discoverPresets({ dshRoot: dshLocations().dshRoot });
+      return { presets: catalog.presets, warning: catalog.warning ?? '预设来自本地 DSH 声明式 YAML；列表不验证该预设能否在本机装载。' };
+    } catch (error) {
+      return { presets: [], warning: '无法读取本地 DSH 预设目录：' + (error instanceof Error ? error.message : '未知原因') + '；请沿用内置的 standard、ptc、minimal、cordis。' };
+    }
+  };
+
+  return { current, snapshot: () => ({ ...current() }), view, validate, plan, save, models, presets };
 }
 
 // 冲突类型再从本模块导出一次：路由层只需要 apps/api/src/config.ts 这一个导入来源。

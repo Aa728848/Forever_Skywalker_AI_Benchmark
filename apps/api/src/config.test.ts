@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -153,6 +153,61 @@ describe('配置读取（掩码视图）', () => {
       const response = await app.inject('/api/config/models');
       expect(response.statusCode).toBe(200);
       const catalog = response.json();
+      expect(catalog.providers).toEqual([]);
+      expect(catalog.warning).toContain('手工填写');
+      // 同一路由的预设字段独立降级：DSH 缺失时给空数组与原因，而不是 500，也不影响既有字段。
+      expect(catalog.presets).toEqual([]);
+      expect(catalog.presetsWarning).toContain('内置的 standard、ptc、minimal、cordis');
+    } finally { await app.close(); }
+  }, 30_000);
+
+  it('预设目录来自本地 DSH 安装的声明式补丁层，按 order 排序并附带来源', async () => {
+    const root = projectRoot(baseEnvFile);
+    // 夹具：只写 checkDshInstallation 需要的包身份，再写 web-app 的预设补丁层。
+    const dshRoot = join(root, 'dsh');
+    const bundle = join(dshRoot, 'packages', 'bundle', 'web-app');
+    const write = (path: string, text: string) => { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, text); };
+    write(join(dshRoot, 'package.json'), JSON.stringify({ type: 'module' }));
+    write(join(dshRoot, 'packages', 'sdk', 'client', 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh-sdk-client', version: '0.1.7-rc.2' }));
+    write(join(dshRoot, 'apps', 'cli', 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh', version: '0.1.7-rc.2' }));
+    write(join(dshRoot, 'packages', 'sdk', 'client', 'lib', 'index.js'), 'export {};');
+    write(join(dshRoot, 'apps', 'cli', 'lib', 'bin.js'), 'export {};');
+    write(join(bundle, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh-web-app', dsh: { bundle: { patch: ['./presets/ptc.patch.yml', './presets/standard.patch.yml'] } } }));
+    const preset = (id: string, order: number) => [
+      '- insert:',
+      '    - id: preset-' + id,
+      "      name: '@deepseek-ai/dsh-agent-preset'",
+      '      config:',
+      '        id: ' + id,
+      '        order: ' + order,
+      '        plugins: []',
+      '',
+    ].join('\n');
+    write(join(bundle, 'presets', 'standard.patch.yml'), preset('standard', 1));
+    write(join(bundle, 'presets', 'ptc.patch.yml'), preset('ptc', 2));
+    const app = buildApp(':memory:', { configRoot: root, configEnv: { BENCH_DSH_ROOT: dshRoot, BENCH_DSH_HOME: join(root, 'home'), BENCH_DSH_PROFILE: 'sdk' } });
+    try {
+      const response = await app.inject('/api/config/models');
+      expect(response.statusCode).toBe(200);
+      const catalog = response.json();
+      expect(catalog.presets.map((item: { id: string; order: number }) => [item.id, item.order])).toEqual([['standard', 1], ['ptc', 2]]);
+      expect(catalog.presets[0].source).toEqual({ kind: 'bundle', file: join('packages', 'bundle', 'web-app', 'presets', 'standard.patch.yml') });
+      // 响应里不出现绝对安装路径，也不因预设可用而丢掉既有的 models 字段。
+      expect(JSON.stringify(catalog)).not.toContain(dshRoot.replace(/\\/g, '\\\\'));
+      expect(Array.isArray(catalog.providers)).toBe(true);
+      expect(typeof catalog.warning).toBe('string');
+    } finally { await app.close(); }
+  }, 30_000);
+
+  it('预设探测实现抛错时只清空预设字段并给出原因，路由仍返回既有字段', async () => {
+    const root = projectRoot(baseEnvFile);
+    const app = buildApp(':memory:', { configRoot: root, configEnv: { BENCH_DSH_ROOT: join(root, 'missing-dsh'), BENCH_DSH_HOME: join(root, 'missing-home') }, configPresetDiscover: () => { throw new Error('探测夹具故障'); } });
+    try {
+      const response = await app.inject('/api/config/models');
+      expect(response.statusCode).toBe(200);
+      const catalog = response.json();
+      expect(catalog.presets).toEqual([]);
+      expect(catalog.presetsWarning).toContain('探测夹具故障');
       expect(catalog.providers).toEqual([]);
       expect(catalog.warning).toContain('手工填写');
     } finally { await app.close(); }

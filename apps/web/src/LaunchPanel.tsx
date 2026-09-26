@@ -15,7 +15,10 @@ import { experimentDetailValidator, experimentListValidator, type ExperimentDeta
 /** 与 ConfigPanel 共用同一个浏览器本地键：两处写入的都是 x-bench-token。 */
 const tokenStorageKey = 'fsa.bench-token';
 
-const presetLabels = [['standard', '标准'], ['ptc', 'PTC'], ['minimal', '极简'], ['cordis', '创造']] as const;
+/** 探测不到本地 DSH 预设时的回退清单（离线、未装 DSH 时页面仍然可用）。 */
+const fallbackPresets = [['standard', '标准'], ['ptc', 'PTC'], ['minimal', '极简'], ['cordis', '创造']] as const;
+/** 内置标签只按 id 兜底展示；探测到的预设不带展示名时用它，未知 id 直接显示 id。 */
+const presetLabels: Record<string, string> = Object.fromEntries(fallbackPresets);
 const defaultModes = ['default', 'off', 'low', 'medium', 'high', 'max'];
 const difficultyLabels: Record<string, string> = { easy: '简单', medium: '中等', hard: '困难', extreme: '极度困难' };
 const reasonOptions = [['agent-completed', '外部 Agent 已完成'], ['operator-submit', '操作者提交'], ['patch-import', '补丁导入']] as const;
@@ -47,7 +50,8 @@ interface CancelOutcome { action: string; confirmedExit: boolean; text: string; 
 interface Candidate { name: string; directory: string; files: number; modifiedAt: string }
 interface CatalogModel { id: string; name: string; reasoningEfforts: string[] }
 interface CatalogProvider { id: string; name: string; models: CatalogModel[] }
-interface Catalog { providers: CatalogProvider[]; warning: string }
+interface CatalogPreset { id: string; name: string | null; order: number; source: { kind: string; file: string } }
+interface Catalog { providers: CatalogProvider[]; warning: string; presets?: CatalogPreset[]; presetsWarning?: string }
 
 interface LaunchForm {
   scope: 'one' | 'all' | 'core' | 'difficulty' | 'manual';
@@ -178,6 +182,13 @@ export function LaunchPanel({ tasks }: { tasks: Task[] }) {
   }, [currentId, revision, current?.experiment.exists, current?.experimentId]);
 
   const providers = catalog?.providers ?? [];
+  // 探测到的预设优先；顺序由服务端按声明顺序给出，展示名缺失时回退到内置中文标签。
+  const presetOptions = (catalog?.presets ?? []).map(preset => ({ id: preset.id, label: preset.name ?? presetLabels[preset.id] ?? preset.id }));
+  const presetsUsable = presetOptions.length > 0;
+  const presetChoices = presetsUsable ? presetOptions : fallbackPresets.map(([id, label]) => ({ id, label }));
+  const presetHint = presetsUsable
+    ? catalog?.presetsWarning
+    : (catalog === null ? '正在探测本地 DSH 预设…' : (catalog.presetsWarning ?? '未探测到本地 DSH 预设，已回退到内置的 standard、ptc、minimal、cordis。'));
   const models = providers.find(item => item.id === form.provider)?.models ?? [];
   const selectable = tasks.filter(task => task.status !== 'designed');
   const taskCount = form.scope === 'one' ? 1
@@ -301,7 +312,8 @@ export function LaunchPanel({ tasks }: { tasks: Task[] }) {
       </div>
       <div className="launch-field">
         <span className="launch-label">DSH 预设</span>
-        <div className="launch-checklist">{presetLabels.map(([value, label]) => <label key={value}><input type="checkbox" checked={form.presets.includes(value)} onChange={() => toggle('presets', value)} /> {label}</label>)}</div>
+        <div className="launch-checklist">{presetChoices.map(option => <label key={option.id}><input type="checkbox" checked={form.presets.includes(option.id)} onChange={() => toggle('presets', option.id)} /> {option.label}{option.label === option.id ? '' : '（' + option.id + '）'}</label>)}</div>
+        {presetHint && <small>{presetHint}</small>}
         <span className="launch-label">思考等级</span>
         <div className="launch-checklist">{[...new Set([...defaultModes, ...(models.find(item => item.id === form.model)?.reasoningEfforts ?? [])])].map(value =>
           <label key={value}><input type="checkbox" checked={form.modes.includes(value)} onChange={() => toggle('modes', value)} /> {value}</label>)}</div>

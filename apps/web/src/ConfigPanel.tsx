@@ -20,13 +20,16 @@ interface ConfigView {
 }
 interface CatalogModel { id: string; name: string; reasoningEfforts: string[] }
 interface CatalogProvider { id: string; name: string; models: CatalogModel[] }
-interface Catalog { providers: CatalogProvider[]; warning: string }
+interface CatalogPreset { id: string; name: string | null; order: number; source: { kind: string; file: string } }
+interface Catalog { providers: CatalogProvider[]; warning: string; presets?: CatalogPreset[]; presetsWarning?: string }
 interface PlanField { field: string; value: string }
 interface PlanSecret { field: string; text: string }
 interface PendingPlan { fields: PlanField[]; secrets: PlanSecret[] }
 
 const manualChoice = '__manual__';
-const presets = [['standard', '标准'], ['ptc', 'PTC'], ['minimal', '极简'], ['cordis', '创造']] as const;
+/** 探测不到本地 DSH 预设时的回退清单（离线、未装 DSH 时页面仍然可用）。 */
+const fallbackPresets = [['standard', '标准'], ['ptc', 'PTC'], ['minimal', '极简'], ['cordis', '创造']] as const;
+const presetLabels: Record<string, string> = Object.fromEntries(fallbackPresets);
 const permissions = [
   ['read-only', '只读（禁止修改工作区）'],
   ['workspace-write', '工作区可写（仅当前题目目录）'],
@@ -128,6 +131,9 @@ export function ConfigPanel() {
   const edit = (key: string, value: string): void => { setEdits(current => ({ ...current, [key]: value })); setFieldErrors(current => { const { [key]: _removed, ...rest } = current; void _removed; return rest; }); setNotice(''); };
 
   const providers = useMemo(() => catalog?.providers ?? [], [catalog]);
+  // 预设来自本地 DSH 探测；探测不到时回退到内置清单，页面保持可用。
+  const presetCatalog = useMemo(() => (catalog?.presets ?? []).map(preset => ({ id: preset.id, label: preset.name ?? presetLabels[preset.id] ?? preset.id })), [catalog]);
+  const presetOptions = presetCatalog.length > 0 ? presetCatalog : fallbackPresets.map(([id, label]) => ({ id, label }));
   const providerById = (id: string | undefined): CatalogProvider | undefined => providers.find(provider => provider.id === id);
 
   /** 保存：先取待写清单（密钥只显示「已填写」），确认后再真正写入。 */
@@ -187,13 +193,13 @@ export function ConfigPanel() {
     const options: string[] = spec.kind === 'provider' ? providers.map(item => item.id)
       : spec.kind === 'model' ? (provider?.models ?? []).map(item => item.id)
       : spec.kind === 'effort' ? [...new Set(['default', ...(model?.reasoningEfforts ?? [])])]
-      : spec.kind === 'preset' ? presets.map(([id]) => id)
+      : spec.kind === 'preset' ? presetOptions.map(option => option.id)
       : spec.kind === 'permission' ? permissions.map(([id]) => id)
       : [];
     const labelOf = (id: string): string => {
       if (spec.kind === 'provider') return providers.find(item => item.id === id)?.name ?? id;
       if (spec.kind === 'model') return provider?.models.find(item => item.id === id)?.name ?? id;
-      if (spec.kind === 'preset') return presets.find(([value]) => value === id)?.[1] ?? id;
+      if (spec.kind === 'preset') return presetOptions.find(option => option.id === id)?.label ?? id;
       if (spec.kind === 'permission') return permissions.find(([value]) => value === id)?.[1] ?? id;
       return id;
     };
@@ -253,6 +259,9 @@ export function ConfigPanel() {
     {notice && <div className="notice" role="status"><b>已保存</b><span>{notice}</span></div>}
     {loading ? <div className="empty" role="status">正在读取配置…</div> : !view ? <div className="empty">配置不可用。</div> : <>
       {catalog?.warning !== undefined && <p className="field-hint">{catalog.warning}</p>}
+      {catalog !== null && <p className="field-hint">预设：{presetCatalog.length > 0
+        ? (catalog.presetsWarning ?? '预设来自本地 DSH 声明式 YAML；列表不验证该预设能否在本机装载。')
+        : '未探测到本地 DSH 预设，已回退到内置的 standard、ptc、minimal、cordis。'}</p>}
       <div className="config-grid">{groups.map(group => <article className="detail config-group" key={group.title}>
         <h3>{group.title}</h3><p>{group.caption}</p>
         {group.fields.map(renderField)}

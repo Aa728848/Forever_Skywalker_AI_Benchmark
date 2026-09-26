@@ -12,7 +12,7 @@ import { measureVerificationCost } from './benchmark.ts';
 import { createDshJudgeFromEnvironment } from './dsh-judge.ts';
 import { DshCleanupError } from './dsh.ts';
 export { createDshJudgeFromEnvironment, dshJudgeOptionsFromEnvironment } from './dsh-judge.ts';
-export { discoverDshModels, profilePluginSpecifiers } from './dsh-catalog.ts';
+export { discoverDshModels, discoverDshPresets, profilePluginSpecifiers } from './dsh-catalog.ts';
 export { dshPresetLabels, dshWorkspacePermissionLabels, resolveDshPreset, resolveDshWorkspacePermission } from './dsh.ts';
 export { inspectRunSelection, summarizeRuns } from './suite.ts';
 

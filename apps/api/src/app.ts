@@ -6,7 +6,7 @@ import { AssessmentSchema, HumanReviewSchema, RunSelectionSchema, RunSubmissionS
 import { AttemptExistsError, IdempotencyConflictError } from '@fsa/runs';
 
 import { createRunStore, defaultRunRoot } from '@fsa/runs';
-import { createQualityProvider, dshJudgeOptionsFromEnvironment, summarizeRuns } from '@fsa/evaluation';
+import { createQualityProvider, discoverDshPresets, dshJudgeOptionsFromEnvironment, summarizeRuns } from '@fsa/evaluation';
 import { probeContainerRuntime, requirePinnedImage } from '@fsa/executor';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { scoreAssessment } from '@fsa/core';
@@ -28,6 +28,8 @@ export interface AppOptions {
   configRoot?: string;
   /** 配置的继承环境；缺省 process.env。测试注入以构造「被 OS 环境变量遮蔽」的场景。 */
   configEnv?: NodeJS.ProcessEnv;
+  /** 预设目录发现实现；测试注入以覆盖「探测实现抛错」的降级路径，缺省读本地 DSH。 */
+  configPresetDiscover?: typeof discoverDshPresets;
   /** 启动记录目录（<仓库根>/data/launches）；测试指向系统临时目录。 */
   launchesRoot?: string;
   /** supervisor 脚本路径；测试注入假脚本，绝不调用真实模型。 */
@@ -55,7 +57,10 @@ export interface AppOptions {
 
 export function buildApp(databasePath = ':memory:', options: AppOptions = {}) {
   // 配置提供者：启动时读取一次 .env，之后每次保存成功后重算，因此改配置无需重启。
-  const config = createConfigProvider({ root: options.configRoot ?? apiRepositoryRoot, env: options.configEnv ?? process.env });
+  const config = createConfigProvider({
+    root: options.configRoot ?? apiRepositoryRoot, env: options.configEnv ?? process.env,
+    ...(options.configPresetDiscover === undefined ? {} : { discoverPresets: options.configPresetDiscover }),
+  });
   // runRoot 保持启动时固定：它决定既有 run 记录的物理位置，随配置改动会让历史记录消失。
   // 空白值按未配置处理（与改动前的 process.env.BENCH_RUN_DIR || defaultRunRoot 语义一致）。
   const configuredRunDir = config.current().BENCH_RUN_DIR;
@@ -156,12 +161,18 @@ export function buildApp(databasePath = ':memory:', options: AppOptions = {}) {
   // GET 只读不要求令牌；写操作一律要求 x-bench-token（复用 authorized）。
   app.get('/api/config', () => config.view());
   app.get('/api/config/models', async () => {
+    // 预设目录与模型目录同源但相互独立：任一方失败都只影响自己的字段，不让整条路由 500。
+    let presets: ReturnType<typeof config.presets>;
+    try { presets = config.presets(); }
+    catch (error) {
+      presets = { presets: [], warning: '无法读取本地 DSH 预设目录：' + (error instanceof Error ? error.message : '未知原因') + '；请沿用内置的 standard、ptc、minimal、cordis。' };
+    }
     try {
       const catalog = await config.models();
-      return { providers: catalog.providers, warning: catalog.warning };
+      return { providers: catalog.providers, warning: catalog.warning, presets: presets.presets, presetsWarning: presets.warning };
     } catch (error) {
       // 目录发现失败返回空目录与原因，而不是 500：前端保留手工输入入口。
-      return { providers: [], warning: '无法读取本地 DSH 模型目录：' + (error instanceof Error ? error.message : '未知原因') + '；请手工填写供应商 ID 和模型 ID。' };
+      return { providers: [], warning: '无法读取本地 DSH 模型目录：' + (error instanceof Error ? error.message : '未知原因') + '；请手工填写供应商 ID 和模型 ID。', presets: presets.presets, presetsWarning: presets.warning };
     }
   });
   app.post<{ Body: { patch?: unknown; confirm?: unknown } }>('/api/config', (request, reply) => {

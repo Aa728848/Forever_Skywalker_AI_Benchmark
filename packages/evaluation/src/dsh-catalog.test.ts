@@ -1,10 +1,10 @@
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createServer } from 'node:http';
-import { afterEach, beforeEach, expect, it } from 'vitest';
-import { discoverDshModels, profilePluginSpecifiers } from './dsh-catalog.ts';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { discoverDshModels, discoverDshPresets, profilePluginSpecifiers } from './dsh-catalog.ts';
 
 let scratch: string;
 let dshRoot: string;
@@ -12,6 +12,35 @@ let dshHome: string;
 
 function write(path: string, value: string) {
   const target = join(dshRoot, path); mkdirSync(dirname(target), { recursive: true }); writeFileSync(target, value);
+}
+
+/** 预设探测夹具：在安装目录内写一个 web-app bundle 补丁层。 */
+function writeBundleManifest(patches: string[]) {
+  write('packages/bundle/web-app/package.json', JSON.stringify({ name: '@deepseek-ai/dsh-web-app', version: '0.1.7-rc.2', dsh: { bundle: { patch: patches } } }));
+}
+
+function writePresetFile(name: string, text: string) {
+  write('packages/bundle/web-app/presets/' + name, text);
+}
+
+/** 复刻 DSH 的声明写法：一条 insert 行，config 里带 id/order 与一个 plugins 入口列表。 */
+function presetYaml(id: string, order: number, extra: string[] = []) {
+  return [
+    '# Agent preset ' + id,
+    '- insert:',
+    '    - id: preset-' + id,
+    "      name: '@deepseek-ai/dsh-agent-preset'",
+    '      config:',
+    '        id: ' + id,
+    '        order: ' + order,
+    ...extra,
+    '        plugins:',
+    '          - id: persona',
+    "            name: '@deepseek-ai/dsh-persona'",
+    '            config:',
+    '              suffix: Your working directory is {{cwd}}.',
+    '',
+  ].join('\n');
 }
 
 function writeProfile(name: string, bundles: string[]) {
@@ -27,15 +56,15 @@ beforeEach(() => {
   write('apps/cli/package.json', JSON.stringify({ name: '@deepseek-ai/dsh', version: '0.1.5' }));
   write('packages/sdk/client/lib/index.js', 'throw new Error("SDK must not start");');
   write('apps/cli/lib/bin.js', 'throw new Error("CLI must not start");');
-  write('packages/settings/settings-file/node_modules/@deepseek-ai/cordis/package.json', JSON.stringify({ type: 'module', exports: './index.js' }));
-  write('packages/settings/settings-file/node_modules/@deepseek-ai/cordis/index.js', `export class Context {
+  write('packages/settings/settings/node_modules/@deepseek-ai/cordis/package.json', JSON.stringify({ type: 'module', exports: './index.js' }));
+  write('packages/settings/settings/node_modules/@deepseek-ai/cordis/index.js', `export class Context {
     fiber={dispose:async()=>{}};
     services={};
     provide(name,value){this.services[name]=value;}
     get(name){return this.services[name];}
     async plugin(plugin,config){if(typeof plugin==='function')new plugin(this,config);else await plugin.apply(this,config);}
   }`);
-  write('packages/settings/settings-file/lib/index.js', `import {readFileSync} from 'node:fs';
+  write('packages/settings/settings/lib/index.js', `import {readFileSync} from 'node:fs';
     export class FileSettingsProvider {constructor(ctx,config){if(config.watch!==false)throw new Error('watch must be disabled');ctx.settings=JSON.parse(readFileSync(config.path,'utf8'));}}
   `);
   write('packages/llm/llm/lib/index.js', `export class LlmRuntime {
@@ -188,3 +217,131 @@ it('目录模块不结算时12秒内终止子进程并回收临时目录', async
   expect(result.providers).toEqual([]); expect(result.warning).toContain('手工填写');
   expect(readdirSync(tmpdir()).filter(name => name.startsWith('fsa-dsh-catalog-') && !existing.has(name))).toEqual([]);
 }, 15_000);
+
+describe('本地 DSH 预设枚举', () => {
+  it('按声明顺序列出补丁层里的预设，并只回传相对安装目录的来源', () => {
+    writeBundleManifest(['./cordis.patch.yml', './presets/standard.patch.yml', './presets/ptc.patch.yml', './presets/minimal.patch.yml', './presets/cordis.patch.yml']);
+    writePresetFile('standard.patch.yml', presetYaml('standard', 1));
+    writePresetFile('ptc.patch.yml', presetYaml('ptc', 2));
+    writePresetFile('minimal.patch.yml', presetYaml('minimal', 3));
+    writePresetFile('cordis.patch.yml', presetYaml('cordis', 4, ['        name: Cordis']));
+    const result = discoverDshPresets({ dshRoot });
+    expect(result.presets.map(preset => [preset.id, preset.order])).toEqual([['standard', 1], ['ptc', 2], ['minimal', 3], ['cordis', 4]]);
+    expect(result.presets[3]!.name).toBe('Cordis');
+    expect(result.presets[0]!.source).toEqual({ kind: 'bundle', file: join('packages', 'bundle', 'web-app', 'presets', 'standard.patch.yml') });
+    // 来源是相对路径：绝对安装路径不进入目录协议。
+    expect(JSON.stringify(result)).not.toContain(resolve(dshRoot));
+    expect(result.warning).toContain('不启动 DSH');
+  });
+
+  it('同一 id 的重复声明只保留清单里先出现的文件，最终列表仍按声明 order 排序', () => {
+    writeBundleManifest(['./presets/ptc.patch.yml', './presets/standard.patch.yml']);
+    writePresetFile('standard.patch.yml', presetYaml('standard', 9));
+    writePresetFile('ptc.patch.yml', presetYaml('ptc', 2) + presetYaml('standard', 1));
+    const result = discoverDshPresets({ dshRoot });
+    // 先出现的文件（ptc.patch.yml）对 standard 的声明胜出，因此 order 是 1 而不是 9；列表按 order 排序。
+    expect(result.presets.map(preset => [preset.id, preset.order])).toEqual([['standard', 1], ['ptc', 2]]);
+    expect(result.presets[0]!.source.file).toContain('ptc.patch.yml');
+  });
+
+  it('目录里多余的补丁文件即使不在清单中也按文件名补上', () => {
+    writeBundleManifest(['./cordis.patch.yml']);
+    writePresetFile('standard.patch.yml', presetYaml('standard', 1));
+    const result = discoverDshPresets({ dshRoot });
+    expect(result.presets.map(preset => preset.id)).toEqual(['standard']);
+  });
+
+  it('目录不存在或没有声明式补丁层时返回空列表与原因，而不是抛异常', () => {
+    const missing = discoverDshPresets({ dshRoot: join(scratch, 'missing-dsh') });
+    expect(missing.presets).toEqual([]);
+    expect(missing.warning).toContain('内置的 standard、ptc、minimal、cordis');
+
+    writeBundleManifest(['./cordis.patch.yml']);
+    const none = discoverDshPresets({ dshRoot });
+    expect(none.presets).toEqual([]);
+    expect(none.warning).toContain('没有声明式预设补丁层');
+  });
+
+  it('坏 YAML 只跳过该文件并记一条可读原因，其余预设照常列出', () => {
+    writeBundleManifest(['./presets/broken.patch.yml', './presets/standard.patch.yml']);
+    writePresetFile('standard.patch.yml', presetYaml('standard', 1));
+    writePresetFile('broken.patch.yml', '- insert:\n  - id: preset-broken\n    name: "unclosed\n');
+    const result = discoverDshPresets({ dshRoot });
+    expect(result.presets.map(preset => preset.id)).toEqual(['standard']);
+    expect(result.warning).toContain('broken.patch.yml');
+    expect(result.warning).toContain('有 1 个文件未能解析');
+  });
+
+  it('全部文件都坏时返回空列表与解析原因', () => {
+    writeBundleManifest(['./presets/broken.patch.yml']);
+    writePresetFile('broken.patch.yml', 'id: standard\nconfig:\n  order: 1\n');
+    const mapping = discoverDshPresets({ dshRoot });
+    expect(mapping.presets).toEqual([]);
+    expect(mapping.warning).toContain('顶层不是补丁数组');
+
+    writePresetFile('broken.patch.yml', '不是 YAML 数组\n');
+    const garbage = discoverDshPresets({ dshRoot });
+    expect(garbage.presets).toEqual([]);
+    expect(garbage.warning).toContain('未能从本地 DSH 安装读出预设');
+  });
+
+  it('声明结构不完整（缺 config.id、缺 config、name 不是预设插件）时不编造预设', () => {
+    writeBundleManifest(['./presets/mixed.patch.yml']);
+    writePresetFile('mixed.patch.yml', [
+      '- insert:',
+      '    - id: preset-no-config',
+      "      name: '@deepseek-ai/dsh-agent-preset'",
+      '    - id: preset-no-id',
+      "      name: '@deepseek-ai/dsh-agent-preset'",
+      '      config:',
+      '        order: 7',
+      '    - id: other-row',
+      "      name: '@deepseek-ai/dsh-other-plugin'",
+      '      config:',
+      '        id: standard',
+      '        order: 1',
+      '    - id: preset-good',
+      "      name: '@deepseek-ai/dsh-agent-preset'",
+      '      config:',
+      '        id: good',
+      '        order: 5',
+      '        plugins: []',
+      '',
+    ].join('\n'));
+    const result = discoverDshPresets({ dshRoot });
+    expect(result.presets.map(preset => [preset.id, preset.order])).toEqual([['good', 5]]);
+  });
+
+  it('越界的补丁路径（含符号链接目标）一律不读', () => {
+    const outside = join(scratch, 'outside');
+    mkdirSync(outside, { recursive: true });
+    writeFileSync(join(outside, 'escaped.patch.yml'), presetYaml('escaped', 1));
+    writeBundleManifest(['../../outside/escaped.patch.yml']);
+    const escaped = discoverDshPresets({ dshRoot });
+    expect(escaped.presets).toEqual([]);
+    expect(JSON.stringify(escaped)).not.toContain('escaped');
+
+    // 安装目录内的链接指向越界文件时同样跳过。
+    const link = join(dshRoot, 'packages', 'bundle', 'web-app', 'presets', 'linked.patch.yml');
+    writeBundleManifest([]);
+    try {
+      symlinkSync(join(outside, 'escaped.patch.yml'), link, 'file');
+    } catch { return; }
+    const linked = discoverDshPresets({ dshRoot });
+    expect(linked.presets.map(preset => preset.id)).not.toContain('escaped');
+  });
+
+  it('预设探测不启动 CLI/profile，也不读取任何凭据文件', () => {
+    writeBundleManifest(['./presets/standard.patch.yml']);
+    writePresetFile('standard.patch.yml', presetYaml('standard', 1));
+    // applications 目录里的可执行文件会在被启动时抛错；凭据文件被改动即可察觉。
+    write('apps/cli/lib/bin.js', 'throw new Error("CLI must not start");');
+    const credentials = join(dshHome, '.credentials.yaml');
+    writeFileSync(credentials, 'private-test-value');
+    const result = discoverDshPresets({ dshRoot });
+    expect(result.presets.map(preset => preset.id)).toEqual(['standard']);
+    expect(readFileSync(credentials, 'utf8')).toBe('private-test-value');
+    expect(JSON.stringify(result)).not.toContain('private-test-value');
+  });
+});
+

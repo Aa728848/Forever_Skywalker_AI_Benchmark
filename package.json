@@ -10,6 +10,8 @@
   "scripts": {
     "start": "node --env-file-if-exists=.env --import tsx scripts/start.ts",
     "dev": "pnpm --parallel --filter @fsa/api --filter @fsa/web dev",
+    "start:web": "pnpm run start:web:check && pnpm dev",
+    "start:web:check": "node --env-file-if-exists=.env --import tsx --input-type=module -e \"import{missingGroups as g,readProjectEnvironment as r}from'./packages/config/src/index.ts';const s=r(process.cwd(),process.env);const hints=[];if(s.text===null)hints.push('尚未创建项目 .env');if(!(s.effectiveEnv.BENCH_RUN_TOKEN||'').trim())hints.push('BENCH_RUN_TOKEN 未配置或为空');const groups=g(s.effectiveEnv);if(groups.length)hints.push('尚未完成的配置组：'+groups.join('、'));if(hints.length){console.error('[环境未就绪] '+hints.join('；')+'。请先运行 pnpm start 补齐环境配置，再运行本命令。本命令不会自动修改 .env，也不会进入启动向导。');process.exit(2);}console.log('环境检查通过：.env 与关键配置齐备。');\"",
     "bench": "node --env-file-if-exists=.env --import tsx apps/cli/src/main.ts",
     "dsh:compare": "node --env-file-if-exists=.env --import tsx scripts/dsh-compare.ts",
     "typecheck": "tsc --noEmit",
