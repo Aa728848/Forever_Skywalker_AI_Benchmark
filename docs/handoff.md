@@ -1,5 +1,15 @@
 # 开发交接与执行手册
 
+## 2026-09-26 网页成为完整操作入口：报告中心、配置面板与受控发起测评
+
+网页新增三个页签（共六个：题目目录、评分预览、运行记录、报告中心、发起测评、配置）。**报告中心**只读列出报告根下一层的实验报告，展开逐条作答阶段、阶段统计、进度日志与清理状态，并可下载 `report.md`/`experiment.json`/`evidence.json.gz`；损坏报告仍列出并写明原因，不会被静默跳过。**配置面板**分「作答 / 裁判 / 目录与预算」三组写入项目 `.env`，保存分两步（先看待写清单、确认后才落盘），密钥字段永不回显，保存后本进程立即按新值工作、**无需重启 API**；`BENCH_RUN_DIR` 与 `BENCH_DSH_ROOT/HOME/PROFILE`、`BENCH_IMAGE`、`BENCH_IMAGE_DIGEST`、`BENCH_PROFILE` 只读并给出原因，写入路径也真的拒绝。**发起测评**默认「仅预检」（`check: true`，不调用模型），真实作答需二次确认并显示计划总作答次数。
+
+实验子进程不被 API 持有：链路是 `API --spawn(detached)--> scripts/experiment-supervisor.ts --spawn--> scripts/dsh-compare.ts`。supervisor 做自登记握手、子进程执行前的令牌与租约授权屏障、5 秒心跳（租约 30 秒）、持有并终止整棵进程树、子进程退出时原子写退出事实、代理取消。展示语义由纯函数 `mergeState(experimentState, recordState, exitFact, cleanupState)` 唯一决定：四个事实互相独立，无退出事实且租约过期时报 `unknown`（不推断为失败），清理只认 `experiment.json` 的明写值，`pending` 一律「清理未知，可能残留」。sweeper 每 10 秒对账一次并在 API 启动时先跑一次；`GET /api/experiments` 是纯读，不写账本。
+
+`.env` 读写迁到新包 `packages/config`（`@fsa/config`），`packages/evaluation` 新增 DSH 模型目录与预设/权限标签导出。本轮 `pnpm check` 通过 332 项测试（27 个测试文件）及严格类型、目录一致与生产构建；`pnpm test:e2e` 7 项通过（含 config-panel 3 项、report-center 2 项）。实测确认仓库根 `.env` 全程未被创建、`GET /api/config` 响应不含任何密钥值、无令牌 `POST /api/config` 返回 401。
+
+已知限制如实记录：Windows 上取进程启动时间依赖 PowerShell `Get-CimInstance`，负载高时可能超时，此时归属降级为 `unconfirmed`（取消路径另有「心跳仍在租约内」作为独立证据）；Windows 上几乎不会报「已确认无残留」，`taskkill /t` 之后无法排除脱离进程组的后代，因此刻意保守报 `unknown`；未先配好 `BENCH_DSH_ROOT/HOME` 时网页改不了 `BENCH_JUDGE_*` 字段（`validateConfigPatch` 会退回不认 `BENCH_JUDGE_DSH_*` 的 HTTP 裁判校验，返回 400），真实部署先跑 `pnpm start` 的正常路径不受影响；报告中心目前只扫描单个报告根，多报告根登记与跨根历史保留属后续阶段；真实模型端的端到端取消未验证（需要真实额度），测试全程使用假脚本。详见 [网页操作入口 Note](notes/implemented/feature/2026-09-26-web-config-and-launch.md) 与 [报告中心 Note](notes/implemented/feature/2026-09-26-experiment-report-api.md)。
+
 ## 2026-09-16 订阅渠道进入 DSH 模型目录
 
 DSH 模型目录发现现在按 BENCH_DSH_PROFILE 读取该 profile 的 dsh.profile.bundles，把 DSH 安装目录之外的本地插件包（订阅渠道）装进目录子进程再枚举 provider/model，因此 ChatGPT 订阅、Command Code、Kimi Code 等会出现在启动向导与 pnpm bench judge-setup 的供应商列表里；插件装载失败只丢该插件的路由并提示手工填写，不影响其余目录。查询仍然禁网、禁子进程、禁读 .credentials*/.env*，文件写入被收窄到本次查询的临时 DSH home（插件把凭据物化在 $DSH_HOME 下），真实 home 只读并在查询后整体回收。未初始化或非法的 profile 名直接返回手工输入提示。
@@ -114,7 +124,7 @@ DSH目录读取调用已安装DeepSeek/Pi-ai适配器的本地接口，返回pro
 | 来源集成 | 7/7 固定提交模块集成；来源许可/哈希、Windows与Linux三种实现验收通过 | 发布校准 |
 | 完成/执行 | CLI/API 完成、冻结、执行、评分、回收与修订；Linux真实边界5项通过 | 真实模型作答与独立裁判验收 |
 | 质量评分 | TS/Python/F# 静态事实；真实性能配对；两轮独立 DSH 评分 Agent、预算、证据、人工复核 | 用户配置 BENCH_JUDGE_DSH_*；真实评分 Agent 和静态/性能阈值校准 |
-| 中文面板 | 目录、run/attempt 检查与时间线、证据下载、四级汇总、集成题单列 | 随改动运行端到端测试 |
+| 中文面板 | 六个页签：目录、评分预览、run/attempt 检查与时间线、报告中心（实验列表/明细/四产物下载）、配置面板（.env 掩码读写、保存即时生效）、发起测评（仅预检默认 + supervisor 托管 + 取消） | 随改动运行端到端测试；真实模型端的取消尚未验证 |
 | Linux | Engine29.7.2/Linux、固定镜像四运行时、5项边界、55题三种实现及性能链均通过 | 固定环境上的发布校准 |
 
 fixture-ready 不等于 ready。缺客观或评审证据时总分保持 null；本机为 local，未满足发布门槛的容器结果为 rehearsal；脚本演练不是模型成绩。

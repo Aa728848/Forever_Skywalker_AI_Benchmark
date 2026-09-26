@@ -29,6 +29,13 @@ flowchart LR
   CLI --> Executor
   API --> Evaluation[证据组合]
   CLI --> Evaluation
+  API --> Config["配置（@fsa/config）"]
+  CLI --> Config
+  API --> Reports["报告中心（只读）"]
+  Reports --> Evaluation
+  API --> Supervisor["实验 supervisor（独立进程）"]
+  Supervisor --> Comparison["dsh-compare 实验子进程"]
+  Comparison --> Evaluation
   Evaluation --> Static[语言静态分析]
   Evaluation --> Judge[独立 DSH 评分 Agent]
   Evaluation --> Executor
@@ -49,9 +56,11 @@ flowchart LR
 | executor | 固定命令执行、容器传输、故障/回收、证据与评分修订；质量通过回调接入 |
 | static | TypeScript AST、Python AST、FSharp.Compiler.Service 读取源码，不执行候选 |
 | judge | HTTP 协议、预算、缓存、版本及证据校验、两轮比较；没有凭据即拒绝 |
-| evaluation | 组合冻结源码、静态/性能/裁判证据，显式选择作答汇总 |
+| evaluation | 组合冻结源码、静态/性能/裁判证据，显式选择作答汇总；并导出 DSH 模型目录发现与预设/权限标签解析 |
+| config | 项目 `.env` 的读、掩码视图、字段校验与安全写入；不修改 `process.env`，不调用模型 |
+| supervisor | `scripts/experiment-supervisor.ts`：实验子进程的独立托管者，持有进程树、心跳、退出事实与代理取消；API 不直接持有实验子进程 |
 
-候选进程不持有模型令牌，评分核心不绑定某个裁判或前端。没有为单机需求引入 Redis、分布式队列或微服务。
+候选进程不持有模型令牌，评分核心不绑定某个裁判或前端。自动测评的实验子进程不被 API 持有：API 只 spawn 一个 detached supervisor，由后者在子进程执行前复核令牌与租约、按 5 秒心跳维持 30 秒租约、持有并终止整棵进程树、在子进程退出时原子写退出事实文件，并代理取消。状态展示由纯函数 `mergeState` 归并四个互相独立的事实（experiment.json 的状态、启动记录的进程判定、退出事实、清理状态），没有退出事实且租约过期时如实报 unknown，不推断为失败。没有为单机需求引入 Redis、分布式队列或微服务。
 
 平台 typecheck 覆盖平台及核心题；集成 starter 是保留上游结构的源码副本，不套用本项目 strict 配置。集成题通过自身固定命令加载真实模块并执行契约；当前不声称已完成上游仓库全量类型检查，保留的类型依赖与运行时替身范围见各题来源说明。
 
@@ -68,12 +77,23 @@ flowchart LR
 | GET .../detail、.../report、.../artifacts/:id | JSON/事件、Markdown、核对路径和哈希后的证据下载 |
 | POST .../cancel、.../retry、.../review、.../human-review | 需要令牌的取消、同快照重试、独立补评和人工修订 |
 | POST /api/summaries | 显式选择一次作答/题，拒绝重复、旧题版本及不同环境，缺测不补分 |
+| GET /api/reports | 报告中心只读列表：扫描报告根一层目录，损坏报告以 unreadable + 原因保留，不静默跳过 |
+| GET /api/reports/:reportId | 报告明细（逐条作答阶段、阶段统计、进度日志、清理状态）；损坏报告返回 422 + 原因 |
+| GET /api/reports/:reportId/artifacts/:artifactId | 产物下载（report/experiment/evidence；log 保留标识但返回「不适用」），逐产物拒绝符号链接 |
+| GET /api/config | 掩码配置视图：密钥键只给「已填写」，并标出只读项及原因 |
+| GET /api/config/models | 本地 DSH 模型目录；目录不可用时返回空目录与原因，保留手工填写入口 |
+| POST /api/config | 有效 x-bench-token + 白名单键；不带 confirm 只返回待写清单，带 confirm 才原子写入 .env |
+| GET /api/experiments | 启动记录纯读列表与归并视图；不写账本、不触发对账 |
+| POST /api/experiments | 有效 x-bench-token；冻结配置快照并 spawn detached supervisor，返回计划总作答次数 |
+| POST /api/experiments/:launchId/cancel | 有效 x-bench-token；写取消标记交由 supervisor 代理执行，并如实报告残留三态 |
+| GET /api/submissions | 纯读列出提交根下一层候选（有界、跳过符号链接） |
+| POST /api/submissions | 有效 x-bench-token；候选须在提交根内，复用既有冻结与可用验证链路 |
 
 CLI 提供 list/show/score、submit/status/runs、review/report/summary。bench score 是预览；submit 才执行候选，完成原因可为 agent-completed、operator-submit、patch-import。当前提交接收工作区快照；补丁先在导出的独立工作区应用，再以 patch-import 提交。
 
 评分配置可用 `bench judge-config` 离线检查。正式评分由 evaluation 包启动独立 DSH session，沿用 DSH 的 root/home/profile/权限配置；HTTP judge 包保留为旧材料兼容入口，不是默认路径。`task:mutants`是题目作者的独立验收入口，不属于候选可调用的评分工具。
 
-API 监听127.0.0.1:4318，Vite 同源代理。BENCH_RUN_DIR 指定运行存储，默认 data/runs。提交写入口需 BENCH_SUBMISSIONS_DIR 和 BENCH_RUN_TOKEN；请求上限256KiB，候选目录做 realpath 校验。接口不接受 shell 命令。公开托管、多租户及作答模型自动编排不在范围内。
+API 监听127.0.0.1:4318，Vite 同源代理。BENCH_RUN_DIR 指定运行存储，默认 data/runs。提交写入口需 BENCH_SUBMISSIONS_DIR 和 BENCH_RUN_TOKEN；请求上限256KiB，候选目录做 realpath 校验。接口不接受 shell 命令。读操作不需要令牌；配置写入、发起测评、取消与外部提交需要 x-bench-token。网页的六个页签是题目目录、评分预览、运行记录、报告中心、发起测评与配置；配置保存后本进程立即按新值工作，无需重启 API。BENCH_RUN_DIR 不由网页修改（它决定既有 run 记录的物理位置），BENCH_DSH_ROOT/HOME/PROFILE、BENCH_IMAGE、BENCH_IMAGE_DIGEST、BENCH_PROFILE 同样只读。公开托管、多租户及无人值守的作答模型自动编排不在范围内；网页发起的是操作者点一次、由 supervisor 受控托管的单个实验。
 
 ## 执行与信任边界
 

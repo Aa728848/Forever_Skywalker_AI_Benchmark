@@ -30,6 +30,6 @@ Status: implemented
 ## Verification
 
 - `node node_modules/typescript/bin/tsc --noEmit`：通过。
-- `node node_modules/vitest/vitest.mjs run apps/cli/src/env-file.test.ts apps/cli/src/judge-dsh-setup.test.ts apps/cli/src/judge-setup.test.ts apps/cli/src/env-setup.test.ts --pool=threads`：4 个文件、40 项通过。新增覆盖：目录选择（含 `fetch` 未被调用）、目录不可用手工填写、已完整配置不提问且不读目录、覆写模式默认值、无效非空值被重问、取消不改环境、独立命令确认/拒绝写入与保留注释、`.env` 的 `replace` 覆写与多行值拒绝。
+- `node node_modules/vitest/vitest.mjs run packages/config/src/env-file.test.ts apps/cli/src/judge-dsh-setup.test.ts apps/cli/src/judge-setup.test.ts apps/cli/src/env-setup.test.ts --pool=threads`：4 个文件、40 项通过。（`.env` 写入器已迁到 `packages/config`，测试路径随迁移更新。）新增覆盖：目录选择（含 `fetch` 未被调用）、目录不可用手工填写、已完整配置不提问且不读目录、覆写模式默认值、无效非空值被重问、取消不改环境、独立命令确认/拒绝写入与保留注释、`.env` 的 `replace` 覆写与多行值拒绝。
 - `launcher.test.ts`：新增“裁判模型入口只返回 `bench judge-setup`”用例通过；该文件另有 1 项既存的沙箱失败（`execFileSync` 的 `spawnSync EPERM`），与本次改动无关。
 - 未调用任何模型或裁判；当前沙箱禁止以管道启动子进程，正常环境仍需重跑 `pnpm check` 复核。
