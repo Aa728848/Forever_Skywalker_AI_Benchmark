@@ -140,29 +140,40 @@ export function createQualityProvider(options: EvaluationOptions = {}): QualityP
           }
         }
         const comparison = compareReviews(first.verdict, second.verdict);
+        /**
+         * 「两轮不可比」与「两轮分数不同」是两件事，必须分开：
+         * 前者说明这两轮根本不是同一个实验条件（配置/模型版本/运行时变了），
+         * 此时平均值仍然给出（用户要求两次不同就取平均），但必须留下明确告警，
+         * 因为它的可比性是有瑕疵的。后者只是正常的评审波动，取平均即可，无需额外告警。
+         */
+        const comparabilityWarnings: string[] = [];
         if (first.configuration?.parametersFingerprint !== second.configuration?.parametersFingerprint
           || (frozenConfiguration && [first, second].some(round => round.configuration?.parametersFingerprint !== frozenConfiguration.parametersFingerprint))) {
-          comparison.needsHumanReview = true;
-          comparison.reasons.push('两轮实际生成参数未保持相同的冻结配置，不能合并为一个裁判结论。');
+          comparabilityWarnings.push('两轮实际生成参数未保持相同的冻结配置。');
         }
-        if (first.responseModel !== second.responseModel) {
-          comparison.needsHumanReview = true;
-          comparison.reasons.push('两轮服务端返回的模型版本不同，等待复核。');
-        }
+        if (first.responseModel !== second.responseModel) comparabilityWarnings.push('两轮服务端返回的模型版本不同。');
         if (first.dshSession?.version !== second.dshSession?.version || first.dshSession?.presetFingerprint !== second.dshSession?.presetFingerprint) {
-          comparison.needsHumanReview = true;
-          comparison.reasons.push('两轮 DSH 评分运行时或评分配置发生变化，等待复核。');
+          comparabilityWarnings.push('两轮 DSH 评分运行时或评分配置发生变化。');
         }
+        comparison.comparabilityWarnings = comparabilityWarnings;
         const firstScore = scoreExecution(context.execution, task, { objective, review: first.verdict.dimensions });
         const secondScore = scoreExecution(context.execution, task, { objective, review: second.verdict.dimensions });
+        // 门槛结论在两轮间不一致时不再作废分数，但同样要留告警。
         if (firstScore.thresholdMet !== null && secondScore.thresholdMet !== null && firstScore.thresholdMet !== secondScore.thresholdMet) {
-          comparison.needsHumanReview = true;
-          comparison.reasons.push('结合已取得的客观分后，两轮判决改变合格门槛。');
+          comparabilityWarnings.push('结合已取得的客观分后，两轮判决给出不同的合格门槛结论。');
         }
+        // needsHumanReview 只表示「两轮不可比」，不表示「分数不同」：
+        // 正常分歧由 averages 取平均消化，不该再被当成需要人工介入的异常。
+        comparison.needsHumanReview = comparabilityWarnings.length > 0;
         writeEvidence('review-comparison', 'review-comparison.json', comparison);
-        if (comparison.needsHumanReview) notes.push('两轮评审差异影响判定，等待人工复核，评审分保持缺失。');
-        else {
-          review = Object.fromEntries(Object.entries(comparison.averages).map(([key, score]) => [key, { score, evidence: ['review-round-1', 'review-round-2'] }]));
+        // 只有「两轮都判不可判」才真正没有可用的评审分；否则一律取两轮平均。
+        const unjudgedEverywhere = Object.values(comparison.averages).every(score => score === null);
+        if (unjudgedEverywhere) {
+          notes.push('两轮评审均未判定任何维度，评审分保持缺失（没有可平均的结论）。');
+        } else {
+          review = Object.fromEntries(Object.entries(comparison.averages).filter(([, score]) => score !== null)
+            .map(([key, score]) => [key, { score, evidence: ['review-round-1', 'review-round-2'] }]));
+          for (const warning of comparabilityWarnings) notes.push('两轮评审可比性告警：' + warning + ' 分数仍按两轮平均给出，复核时请注意。');
           independentReview = first.source === 'model' && second.source === 'model';
           rehearsal = !independentReview;
           if (!independentReview) notes.push('本轮为脚本评审演练，不属于真实模型验收。');

@@ -117,10 +117,13 @@ it('真实执行后使用冻结材料评审，三维齐备即得质量分，显�
     const revised = await reviewCompletedAttempt({ store, runId: first.submission.attempt.runId,
       attemptId: first.submission.attempt.attemptId, qualityProvider: provider });
     expect(revised.functional).toBe(50);
-    expect(revised.dimensions.simplicity).toBeNull();
+    // 本轮两轮配置指纹不同（第二次 review 换了 parametersFingerprint）：这属于「两轮不可比」，
+    // 仍然要告警；但按用户决定，分数照样取两轮平均，不再整体作废。
+    // 原实现此处为 null（评审分被丢弃），现在给出平均值。
+    expect(revised.dimensions.simplicity).toBe(88);
     const comparison = JSON.parse(readFileSync(join(first.submission.directory, 'execution-2', 'review-comparison.json'), 'utf8'));
     expect(comparison.needsHumanReview).toBe(true);
-    expect(comparison.reasons.join(' ')).toContain('冻结配置');
+    expect(comparison.comparabilityWarnings.join(' ')).toContain('冻结配置');
     expect(calls).toHaveLength(4);
     expect(JSON.stringify(calls.at(-1)!.materials)).not.toContain('mutable-copy-only');
     expect(readFileSync(originalScorePath, 'utf8')).toBe(originalScore);
@@ -128,7 +131,8 @@ it('真实执行后使用冻结材料评审，三维齐备即得质量分，显�
     expect(summarizeRuns(store, [selected])).toMatchObject({ mode: 'local', weightedTotal: null, highestConsecutiveLevel: null });
     const inspection = inspectRunSelection(store, [selected, selected]);
     expect(inspection.selected).toHaveLength(2);
-    expect(inspection.selected[0]).toMatchObject({ ...selected, scoreRevision: 'execution-2', total: null });
+    // 显式重评后的最新分数：评审分改为两轮平均后总分落地（此前因作废而待定）。
+    expect(inspection.selected[0]).toMatchObject({ ...selected, scoreRevision: 'execution-2', total: 94 });
     expect(inspection.environmentKey).toMatch(/^[a-f0-9]{64}$/);
     expect(inspection.judgeKey).toBe(JSON.stringify(['a'.repeat(64), 'unreported']));
     expect(() => summarizeRuns(store, [selected, selected])).toThrow('同一题只能选择一次');

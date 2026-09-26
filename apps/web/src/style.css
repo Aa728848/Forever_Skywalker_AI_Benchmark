@@ -39,6 +39,10 @@
 .cleanup-block > p { margin-top: 0; }
 .cleanup-block code { background: #eef2f9; border-radius: 4px; padding: 1px 5px; font-size: 11px; }
 .ok-note { border: 1px solid #cfe6d4; background: #f3fbf5; color: #2f6b41; border-radius: 8px; padding: 10px 13px; margin: 10px 0; font-size: 11px; line-height: 1.6; word-break: break-all; }
+.summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 12px 0; }
+.summary-grid > div { background: #f5f7fb; border: 1px solid #e2e7f0; border-radius: 8px; padding: 10px 12px; }
+.summary-grid span { display: block; font-size: 10px; color: #68758e; margin-bottom: 4px; }
+.summary-grid b { font-size: 15px; color: #25304b; }
 .rows-table td, .rows-table th { white-space: nowrap; }
 .rows-table td small { font-size: 9px; color: #96a2b7; }
 .artifact-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }

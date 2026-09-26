@@ -66,6 +66,34 @@ function cleanupText(detail: ExperimentDetail): string {
   return state + directory + reason;
 }
 
+/**
+ * 报告级评分汇总：只对**已评分**的作答求平均。
+ *
+ * 关键规则：`total` 为 null 表示该次作答尚未取得完整证据（总分待定），
+ * 它绝不能被当成 0 分参与平均——那会把一个「还不知道」的结果算成「很差」。
+ * 因此待定项单独计数并如实显示，平均分只覆盖有分数的那些。
+ */
+function scoreSummary(rows: ExperimentRow[]) {
+  const scored = rows.filter(row => row.total !== null);
+  const pending = rows.length - scored.length;
+  const average = scored.length === 0 ? null : scored.reduce((sum, row) => sum + (row.total ?? 0), 0) / scored.length;
+  const totals = scored.map(row => row.total as number);
+  const sorted = [...totals].sort((left, right) => left - right);
+  const median = sorted.length === 0 ? null : sorted.length % 2 === 1
+    ? sorted[(sorted.length - 1) / 2]!
+    : (sorted[sorted.length / 2 - 1]! + sorted[sorted.length / 2]!) / 2;
+  const below = totals.filter(value => value < 70).length;
+  return {
+    scored: scored.length,
+    pending,
+    average,
+    median,
+    minimum: sorted[0] ?? null,
+    maximum: sorted.at(-1) ?? null,
+    belowThreshold: below,
+  };
+}
+
 /** 页面自行推导的一致性提示：跨题目版本或同组合重复记录都不可直接合并。 */
 function consistencyHints(detail: ExperimentDetail): string[] {
   const hints: string[] = [];
@@ -239,6 +267,26 @@ export function ReportCenter({ onCount }: { onCount?: (count: number) => void })
                 <div className="phase-summary">{phaseOrder.map(phase => <span className={'phase ' + phaseClass(phase)} key={phase}>{phaseLabels[phase]} {phaseCount(shown.phaseCounts, phase)}</span>)}</div>
                 {shown.issues.length > 0 && <div className="warn" role="status"><b>实验记录问题 {shown.issues.length} 条</b><ul>{shown.issues.map((issue, index) => <li key={index + '-' + issue}>{issue}</li>)}</ul></div>}
                 {hints.length > 0 && <div className="warn" role="status"><b>一致性提示 {hints.length} 条</b><p>以下由页面按记录推导，不是报告自身的结论。</p><ul>{hints.map(hint => <li key={hint}>{hint}</li>)}</ul></div>}
+                <h3>总体评价</h3>
+                {(() => {
+                  const summary = scoreSummary(shown.rows);
+                  const fixed = (value: number | null) => value === null ? '—' : value.toFixed(2);
+                  return <>
+                    <div className="summary-grid">
+                      <div><span>平均总分</span><b>{fixed(summary.average)}{summary.average === null ? '' : ' /100'}</b></div>
+                      <div><span>中位总分</span><b>{fixed(summary.median)}{summary.median === null ? '' : ' /100'}</b></div>
+                      <div><span>最低 / 最高</span><b>{fixed(summary.minimum)} / {fixed(summary.maximum)}</b></div>
+                      <div><span>已评分 / 待定</span><b>{summary.scored} / {summary.pending}</b></div>
+                      <div><span>低于 70 分</span><b>{summary.belowThreshold} 条</b></div>
+                    </div>
+                    <p className="field-hint">
+                      {summary.scored === 0
+                        ? '本次实验没有取得任何完整总分，无法给出平均分。'
+                        : '平均分只覆盖已评分的 ' + summary.scored + ' 条作答；' + (summary.pending === 0 ? '全部作答都已评分。' : '另有 ' + summary.pending + ' 条总分待定（缺完整证据），它们不参与平均——把待定当成 0 分会把「还不知道」误报成「很差」。')}
+                      {summary.pending > 0 && ' 待定的条目见下方表格中「分数」列为「待定」的行。'}
+                    </p>
+                  </>;
+                })()}
                 <h3>逐条作答 <small>{shown.rows.length} 条</small></h3>
                 {shown.rows.length === 0 ? <div className="empty">该实验没有作答记录。</div> : <div className="checks-table rows-table"><table>
                   <thead><tr><th>题目</th><th>预设</th><th>思考等级</th><th>次数</th><th>当前阶段</th><th>结束原因</th><th>作答秒数</th><th>验证结论</th><th>分数</th><th>运行 / 尝试</th></tr></thead>

@@ -145,10 +145,17 @@ describe('网络完成适配器', () => {
 });
 
 describe('独立双轮比较', () => {
-  it('保留各维均值，超过20分或可能改变门槛时请求人工复核', () => {
+  it('两轮不同就取平均，分歧本身不再要求人工复核', () => {
+    // 用户决定：两次不同就采用平均值。原先「差异超过 20 分即 needsHumanReview」
+    // 会让调用方整份丢弃两轮结果、评审分与总分一起待定（实测 LSP-01 即因此成为唯一的待定）。
     const first = sampleVerdict(request, scores, ['candidate-1']);
     const second = sampleVerdict(request, { ...scores, simplicity: 59 }, ['candidate-1']);
-    expect(compareReviews(first, second)).toMatchObject({ needsHumanReview: true, averages: { simplicity: 69.5 }, differences: { simplicity: 21 } });
+    const compared = compareReviews(first, second);
+    expect(compared.averages).toMatchObject({ simplicity: 69.5 });
+    expect(compared.differences).toMatchObject({ simplicity: 21 });
+    // 差异被记录，但不再把 needsHumanReview 置真：正常分歧由平均消化。
+    expect(compared.needsHumanReview).toBe(false);
+    expect(compared.reasons.join('；')).toContain('两轮相差 21 分，取平均 69.5');
     expect(compareReviews(first, first).needsHumanReview).toBe(false);
     expect(() => compareReviews(first, { ...second, attemptId: 'another' })).toThrow(/同一冻结作答/);
   });
@@ -166,7 +173,7 @@ describe('独立双轮比较', () => {
     expect(compared.averages.decoupling).toBeNull();
     expect(compared.differences.decoupling).toBeNull();
     // 只有 simplicity 真正相差 50 分；未判定的维不得再贡献一条虚假分歧。
-    expect(compared.reasons.filter(reason => reason.includes('两轮差异超过 20 分'))).toHaveLength(1);
+    expect(compared.reasons.filter(reason => reason.includes('两轮相差'))).toHaveLength(1);
     expect(compared.reasons.join('；')).toContain('两轮均未判定这些维度');
     expect(compared.reasons.join('；')).toContain('decoupling');
   });
