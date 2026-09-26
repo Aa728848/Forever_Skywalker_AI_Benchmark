@@ -50,7 +50,10 @@ describe('正式运行入口', () => {
 
   it('未配置提交根目录与令牌时不启用，并报告真实能力', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'fsa-api-runs-off-'));
-    const app = buildApp(':memory:', { runRoot: join(directory, 'runs') });
+    // 必须隔离真实的 .env 与进程环境：本用例断言的是「什么都没配置」的能力报告，
+    // 若沿用仓库根的 .env（其中已有令牌与提交目录），runEntry 会正确地变成 true，断言即失去意义。
+    writeFileSync(join(directory, '.env'), '');
+    const app = buildApp(':memory:', { runRoot: join(directory, 'runs'), configRoot: directory, configEnv: {} });
     try {
       expect((await app.inject('/api/health')).json()).toMatchObject({ runEntry: false, isolatedExecution: false, judgeConnected: false });
       expect((await app.inject({ method: 'POST', url: '/api/runs', payload: submission('candidate') })).statusCode).toBe(503);

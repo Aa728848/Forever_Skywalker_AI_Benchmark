@@ -386,7 +386,8 @@ describe('四类故障窗口', () => {
       runToken: token, launchesRoot: h.launchesRoot, supervisorScript, childScript: h.childPath,
       supervisorPrefix: ['--import', 'tsx'], launchesHeartbeatMs: 120_000, launchesRegistrationWaitMs: 10_000,
       configRoot: h.root, configEnv: { BENCH_DSH_PROVIDER: 'fake-provider', BENCH_DSH_MODEL: 'fake-model' },
-      launchesConfirmMs: 20_000,
+      // sweeper 也必须长于 GET 窗口：它与心跳一样是写者，落在两次 GET 之间就会破坏字节一致。
+      launchesConfirmMs: 20_000, launchesSweepMs: 600_000,
     });
     try {
       const created = await app.inject({ method: 'POST', url: '/api/experiments', headers: { 'x-bench-token': token }, payload: launchRequest(h) });
@@ -457,7 +458,8 @@ describe('路由：发起、纯读、取消、外部提交', () => {
     const app = buildApp(':memory:', {
       runToken: token, launchesRoot: h.launchesRoot, supervisorScript, childScript: h.childPath,
       supervisorPrefix: ['--import', 'tsx'], launchesHeartbeatMs: 120_000, launchesRegistrationWaitMs: 10_000,
-      launchesConfirmMs: 20_000, configRoot: h.root,
+      // sweeper 调长：它对账会原子改写启动记录，若落在两次 GET 之间，会打断「响应字节一致」的断言。
+      launchesConfirmMs: 20_000, launchesSweepMs: 600_000, configRoot: h.root,
       configEnv: { BENCH_DSH_PROVIDER: 'fake-provider', BENCH_DSH_MODEL: 'fake-model' },
       ...(extra.submissionsRoot === undefined ? {} : { submissionsRoot: extra.submissionsRoot }),
     });

@@ -322,3 +322,40 @@ describe('保存后即时生效', () => {
     } finally { await app.close(); }
   });
 });
+
+describe('真实启动路径：.env 不得被当成 OS 环境变量', () => {
+  /**
+   * 回归：apps/api 的 dev 脚本曾带 --env-file-if-exists=../../.env，会把 .env 灌进 process.env，
+   * 于是 merge() 的「非空 OS 变量优先」把 .env 自己的值遮蔽：保存写入文件成功，
+   * 但同一进程再读仍是旧值（「保存后立即生效」失效），且每个 .env 键都被误报为「被系统环境变量覆盖」。
+   * 这里直接从启动脚本读事实，防止该标志被重新加回。
+   */
+  it('API dev 脚本不得用 --env-file 把 .env 载入 process.env', () => {
+    const packageJson = JSON.parse(readFileSync(join(import.meta.dirname, '..', 'package.json'), 'utf8')) as { scripts: Record<string, string> };
+    expect(packageJson.scripts.dev).not.toContain('--env-file');
+    // .env 必须由 ConfigProvider 自己读，这样 fileValues 与 inheritedEnv 才是两个真实不同的来源。
+    expect(packageJson.scripts.dev).toContain('src/server.ts');
+  });
+
+  it('只有 .env 有值时 source 为 file、shadowed 为 false；保存后同进程立即读到新值', async () => {
+    const root = projectRoot(['BENCH_DSH_PROVIDER=from-file', 'BENCH_RUN_TOKEN=' + runToken].join('\n') + '\n');
+    // configEnv 模拟「真实的 OS 环境」：不含任何 BENCH_ 变量，正如用户机器上的实测状态。
+    const app = buildApp(':memory:', { configRoot: root, configEnv: {} });
+    try {
+      const before = (await app.inject('/api/config')).json() as { entries: Record<string, { value: string; source: string; shadowed: boolean }> };
+      expect(before.entries.BENCH_DSH_PROVIDER).toMatchObject({ value: 'from-file', source: 'file', shadowed: false });
+
+      const saved = await app.inject({
+        method: 'POST', url: '/api/config',
+        headers: { 'x-bench-token': runToken },
+        payload: { patch: { BENCH_DSH_PROVIDER: 'changed' }, confirm: true },
+      });
+      expect(saved.statusCode).toBe(200);
+      expect(readFileSync(join(root, '.env'), 'utf8')).toContain('BENCH_DSH_PROVIDER=changed');
+
+      // 关键断言：同一进程内立即生效，而不是仍读旧值。
+      const after = (await app.inject('/api/config')).json() as { entries: Record<string, { value: string; source: string; shadowed: boolean }> };
+      expect(after.entries.BENCH_DSH_PROVIDER).toMatchObject({ value: 'changed', source: 'file', shadowed: false });
+    } finally { await app.close(); }
+  });
+});

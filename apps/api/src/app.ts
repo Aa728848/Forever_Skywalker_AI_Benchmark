@@ -46,6 +46,11 @@ export interface AppOptions {
   launchesConfirmMs?: number;
   /** 启动后等待自登记握手的时长；测试可缩短。 */
   launchesRegistrationWaitMs?: number;
+  /**
+   * 对账 sweeper 的定时间隔（毫秒，默认 10000）。它只做对账、不由 GET 触发；
+   * 测试把它调长，才能让「两次 GET 之间没有其它写者」成为确定性事实而不是运气。
+   */
+  launchesSweepMs?: number;
 }
 
 export function buildApp(databasePath = ':memory:', options: AppOptions = {}) {
@@ -89,9 +94,9 @@ export function buildApp(databasePath = ':memory:', options: AppOptions = {}) {
     ...(options.launchesConfirmMs === undefined ? {} : { confirmMs: options.launchesConfirmMs }),
     ...(options.launchesRegistrationWaitMs === undefined ? {} : { registrationWaitMs: options.launchesRegistrationWaitMs }),
   });
-  // 对账 sweeper：API 启动时先跑一次，之后每 10 秒一次。GET /api/experiments 绝不触发它。
+  // 对账 sweeper：API 启动时先跑一次，之后按固定间隔对账。GET /api/experiments 绝不触发它。
   launches.sweep();
-  const sweeper = setInterval(() => { launches.sweep(); }, 10000);
+  const sweeper = setInterval(() => { launches.sweep(); }, options.launchesSweepMs ?? 10000);
   sweeper.unref();
   app.addHook('onClose', async () => { clearInterval(sweeper); launches.close(); await runs.close(); store.close(); });
   // 令牌按操作取值：BENCH_RUN_TOKEN 保存后立即生效，不需重启。

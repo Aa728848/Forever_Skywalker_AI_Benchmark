@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node --env-file-if-exists=../../.env --import tsx src/server.ts"
+    "dev": "node --import tsx src/server.ts"
   },
   "dependencies": {
     "@fsa/catalog": "workspace:*",
