@@ -10,7 +10,7 @@ import { probeContainerRuntime, requirePinnedImage } from '../packages/executor/
 import { JudgeUnavailableError } from '../packages/judge/src/index.ts';
 import { dshJudgeOptionsFromEnvironment } from '../packages/evaluation/src/dsh-judge.ts';
 import { runDshComparison, validateComparison, type DshComparisonOptions } from '../packages/evaluation/src/dsh-comparison.ts';
-import { checkDshInstallation, resolveDshPreset, resolveDshWorkspacePermission } from '../packages/evaluation/src/dsh.ts';
+import { checkDshInstallation, checkDshPresetAssets, resolveDshPreset, resolveDshWorkspacePermission } from '../packages/evaluation/src/dsh.ts';
 import { cleanupComparisonScratch, createComparisonScratch } from '../packages/evaluation/src/comparison-artifacts.ts';
 import { defaultLeaseTtlMs } from './experiment-supervisor.ts';
 
@@ -142,7 +142,10 @@ try {
     } catch (error) { if (!(error instanceof JudgeUnavailableError)) throw error; }
     console.log(`DSH ${installation.version}；作答：${options.provider} / ${options.model}；预设 ${options.presets.join('、')}；思考 ${options.modes.join('、')}；共 ${options.taskIds.length * options.presets.length * options.modes.length * options.repeats} 次。`);
     console.log(judgeMessage);
-    if (values.check) console.log('本地预检通过；DSH 供应商连接、认证及实际作答尚未验证。模型调用：0。');
+    if (values.check) {
+      for (const asset of checkDshPresetAssets(options.dshRoot, options.presets)) console.log(`预设资产就绪：${asset}`);
+      console.log('本地预检通过（含预设挂载前置条件）；DSH 供应商连接、认证及实际作答尚未验证。模型调用：0。');
+    }
     else {
       mkdirSync(outputRoot, { recursive: true });
       const controller = new AbortController();

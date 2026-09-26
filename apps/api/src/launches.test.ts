@@ -483,6 +483,10 @@ describe('路由：发起、纯读、取消、外部提交', () => {
       expect(body.plannedAnswers).toBe(8);
       expect(body.launch.kind).toBe('check');
       expect(body.launch.args).toContain('--check');
+      // 先等 supervisor 的自登记落盘：它本身就是一个写者，
+      // 若恰好落在两次 GET 之间，会把「GET 无副作用」的字节比较变成竞态（与窗口四同一处理）。
+      const path = join(h.launchesRoot, body.launch.launchId + '.json');
+      await until(() => (readJson(path)?.childPid ?? null), 30_000, '子进程身份落盘');
       // 一次真实发起的写入只有一次：GET 不会因多次读取而改变响应。
       const first = (await app.inject('/api/experiments')).json() as { launches: LaunchView[] };
       const second = (await app.inject('/api/experiments')).json() as { launches: LaunchView[] };

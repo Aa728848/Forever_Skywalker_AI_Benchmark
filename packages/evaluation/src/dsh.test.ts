@@ -3,10 +3,29 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { checkDshInstallation, DshCleanupError, resolveDshPreset, resolveDshWorkspacePermission, runDsh, type DshHarness, type DshRunOptions } from './dsh.ts';
+import { checkDshInstallation, checkDshPresetAssets, DshCleanupError, dshReviewPreset, resolveDshPreset, resolveDshWorkspacePermission, runDsh, type DshHarness, type DshRunOptions } from './dsh.ts';
 
 let temporaryRoot: string;
 let options: DshRunOptions;
+
+/** 新版 DSH 的预设资产：一层只插入一条声明的补丁文件。 */
+function presetPatchText(id: string, order: number): string {
+  return [
+    '# Agent preset ' + id,
+    '- insert:',
+    '    - id: preset-' + id,
+    "      name: '@deepseek-ai/dsh-agent-preset'",
+    '      config:',
+    '        id: ' + id,
+    '        order: ' + String(order),
+    '        plugins:',
+    '          - id: persona',
+    "            name: '@deepseek-ai/dsh-persona'",
+    '            config:',
+    '              prefix: benchmark persona',
+    '',
+  ].join('\n');
+}
 
 beforeEach(() => {
   temporaryRoot = mkdtempSync(join(tmpdir(), 'fsa-dsh-adapter-'));
@@ -17,9 +36,9 @@ beforeEach(() => {
     ['packages/sdk/client/lib/index.js', 'throw new Error("fake must use injected SDK")'],
     ['apps/cli/lib/bin.js', 'throw new Error("fake CLI must not start")'],
     ['packages/core/scope/lib/index.js', 'export const createScope = () => {};'],
-    ['packages/preset/agent-presets/lib/index.js', 'export default {};'],
+    ['packages/preset/agent-preset-registry/lib/index.js', 'export default {};'],
     ['packages/bundle/web-app/cordis.patch.yml', '# ── the agent plane moves behind agent presets\n- id: tool-bash\n  disabled: true\n- id: tool-fs\n  disabled: true\n# The preset roster.'],
-    ...['standard', 'ptc', 'minimal', 'cordis'].map(id => [`packages/preset/agent-presets/presets/${id}/agent.cordis.yml`, `# ${id}\n- id: persona\n`]),
+    ...['standard', 'ptc', 'minimal', 'cordis'].map((id, index) => [`packages/bundle/web-app/presets/${id}.patch.yml`, presetPatchText(id, index + 1)]),
   ]) {
     const target = join(dshRoot, path!);
     mkdirSync(dirname(target), { recursive: true });
@@ -173,9 +192,22 @@ describe('DSH automation adapter', () => {
       expect(patch).toContainEqual({ id: 'tool-fs', disabled: true });
       expect(patch).toContainEqual({ id: 'session-persistence-jsonl', config: { root: join(options.scratchDirectory!, 'sessions') } });
       expect(patch).toContainEqual({ id: 'storage-json', config: { root: join(options.scratchDirectory!, 'storages') } });
+      // 新版由注册表行 + @deepseek-ai/dsh-agent-preset 声明承担预设，不再有 roster 模块与 roots 配置。
+      const inserted = patch.flatMap(item => Array.isArray(item.insert) ? item.insert : []) as Record<string, unknown>[];
+      expect(inserted).toContainEqual(expect.objectContaining({
+        id: 'agent-preset-registry', config: { default: 'cordis' },
+      }));
+      expect(JSON.stringify(patch)).not.toContain('agent-presets');
+      expect(JSON.stringify(patch)).not.toContain('includeShippedRoot');
+      // 预设资产（含 cordis 自己的声明）整份作为第二层补丁交付。
+      const presetPatch = readFileSync(launch.patches[1]!, 'utf8');
+      expect(presetPatch).toBe(presetPatchText('cordis', 4));
+      expect(presetPatch).toContain("name: '@deepseek-ai/dsh-agent-preset'");
       const text = readFileSync(join(options.scratchDirectory!, 'preset-bridge.mjs'), 'utf8');
-      expect(text).toContain('await ctx.agentPresets.mount(parent.ctx, "cordis")');
+      expect(text).toContain('await ctx.agentPresets.mount(parent.ctx, presetId)');
       expect(text).toContain("ctx.agentPresets.composeFrom(agent.ctx, parent.ctx)");
+      expect(text).toContain("const presetId = \"cordis\"");
+      expect(text).toContain('await ctx.agentPresets.list()');
       expect(launch.dshHome).toBe(options.dshHome);
       return { close: async () => {}, run: async () => ({ ...result('completed'), events: [
         { type: 'agent-preset/selected', data: { agentPreset: 'cordis' } }, ...result('completed').events.slice(1),
@@ -189,7 +221,13 @@ describe('DSH automation adapter', () => {
   it('review-only 会话只装载评分 persona 并生成无工具限制', async () => {
     const report = await runDsh({ ...options, reviewOnly: true, agentPreset: 'minimal', scratchDirectory: join(options.scratchDirectory!, 'review') }, { createHarness: launch => {
       const patch = JSON.parse(readFileSync(launch.patches[0]!, 'utf8')) as Array<Record<string, unknown>>;
-      expect(patch.flatMap(item => Array.isArray(item.insert) ? item.insert : [])).toContainEqual(expect.objectContaining({ id: 'agent-presets', config: expect.objectContaining({ includeShippedRoot: false }) }));
+      const inserted = patch.flatMap(item => Array.isArray(item.insert) ? item.insert : []) as Record<string, unknown>[];
+      expect(inserted).toContainEqual(expect.objectContaining({ id: 'agent-preset-registry', config: { default: 'minimal' } }));
+      // 评分会话不再读随发行版的预设，而是自带一条只含评分 persona 的声明补丁层。
+      const presetPatch = readFileSync(launch.patches[1]!, 'utf8');
+      expect(presetPatch).toContain("name: '@deepseek-ai/dsh-agent-preset'");
+      expect(presetPatch).toContain('id: minimal');
+      expect(presetPatch).toContain(JSON.stringify(JSON.parse(dshReviewPreset)[0]));
       expect(readFileSync(join(options.scratchDirectory!, 'review', 'preset-bridge.mjs'), 'utf8')).toContain('tools.restrict({ allow: [] })');
       return { close: async () => {}, run: async () => {
         const bridge = await import(pathToFileURL(join(options.scratchDirectory!, 'review', 'preset-bridge.mjs')).href);
@@ -224,6 +262,49 @@ describe('DSH automation adapter', () => {
     expect(report.finishReason).toBe('completed');
     expect(report.observedPresets).toEqual(['standard']);
     expect(closeSubscription).toHaveBeenCalledOnce();
+  });
+
+  it('在新版 DSH 布局下不再引用已删除的预设路径，并产出 @deepseek-ai/dsh-agent-preset 声明', async () => {
+    // 旧实现读 packages/preset/agent-presets/**，在 0.1.7-rc.2 上直接 ENOENT。
+    const report = await runDsh({ ...options, agentPreset: 'standard' }, { createHarness: launch => {
+      expect(launch.patches).toHaveLength(2);
+      // 旧实现把已删除的 packages/preset/agent-presets/** 写进补丁并读它的预设源码。
+      for (const file of launch.patches) expect(readFileSync(file, 'utf8')).not.toContain('agent-presets');
+      expect(readFileSync(launch.patches[0]!, 'utf8')).not.toContain('agent.cordis.yml');
+      const rows = JSON.parse(readFileSync(launch.patches[0]!, 'utf8')) as Record<string, unknown>[];
+      const inserted = rows.flatMap(row => Array.isArray(row.insert) ? row.insert : []) as Record<string, unknown>[];
+      // 注册表按新版 schema 只给 default；已删除的 roots/includeShippedRoot 不得再出现。
+      expect(inserted).toContainEqual(expect.objectContaining({ id: 'agent-preset-registry', config: { default: 'standard' } }));
+      expect(JSON.stringify(rows)).not.toContain('includeShippedRoot');
+      // 预设资产按 DSH 自己的装载方式整份作为第二层补丁交付，声明就在里面。
+      expect(launch.patches[1]).toBe(join(options.scratchDirectory!, 'preset.patch.yml'));
+      expect(readFileSync(launch.patches[1]!, 'utf8')).toBe(presetPatchText('standard', 1));
+      return { close: async () => {}, run: async () => result('completed') };
+    } });
+    expect(report.requestedPreset).toBe('standard');
+    expect(report.presetFingerprint).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it('指纹跟随本次实际挂载的预设内容变化，不退化成一个常量', async () => {
+    const fingerprintFor = async (agentPreset: 'standard' | 'ptc', tag: string) => (await runDsh({ ...options, agentPreset, scratchDirectory: join(options.scratchDirectory!, tag) },
+      { createHarness: () => ({ close: async () => {}, run: async () => ({ ...result('completed'), events: [
+        { type: 'agent-preset/selected', data: { agentPreset } }, { type: 'turn/end', data: { reason: { kind: 'completed' } } }] }) }) })).presetFingerprint;
+    const standard = await fingerprintFor('standard', 'first');
+    const ptc = await fingerprintFor('ptc', 'second');
+    expect(standard).not.toBe(ptc);
+    writeFileSync(join(options.dshRoot, 'packages/bundle/web-app/presets/standard.patch.yml'), presetPatchText('standard', 9));
+    expect(await fingerprintFor('standard', 'third')).not.toBe(standard);
+  });
+
+  it('--check 的预设前置条件能识破缺失的预设资产，且不启动 DSH', () => {
+    expect(checkDshPresetAssets(options.dshRoot, ['standard', 'ptc', 'minimal', 'cordis'])).toEqual([
+      'packages/bundle/web-app/presets/standard.patch.yml', 'packages/bundle/web-app/presets/ptc.patch.yml',
+      'packages/bundle/web-app/presets/minimal.patch.yml', 'packages/bundle/web-app/presets/cordis.patch.yml',
+    ]);
+    rmSync(join(options.dshRoot, 'packages/bundle/web-app/presets/cordis.patch.yml'));
+    expect(() => checkDshPresetAssets(options.dshRoot, ['cordis'])).toThrow('ENOENT');
+    rmSync(join(options.dshRoot, 'packages/preset/agent-preset-registry/lib/index.js'));
+    expect(() => checkDshPresetAssets(options.dshRoot, ['standard'])).toThrow('ENOENT');
   });
 
   it('rejects mismatched installations before the runtime factory is called', async () => {
