@@ -143,7 +143,13 @@ try {
   }
   await context.fiber.dispose(); context = undefined;
   process.stdout.write(JSON.stringify({ providers, extraFailures }));
-} catch {
-  try { await context?.fiber.dispose(); } catch { /* 父进程超时兜底，原错误详情不输出。 */ }
+} catch (error) {
+  // 把失败原因写到 stderr：父进程只保留前若干行用于诊断。DSH 改名/移动资产时，
+  // 这里是唯一能说明「为什么不兼容」的地方；写进 stdout 会破坏目录协议。
+  try {
+    const detail = error instanceof Error ? (error.stack ?? error.message) : String(error);
+    process.stderr.write(detail.slice(0, 2000) + '\n');
+  } catch { /* 诊断信息本身不能成为新的失败来源。 */ }
+  try { await context?.fiber.dispose(); } catch { /* 父进程超时兜底。 */ }
   process.exitCode = 1;
 }

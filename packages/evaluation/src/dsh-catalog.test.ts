@@ -227,6 +227,21 @@ it('插件按 DSH home 物化凭据时只落在本次查询的临时目录', asy
   expect(readdirSync(dshHome).some(name => name === 'storages' || name.startsWith('fsa-dsh-catalog'))).toBe(false);
 });
 
+it('DSH 版本漂移时把真实失败原因带进 warning，而不是只回落到「请手工填写」', async () => {
+  // 回归：外层 catch 曾把一切异常吞成通用提示。DSH 改名/移动资产时（本轮已发生三次：
+  // settings-file、llm-deepseek、agent-presets），界面只显示「没探测到」，真实原因不可见。
+  // 现在缺资产必须在 warning 里指名缺了哪个路径。
+  const result = await discoverDshModels({ dshRoot, dshHome, profile: 'sdk' });
+  expect(result.providers).toEqual([]);
+  expect(result.warning).toContain('手工填写');
+  // 必须指名缺了哪个 DSH 资产并说明是版本漂移，而不是只给一句通用提示。
+  expect(result.warning).toContain('本机失败原因');
+  expect(result.warning).toContain('本机缺少 DSH 资产');
+  expect(result.warning).toContain('需同步适配');
+  // 同时绝不能被异常原文带着泄漏：只回传结构化事实。
+  expect(result.warning).not.toContain('fsa-catalog-test-');
+  expect(result.warning).not.toContain('at Module');
+});
 it('未支持的profile名不启动SDK或假称包含其额外插件路由', async () => {
   const result = await discoverDshModels({ dshRoot: 'missing', dshHome: 'missing', profile: 'custom/sdk' });
   expect(result.providers).toEqual([]); expect(result.warning).toContain('profile'); expect(result.warning).toContain('手工填写');

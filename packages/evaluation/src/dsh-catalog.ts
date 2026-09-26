@@ -11,6 +11,22 @@ export interface DshCatalogOptions { dshRoot: string; dshHome: string; profile?:
 export interface DshModelCatalog { providers: DshCatalogProvider[]; warning: string | null }
 
 const fallback = '无法读取本地 DSH 模型目录，请手工填写供应商 ID 和模型 ID；不会自动探测远程端点。';
+/**
+ * 把 worker 的失败摘要压成「安全且可行动」的一句：只保留结构性事实
+ * （缺失的资产路径、模块解析失败、插件标识），不回传异常原文——插件的错误消息
+ * 可能包含本机绝对路径或凭据，直接进用户可见的 warning 就是泄漏。
+ */
+function describeWorkerFailure(text: string): string {
+  const missing = /no such file or directory, lstat '([^']+)'/.exec(text);
+  if (missing) return '；本机缺少 DSH 资产 ' + missing[1]!.split('\\').slice(-3).join('/') + '（DSH 可能已改名或移动该路径，需同步适配）';
+  const statMissing = /ENOENT[^\n]*?open '([^']+)'/.exec(text);
+  if (statMissing) return '；本机缺少 DSH 资产 ' + statMissing[1]!.split('\\').slice(-3).join('/') + '（DSH 可能已改名或移动该路径，需同步适配）';
+  const resolve = /Cannot find (?:package|module) '([^']+)'/.exec(text);
+  if (resolve) return '；DSH 依赖 ' + resolve[1] + ' 无法从本机安装解析（版本不匹配）';
+  const plugin = /ds-agent-preset|dsh-llm|dsh-settings|dsh-plugin/i.exec(text);
+  if (plugin) return '；DSH 插件 ' + plugin[0] + ' 装载失败（版本可能不兼容）';
+  return '；DSH 目录查询失败（详情不输出，以免带出凭据或本机路径）';
+}
 const scopeNotice = '目录来自本地 DSH 配置、原生适配器与当前 profile 已安装的插件包（订阅渠道同样在此列为供应商）；列表不验证凭据、额度或远程可用性。';
 const timeoutMs = 12_000;
 const maxOutputBytes = 2 * 1024 * 1024;
@@ -196,9 +212,13 @@ export async function discoverDshModels(options: DshCatalogOptions): Promise<Dsh
     env.DSH_HOME = catalogHome;
     const result = await new Promise<string>((resolveOutput, reject) => {
       const child = spawn(process.execPath, [fileURLToPath(new URL('./dsh-catalog-worker.mjs', import.meta.url)), JSON.stringify({ modules, dshHome: catalogHome, extraPlugins: plugins.plugins })], {
-        cwd: scratch, env, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true,
+        cwd: scratch, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
       });
       const chunks: Buffer[] = [];
+      // 子进程 stderr 保留一小段：DSH 改名或移动资产时，worker 的失败原因只出现在这里。
+      // 丢弃它会让界面只能显示「没探测到」，正是本轮反复踩到的版本漂移盲区。
+      const errors: Buffer[] = [];
+      let errorBytes = 0;
       let bytes = 0, failure: Error | undefined;
       const stop = (message: string) => { failure ??= new Error(message); child.kill('SIGKILL'); };
       const timer = setTimeout(() => stop('catalog timeout'), timeoutMs);
@@ -208,15 +228,27 @@ export async function discoverDshModels(options: DshCatalogOptions): Promise<Dsh
         if (bytes > maxOutputBytes) stop('catalog output limit');
         else chunks.push(chunk);
       });
+      child.stderr.on('data', (chunk: Buffer) => {
+        if (errorBytes >= 4096) return;
+        errorBytes += chunk.length;
+        errors.push(chunk);
+      });
       child.once('close', code => {
         clearTimeout(timer);
-        if (failure || code !== 0) reject(failure ?? new Error('catalog unavailable'));
-        else resolveOutput(Buffer.concat(chunks).toString('utf8'));
+        if (failure || code !== 0) {
+          // 只回传「失败类别 + 缺失的资产路径」，不回传子进程原文：
+          // 插件抛出的异常消息可能带着凭据或本机绝对路径，直接进 warning 会泄漏。
+          reject(failure ?? new Error('catalog unavailable' + describeWorkerFailure(Buffer.concat(errors).toString('utf8'))));
+        } else resolveOutput(Buffer.concat(chunks).toString('utf8'));
       });
     });
     return catalogOutput(result);
-  } catch {
-    return { providers: [], warning: fallback };
+  } catch (error) {
+    // 这里**不能**只回落到「请手工填写」：DSH 改名/移动资产时，真正的失败原因
+    // （缺失的模块路径、插件装载异常）会被这句话吞掉，于是界面看起来只是「没探测到」，
+    // 而实际是版本漂移。把原因如实带回，调用方才能在界面上区分「没装」与「不兼容」。
+    const reason = error instanceof Error ? error.message : String(error);
+    return { providers: [], warning: fallback + '（本机失败原因：' + reason.slice(0, 300) + '）' };
   } finally {
     if (scratch) {
       const location = resolve(scratch);
