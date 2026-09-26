@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -12,6 +12,7 @@ import { dshJudgeOptionsFromEnvironment } from '../packages/evaluation/src/dsh-j
 import { runDshComparison, validateComparison, type DshComparisonOptions } from '../packages/evaluation/src/dsh-comparison.ts';
 import { checkDshInstallation, resolveDshPreset, resolveDshWorkspacePermission } from '../packages/evaluation/src/dsh.ts';
 import { cleanupComparisonScratch, createComparisonScratch } from '../packages/evaluation/src/comparison-artifacts.ts';
+import { defaultLeaseTtlMs } from './experiment-supervisor.ts';
 
 const usage = `DSH 自动模式对比（固定 Linux 评分，沿用你的 DSH home）
 
@@ -30,9 +31,60 @@ pnpm dsh:compare --model <模型 ID> --check
 --all 选择全部已具备题目包的题，不能与 --tasks 同时使用。
 --check 只核对本地文件、容器和裁判参数；不启动 DSH、不调用模型。
 --minutes / --max-tokens 调整作答预算；--no-measure 跳过性能采样（完整质量分保持待定）。
+--experiment-id <id> 用固定标识认领报告目录（<报告根>/<id>），已存在即拒绝，绝不覆盖已有实验；省略时沿用时间戳+随机后缀。
+--supervisor-token <令牌> 受控启动：只由 scripts/experiment-supervisor.ts 传入，配合 BENCH_LAUNCH_RECORD 复核启动记录；
+令牌或租约不符时在作答前拒绝执行。手工运行时不需要该参数。
 输出目录只保留报告及压缩证据；其余本次临时数据在报告确认保存后清理。
 DSH 配置：BENCH_DSH_ROOT、BENCH_DSH_HOME、BENCH_DSH_PROFILE、BENCH_DSH_PROVIDER、BENCH_DSH_MODEL、BENCH_DSH_PRESETS、BENCH_DSH_REASONING_EFFORT、BENCH_DSH_WORKSPACE_PERMISSION、BENCH_DSH_REPORT_DIR。
 真实运行会调用 DSH 已配置的作答模型，以及本项目已配置的裁判。Ctrl+C 停止当前实验。`;
+
+/** --experiment-id 的形状：单层目录名，不接受分隔符或前导点。 */
+const experimentIdPattern = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+
+/**
+ * 用固定标识原子认领报告目录：mkdirSync(recursive: false) 在目录已存在时抛错，
+ * 因此并发或重跑都会失败而不是覆盖已有实验。
+ */
+function claimExperimentDirectory(root: string, id: string): string {
+  if (!experimentIdPattern.test(id)) throw new Error('实验标识不合法：只接受字母或数字开头、由字母数字下划线和连字符组成的 1–64 字符标识。');
+  mkdirSync(root, { recursive: true });
+  const directory = join(root, id);
+  try { mkdirSync(directory, { recursive: false }); }
+  catch (error) {
+    if (existsSync(directory)) throw new Error(`实验目录已存在，拒绝覆盖：${directory}`);
+    throw error;
+  }
+  return directory;
+}
+
+/** --check 只核对本地文件：此时不创建目录，但仍校验标识并确认没有同名实验会被覆盖。 */
+function inspectExperimentDirectory(root: string, id: string): string {
+  if (!experimentIdPattern.test(id)) throw new Error('实验标识不合法：只接受字母或数字开头、由字母数字下划线和连字符组成的 1–64 字符标识。');
+  const directory = join(root, id);
+  if (existsSync(directory)) throw new Error(`实验目录已存在，拒绝覆盖：${directory}`);
+  return directory;
+}
+
+/**
+ * 受控启动的授权屏障：只有传入 --supervisor-token（或 BENCH_SUPERVISOR_TOKEN）时才生效。
+ * 校验启动记录里的令牌与租约；不符即拒绝，绝不执行任何作答。手工 CLI 运行没有令牌，行为保持不变。
+ */
+function authorizeControlledLaunch(options: { provided: string | undefined; recordPath: string | null }): void {
+  const provided = options.provided !== undefined && options.provided !== '' ? options.provided
+    : (process.env.BENCH_SUPERVISOR_TOKEN !== undefined && process.env.BENCH_SUPERVISOR_TOKEN !== '' ? process.env.BENCH_SUPERVISOR_TOKEN : null);
+  if (provided === null) return;
+  if (options.recordPath === null || options.recordPath.trim() === '') throw new Error('已传入 supervisor 令牌但缺少启动记录（BENCH_LAUNCH_RECORD）；拒绝执行。');
+  let record: Record<string, unknown>;
+  try { record = JSON.parse(readFileSync(options.recordPath, 'utf8')) as Record<string, unknown>; }
+  catch (error) { throw new Error('启动记录不可读，授权失败：' + (error instanceof Error ? error.message : String(error))); }
+  const registered = typeof record.supervisorToken === 'string' ? record.supervisorToken : '';
+  if (registered === '' || registered !== provided) throw new Error('启动记录中的 supervisor 令牌不匹配；拒绝执行。');
+  if (record.state !== 'running' && record.state !== 'registered') throw new Error('启动记录状态不是 running/registered；拒绝执行。');
+  const heartbeatAt = typeof record.heartbeatAt === 'string' ? Date.parse(record.heartbeatAt) : NaN;
+  const ttl = typeof record.leaseTtlMs === 'number' && Number.isFinite(record.leaseTtlMs) ? record.leaseTtlMs : defaultLeaseTtlMs;
+  if (!Number.isFinite(heartbeatAt)) throw new Error('启动记录缺少有效的心跳时间；拒绝执行。');
+  if (Date.now() - heartbeatAt > ttl) throw new Error('启动记录的租约已过期；拒绝执行。');
+}
 
 try {
   const { values, positionals } = parseArgs({ options: {
@@ -41,9 +93,14 @@ try {
     tasks: { type: 'string' }, all: { type: 'boolean' }, modes: { type: 'string' }, 'workspace-permission': { type: 'string' },
     repeat: { type: 'string', default: '1' }, minutes: { type: 'string', default: '20' },
     'max-tokens': { type: 'string', default: '16384' }, 'no-measure': { type: 'boolean' },
+    'experiment-id': { type: 'string' }, 'supervisor-token': { type: 'string' }, 'launch-record': { type: 'string' },
   } });
   if (values.help) console.log(usage);
   else {
+    // 授权屏障放在最前：令牌不符时连参数解析都做完也不执行任何作答。
+    // 空字符串与未设置等价：都表示没有受控启动记录。
+    const launchRecord = (process.env.BENCH_LAUNCH_RECORD ?? '').trim() !== '' ? process.env.BENCH_LAUNCH_RECORD ?? null : values['launch-record'] ?? null;
+    authorizeControlledLaunch({ provided: values['supervisor-token'], recordPath: launchRecord });
     if (positionals.length > 0) throw new Error('不接受位置参数；使用 --model 指定模型。');
     if (values.preset !== undefined && values.presets !== undefined) throw new Error('--preset 与 --presets 请选择一种。');
     if (values.reasoning !== undefined && values.modes !== undefined) throw new Error('--reasoning 与 --modes 请选择一种。');
@@ -61,7 +118,9 @@ try {
       taskIds: values.all ? tasks.filter(task => task.status !== 'designed').map(task => task.id) : (values.tasks ?? 'CACHE-02').split(/[,\s]+/).filter(Boolean),
       modes: (values.modes || values.reasoning || process.env.BENCH_DSH_REASONING_EFFORT || 'off,high').split(/[,\s]+/).filter(Boolean),
       repeats: Number(values.repeat), maxTokens: Number(values['max-tokens']), timeoutMs: Number(values.minutes) * 60_000,
-      outputDirectory: join(outputRoot, new Date().toISOString().replace(/[:.]/g, '-') + '-' + randomUUID().slice(0, 8)),
+      outputDirectory: values['experiment-id'] === undefined || values['experiment-id'] === ''
+        ? join(outputRoot, new Date().toISOString().replace(/[:.]/g, '-') + '-' + randomUUID().slice(0, 8))
+        : values.check ? inspectExperimentDirectory(outputRoot, values['experiment-id']) : claimExperimentDirectory(outputRoot, values['experiment-id']),
       image: process.env.BENCH_IMAGE || '', imageDigest: process.env.BENCH_IMAGE_DIGEST || '', measurePerformance: !values['no-measure'],
     };
     validateComparison(options);
