@@ -76,16 +76,20 @@ for (const method of ['log', 'info', 'warn', 'error', 'debug', 'trace']) console
 
 let context;
 try {
-  const require = createRequire(pathToFileURL(modules.settings));
+  // 目录查询只需要 llm 运行时与各适配器；settings 不再参与：
+  // DSH 已把 settings-file 换成需要 profileContext/configEditor 的宿主插件，
+  // 本查询不启动 profile，因此不能也不需要装载它（适配器不读 settings 即可注册路由）。
+  const require = createRequire(pathToFileURL(modules.llm));
   const { Context } = await import(pathToFileURL(require.resolve('@deepseek-ai/cordis')).href);
-  const [{ FileSettingsProvider }, { LlmRuntime }, deepseek, pi] = await Promise.all(
-    [modules.settings, modules.llm, modules.deepseek, modules.pi].map(path => import(pathToFileURL(path).href)),
-  );
+  const { LlmRuntime } = await import(pathToFileURL(modules.llm).href);
   context = new Context();
-  await context.plugin(FileSettingsProvider, { path: join(dshHome, 'settings.yaml'), watch: false });
   await context.plugin(LlmRuntime);
-  await context.plugin(deepseek, {});
-  await context.plugin(pi, {});
+  // 适配器现在是具名导出模块（导出 apply/inject），不是默认导出的插件对象，
+  // 因此按模块命名空间交给 cordis 装载。
+  for (const specifier of [modules.deepseek, modules.pi]) {
+    const adapter = await import(pathToFileURL(specifier).href);
+    await context.plugin(adapter);
+  }
   // 订阅渠道等额外内置插件：只读目录之外的路由由 DSH 设置的插件提供，父进程按同一
   // profile 派生出本次查询要装载的本地插件包。单个插件装载失败只记录失败，不阻断
   // 其它本地目录，也不阻断手工输入入口。

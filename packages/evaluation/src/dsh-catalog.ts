@@ -152,10 +152,13 @@ export async function discoverDshModels(options: DshCatalogOptions): Promise<Dsh
     }
     // 无法定位入口的包（注册表包不在本地）保留手工输入入口，不写入目录协议。
     const plugins = profilePluginSpecifiers(dshRoot, dshHome, profile);
+    // 适配器入口按 DSH 当前布局给出：DeepSeek 原生适配器已从 llm-deepseek
+    // 拆到 llm-deepseek-api-key，且两者都改为具名导出模块（见 worker 的装载说明）。
+    // settings 不再参与：它现在是需要 profileContext/configEditor 的宿主插件，
+    // 而本查询不启动 profile；适配器不需要它即可注册路由。
     const modules = Object.fromEntries(Object.entries({
-      settings: 'packages/settings/settings/lib/index.js',
       llm: 'packages/llm/llm/lib/index.js',
-      deepseek: 'packages/llm/llm-deepseek/lib/index.js',
+      deepseek: 'packages/llm/llm-deepseek-api-key/lib/index.js',
       pi: 'packages/llm/llm-pi-ai/lib/index.js',
     }).map(([key, path]) => {
       const location = realpathSync(join(dshRoot, path));

@@ -56,27 +56,38 @@ beforeEach(() => {
   write('apps/cli/package.json', JSON.stringify({ name: '@deepseek-ai/dsh', version: '0.1.5' }));
   write('packages/sdk/client/lib/index.js', 'throw new Error("SDK must not start");');
   write('apps/cli/lib/bin.js', 'throw new Error("CLI must not start");');
-  write('packages/settings/settings/node_modules/@deepseek-ai/cordis/package.json', JSON.stringify({ type: 'module', exports: './index.js' }));
-  write('packages/settings/settings/node_modules/@deepseek-ai/cordis/index.js', `export class Context {
+  // 夹具反映 DSH 当前布局：目录查询只装载 llm 运行时与各适配器（无 settings 宿主插件），
+  // 且适配器是「具名导出 apply/inject 的模块」而非默认导出插件对象。
+  // cordis 从 llm 包解析（worker 的 createRequire 锚点）。
+  write('packages/llm/llm/node_modules/@deepseek-ai/cordis/package.json', JSON.stringify({ type: 'module', exports: './index.js' }));
+  write('packages/llm/llm/node_modules/@deepseek-ai/cordis/index.js', `export class Context {
     fiber={dispose:async()=>{}};
     services={};
     provide(name,value){this.services[name]=value;}
     get(name){return this.services[name];}
     async plugin(plugin,config){if(typeof plugin==='function')new plugin(this,config);else await plugin.apply(this,config);}
   }`);
-  write('packages/settings/settings/lib/index.js', `import {readFileSync} from 'node:fs';
-    export class FileSettingsProvider {constructor(ctx,config){if(config.watch!==false)throw new Error('watch must be disabled');ctx.settings=JSON.parse(readFileSync(config.path,'utf8'));}}
-  `);
   write('packages/llm/llm/lib/index.js', `export class LlmRuntime {
-    constructor(ctx){this.ctx=ctx;ctx.llm=this;ctx.llmRuntime=this;this.extra=[];}
-    listProviders(){return [...this.ctx.settings.providers,...this.extra];}
+    constructor(ctx){this.ctx=ctx;ctx.llm=this;ctx.llmRuntime=this;this.registered=[];this.extra=[];}
+    listProviders(){return [...this.registered,...this.extra];}
     async listModels(provider){return this.listProviders().find(item=>item.id===provider).models;}
     async resolveModelInfo(provider,id){const model=(await this.listModels(provider)).find(item=>item.id===id);return model.reasoningEfforts?{reasoning:{efforts:model.reasoningEfforts.map(id=>({id}))}}:{};}
   }`);
-  write('packages/llm/llm-deepseek/lib/index.js', 'export function apply(){}');
-  write('packages/llm/llm-pi-ai/lib/index.js', `import {readFileSync,writeFileSync} from 'node:fs';
+  // 原生适配器：自身不持有 provider，而是把 settings.yaml 里声明的路由注册进 llm 运行时。
+  write('packages/llm/llm-deepseek-api-key/lib/index.js', `import {readFileSync} from 'node:fs';
+    import {join} from 'node:path';
+    export const inject=['llm'];
     export async function apply(ctx){
-      const settings=ctx.settings;
+      const file=join(process.env.DSH_HOME,'settings.yaml');
+      const config=JSON.parse(readFileSync(file,'utf8'));
+      ctx.llm.registered.push(...(config.providers??[]));
+    }
+  `);
+  write('packages/llm/llm-pi-ai/lib/index.js', `import {readFileSync,writeFileSync} from 'node:fs';
+    import {join} from 'node:path';
+    export const inject=['llm'];
+    export async function apply(ctx){
+      const settings=JSON.parse(readFileSync(join(process.env.DSH_HOME,'settings.yaml'),'utf8'));
       if(settings.action==='read-credentials')readFileSync(settings.target,'utf8');
       if(settings.action==='write')writeFileSync(settings.target,'changed');
       if(settings.action==='network')await fetch(settings.target);
@@ -344,4 +355,3 @@ describe('本地 DSH 预设枚举', () => {
     expect(JSON.stringify(result)).not.toContain('private-test-value');
   });
 });
-
