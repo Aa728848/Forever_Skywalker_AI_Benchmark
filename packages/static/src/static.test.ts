@@ -159,7 +159,7 @@ describe('静态客观分接入评分桥', () => {
     try {
       const report = analyzeWorkspace(directory, policy);
       const request: ReviewRequest = { runId: 'run-1', attemptId: 'attempt-1', taskId: 'CACHE-02', promptVersion: 'review-v1', materials: [{ id: 'candidate-1', kind: 'candidate', text: 'export const value = 1;' }] };
-      const judge = createScriptedJudge([JSON.stringify(sampleVerdict(request, { simplicity: 80, maintainability: 80, decoupling: 80, performance: 80 }, ['candidate-1']))]);
+      const judge = createScriptedJudge([JSON.stringify(sampleVerdict(request, { simplicity: 80, maintainability: 80, decoupling: 80 }, ['candidate-1']))]);
       const outcome = await judge.review(request);
       expect(outcome.verdict.dimensions.simplicity.score).toBe(80);
       const manifest = {
@@ -195,15 +195,14 @@ describe('静态客观分接入评分桥', () => {
           simplicity: { score: report.scores.simplicity, evidence: [report.evidenceId], kind: 'static' },
           maintainability: { score: report.scores.maintainability, evidence: [report.evidenceId], kind: 'static' },
           decoupling: { score: report.scores.decoupling, evidence: [report.evidenceId], kind: 'static' },
-          performance: { score: 100, evidence: ['benchmark-1'], kind: 'benchmark' },
         },
         review: {
           simplicity: { score: 80, evidence: ['review-1'] }, maintainability: { score: 80, evidence: ['review-1'] },
-          decoupling: { score: 80, evidence: ['review-1'] }, performance: { score: 80, evidence: ['review-1'] },
+          decoupling: { score: 80, evidence: ['review-1'] },
         },
       });
       expect(score.functional).toBe(50);
-      expect(score.dimensions).toEqual({ simplicity: 88, maintainability: 86, decoupling: 90, performance: 96 });
+      expect(score.dimensions).toEqual({ simplicity: 88, maintainability: 86, decoupling: 90 });
       expect(score.quality).toBeGreaterThan(0);
       expect(score.total).toBe((score.functional ?? 0) + (score.quality ?? 0));
       expect(score.thresholdMet).toBe(true);

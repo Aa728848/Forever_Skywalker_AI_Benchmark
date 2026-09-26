@@ -1,5 +1,5 @@
 import {
-  assessmentValidator, difficulties, functionalWeights, qualityWeights, rubricVersion,
+  assessmentValidator, difficulties, functionalWeights, qualityPointsPerDimension, qualityWeights, rubricVersion,
   type Assessment, type Difficulty, type ExecutionResult, type ExecutionScore, type ScoreResult, type Task, type TaskManifest,
 } from '@fsa/contracts';
 export { scoreBenchmark, type BenchmarkPolicy, type BenchmarkSamples } from './benchmark.ts';
@@ -20,8 +20,8 @@ export function parseAssessment(value: unknown): Assessment {
     }
   };
   for (const item of Object.values(value.functional)) verifyRefs(item.evidence, item.score !== null, ['test', 'benchmark']);
-  for (const [name, item] of Object.entries(value.quality)) {
-    verifyRefs(item.objective.evidence, item.objective.score !== null, name === 'performance' ? ['benchmark'] : ['static']);
+  for (const item of Object.values(value.quality)) {
+    verifyRefs(item.objective.evidence, item.objective.score !== null, ['static']);
     verifyRefs(item.review.evidence, item.review.score !== null, ['review']);
   }
   for (const item of value.criticalChecks) verifyRefs(item.evidence, item.passed !== null, ['test', 'benchmark']);
@@ -37,7 +37,7 @@ export function scoreAssessment(value: unknown): ScoreResult {
     if (current === null) functionalComplete = false;
     else functional += current / 100 * weight;
   }
-  const dimensions: ScoreResult['dimensions'] = { simplicity: null, maintainability: null, decoupling: null, performance: null };
+  const dimensions: ScoreResult['dimensions'] = { simplicity: null, maintainability: null, decoupling: null };
   let quality = 0;
   let qualityComplete = true;
   for (const [key, weight] of Object.entries(qualityWeights)) {
@@ -47,7 +47,7 @@ export function scoreAssessment(value: unknown): ScoreResult {
     else {
       const dimension = objective.score * weight + review.score * (1 - weight);
       dimensions[name] = round(dimension);
-      quality += dimension / 100 * 12.5;
+      quality += dimension / 100 * qualityPointsPerDimension;
     }
   }
   const reasons: string[] = [];
@@ -114,7 +114,7 @@ const executionGroups = ['behavior', 'boundary', 'state', 'regression', 'resourc
  * - 代码质量四个维度没有静态/基准/评审证据时保持 null，因此总分待定。
  */
 
-/** 质量维度输入：客观分（simplicity/maintainability/decoupling 用 static，performance 用 benchmark）与评审分。 */
+/** 质量维度输入：三维的客观分都来自静态分析（static），另有独立评审分。 */
 export type QualityDimension = keyof typeof qualityWeights;
 
 export interface QualityObjective {
@@ -143,7 +143,7 @@ const qualityDimensions = Object.keys(qualityWeights) as QualityDimension[];
  * 任一半缺失、或客观分证据类型不符（性能维度必须是 benchmark）时该维度保持 null，不做重新归一化。
  */
 function composeQuality(evidence: QualityEvidence, reasons: string[]): { dimensions: Record<QualityDimension, number | null>; quality: number | null } {
-  const dimensions: Record<QualityDimension, number | null> = { simplicity: null, maintainability: null, decoupling: null, performance: null };
+  const dimensions: Record<QualityDimension, number | null> = { simplicity: null, maintainability: null, decoupling: null };
   let total = 0;
   let complete = true;
   for (const key of qualityDimensions) {
@@ -163,7 +163,7 @@ function composeQuality(evidence: QualityEvidence, reasons: string[]): { dimensi
       if (review !== undefined && review.evidence.length === 0) reasons.push('质量维度 ' + key + ' 的评审分缺少证据引用。');
       continue;
     }
-    const expected = key === 'performance' ? 'benchmark' : 'static';
+    const expected = 'static';
     if (objective.kind !== expected) {
       complete = false;
       reasons.push('质量维度 ' + key + ' 的客观证据类型必须是 ' + expected + '，实际是 ' + objective.kind + '。');
@@ -177,7 +177,7 @@ function composeQuality(evidence: QualityEvidence, reasons: string[]): { dimensi
     const weight = qualityWeights[key];
     const value = objective.score * weight + review.score * (1 - weight);
     dimensions[key] = round(value);
-    total += (value / 100) * 12.5;
+    total += (value / 100) * qualityPointsPerDimension;
   }
   return { dimensions, quality: complete ? total : null };
 }

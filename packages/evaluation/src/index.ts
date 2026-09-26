@@ -97,15 +97,17 @@ export function createQualityProvider(options: EvaluationOptions = {}): QualityP
       materials.push({ id: `source-${source.index}`, kind: 'candidate', text: content });
     }
     if (omitted.length > 0) materials.push({ id: 'source-scope', kind: 'evidence', text: JSON.stringify({ changedFiles, omittedUnchangedOrOversizeFiles: omitted, note: '以上文件未附全文，不得假设其具体实现；材料不足时拒绝对应判断，不给无关旧代码扣分。' }) });
+    // 性能维度已从评分口径移除：这里的受控验证成本配对测量的是「验证链路耗时」，
+    // 不是候选代码本身的性能，用它给候选打分名不副实。测量本身仍有价值——它是
+    // 发布校准需要的环境事实与参考/候选对照证据，因此保留采集与留档，只是不再产生维度分。
     if (options.measurePerformance ?? env.BENCH_MEASURE_PERFORMANCE === '1') {
       try {
         const benchmark = await measureVerificationCost(context);
         writeEvidence('benchmark-samples', 'benchmark-samples.json', benchmark);
-        objective.performance = { score: benchmark.result.score, evidence: ['benchmark-samples'], kind: 'benchmark' };
         benchmarkCalibrated = benchmark.result.calibrated;
-        notes.push(`性能分来自 ${benchmark.workload} 的外部计时配对实测，包含启动及断言成本；${benchmarkCalibrated ? '匹配冻结校准环境' : '阈值尚未校准'}。`);
+        notes.push(`性能测量已采集但不参与评分：${benchmark.workload} 的外部计时配对实测（包含启动及断言成本），${benchmarkCalibrated ? '匹配冻结校准环境' : '阈值尚未校准'}。`);
       } catch (error) { notes.push('性能证据未取得：' + (error instanceof Error ? error.message : String(error))); }
-    } else notes.push('性能测量未启用，performance 客观分保持缺失。');
+    } else notes.push('性能测量未启用（不影响评分，性能维度已移除）。');
     let independentReview = false;
     if (options.humanReview !== undefined) {
       const human = options.humanReview;

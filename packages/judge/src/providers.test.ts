@@ -5,7 +5,7 @@ import { createJudge, createOpenAICompatibleCompletion, judgeConfigFromEnvironme
 
 const request: ReviewRequest = { runId: 'r', attemptId: 'a', taskId: 'CACHE-02', promptVersion: 'review-v1', materials: [{ id: 'src', kind: 'candidate', text: '代码中文😀' }] };
 const base: JudgeConfig = { provider: 'openai', endpoint: 'https://judge.example/v1', model: 'gpt-6-astra', promptVersion: 'review-v1', maxCalls: 2, maxInputTokens: 100000, maxOutputTokens: 16000, maxTokensPerCall: 8000 };
-const verdict = (model: string) => JSON.stringify(sampleVerdict(request, { simplicity: 70, maintainability: 80, decoupling: 90, performance: 80 }, ['src'], model));
+const verdict = (model: string) => JSON.stringify(sampleVerdict(request, { simplicity: 70, maintainability: 80, decoupling: 90 }, ['src'], model));
 function chat(model: string) { return { model, choices: [{ finish_reason: 'stop', message: { content: verdict(model), reasoning_content: 'DO NOT SAVE ME' } }], usage: { prompt_tokens: 100, completion_tokens: 300, completion_tokens_details: { reasoning_tokens: 200 } } }; }
 function capture(data: unknown) {
   const send = vi.fn<typeof fetch>(async () => new Response(JSON.stringify(data)));

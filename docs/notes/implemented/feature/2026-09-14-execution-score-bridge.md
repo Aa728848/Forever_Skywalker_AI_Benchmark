@@ -18,7 +18,7 @@ Status: implemented
   - **只认执行器产出的检查状态**：`passed` 计入，`failed` 记 0，`not-run` 不当作 0 也不当作满分。
   - `infrastructure-error` 与 `cancelled` 属于未完成执行：可用验证为 `null`、状态 `pending`/\`infra-error\`，只允许同一快照重试。
   - 被测失败（`check-failed`/`timeout`/`memory-exceeded`）按评分标准把未取得的项记 0（超时不再让整题变成“未取得结论”）。
-  - 代码质量四个维度固定为 `null`（静态检查、性能基准与独立评审都未接入），因此 `total=null`；
+  - 代码质量维度当时固定为 `null`（静态检查、性能基准与独立评审都未接入），因此 `total=null`；
     只有关键验收项明确失败时才给出确定的 `thresholdMet=false`，其余保持 `null`（待定）。
 - `packages/executor` 在写 `execution.json` 之前计算评分，落盘 `execution/score.json`，把它加入证据引用，
   并追加 `score.finalized` 事件；`readRunStatus` 与 CLI/API 直接读出正式分数。

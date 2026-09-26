@@ -5,7 +5,14 @@ import Value from 'typebox/value';
 export const difficulties = ['easy', 'medium', 'hard', 'extreme'] as const;
 export const difficultyLabels = { easy: '简单', medium: '中等', hard: '困难', extreme: '极度困难' } as const;
 export const functionalWeights = { behavior: 20, boundary: 10, state: 10, regression: 5, resources: 5 } as const;
-export const qualityWeights = { simplicity: 0.4, maintainability: 0.3, decoupling: 0.5, performance: 0.8 } as const;
+// 代码质量维度。性能维度已移除：本项目的受控验证成本配对实测只测量「验证链路耗时」，
+// 并不度量候选代码本身的性能，用它给 performance 打分名不副实；而题目没有独立性能负载时
+// 该维必然缺证据，使总分永远待定。移除后质量分由三维满分 50 分构成。
+export const qualityWeights = { simplicity: 0.4, maintainability: 0.3, decoupling: 0.5 } as const;
+/** 代码质量总分满分：与可用验证各占 50，两者相加才是 100 分制。 */
+export const qualityTotalPoints = 50;
+/** 每维在质量分中的满分数。由维度个数推导，增删维度时总分口径自动保持 50。 */
+export const qualityPointsPerDimension = qualityTotalPoints / Object.keys(qualityWeights).length;
 export const rubricVersion = '0.1.0';
 
 const text = Type.String({ minLength: 1, maxLength: 2000 });
@@ -48,7 +55,7 @@ export const AssessmentSchema = Type.Object({
   candidateHash: Type.String({ pattern: '^[a-f0-9]{64}$' }),
   execution: Type.Union([Type.Literal('complete'), Type.Literal('incomplete'), Type.Literal('infra-error')]),
   functional: Type.Object({ behavior: dimension, boundary: dimension, state: dimension, regression: dimension, resources: dimension }, { additionalProperties: false }),
-  quality: Type.Object({ simplicity: qualityDimension, maintainability: qualityDimension, decoupling: qualityDimension, performance: qualityDimension }, { additionalProperties: false }),
+  quality: Type.Object({ simplicity: qualityDimension, maintainability: qualityDimension, decoupling: qualityDimension }, { additionalProperties: false }),
   criticalChecks: Type.Array(Type.Object({ id, passed: Type.Union([Type.Boolean(), Type.Null()]), evidence: evidenceRefs }, { additionalProperties: false }), { minItems: 1, maxItems: 100 }),
   evidence: Type.Array(Type.Object({
     id,
@@ -62,7 +69,7 @@ export const assessmentValidator = Schema.Compile(AssessmentSchema);
 export const ScoreResultSchema = Type.Object({
   mode: Type.Literal('preview'), rubricVersion: Type.Literal('0.1.0'),
   functional: score, quality: score, total: score,
-  dimensions: Type.Object({ simplicity: score, maintainability: score, decoupling: score, performance: score }, { additionalProperties: false }),
+  dimensions: Type.Object({ simplicity: score, maintainability: score, decoupling: score }, { additionalProperties: false }),
   readiness: Type.Union([Type.Literal('complete'), Type.Literal('pending'), Type.Literal('infra-error')]),
   thresholdMet: Type.Union([Type.Boolean(), Type.Null()]),
   reasons: Type.Array(text),
@@ -352,7 +359,7 @@ export type RunStatus = Type.Static<typeof RunStatusSchema>;
 export const runStatusValidator = Schema.Compile(RunStatusSchema);
 export const runStatusesValidator = Schema.Compile(Type.Array(RunStatusSchema));
 
-/** 独立评审判决：四维分数必须各自引用证据，并记录模型、提示版本与调用成本。 */
+/** 独立评审判决：三维分数必须各自引用证据，并记录模型、提示版本与调用成本。 */
 export const ReviewVerdictSchema = Type.Object({
   schemaVersion: Type.Literal('0.1.0'),
   runId: id,
@@ -367,7 +374,6 @@ export const ReviewVerdictSchema = Type.Object({
     simplicity: Type.Object({ score, evidence: Type.Array(id, { minItems: 1, maxItems: 20 }) }, { additionalProperties: false }),
     maintainability: Type.Object({ score, evidence: Type.Array(id, { minItems: 1, maxItems: 20 }) }, { additionalProperties: false }),
     decoupling: Type.Object({ score, evidence: Type.Array(id, { minItems: 1, maxItems: 20 }) }, { additionalProperties: false }),
-    performance: Type.Object({ score, evidence: Type.Array(id, { minItems: 1, maxItems: 20 }) }, { additionalProperties: false }),
   }, { additionalProperties: false }),
   notes: Type.Array(text, { maxItems: 32 }),
   cost: Type.Object({
@@ -448,7 +454,7 @@ export const ExecutionScoreSchema = Type.Object({
   quality: score,
   total: score,
   groups: Type.Array(ExecutionGroupScoreSchema, { minItems: 1, maxItems: 5 }),
-  dimensions: Type.Object({ simplicity: score, maintainability: score, decoupling: score, performance: score }, { additionalProperties: false }),
+  dimensions: Type.Object({ simplicity: score, maintainability: score, decoupling: score }, { additionalProperties: false }),
   criticalPassed: Type.Boolean(),
   readiness: Type.Union([Type.Literal('complete'), Type.Literal('pending'), Type.Literal('infra-error')]),
   thresholdMet: Type.Union([Type.Boolean(), Type.Null()]),

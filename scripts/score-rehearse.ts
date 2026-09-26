@@ -23,7 +23,7 @@ try {
   if (applied.exitCode !== 0) throw new Error('参考补丁应用失败：' + applied.stderr);
   const envelope = createEnvelope(taskId, candidate, { idempotencyKey: 'score-rehearsal-' + stamp });
   const request: ReviewRequest = { runId: envelope.runId, attemptId: envelope.attemptId, taskId, promptVersion: 'review-v1', materials: [] };
-  const review = sampleVerdict(request, { simplicity: 85, maintainability: 80, decoupling: 90, performance: 75 }, ['review-material-1'], 'scripted-rehearsal-judge', 'review-v1');
+  const review = sampleVerdict(request, { simplicity: 85, maintainability: 80, decoupling: 90 }, ['review-material-1'], 'scripted-rehearsal-judge', 'review-v1');
   const policy: StaticPolicy = {
     language: 'typescript',
     maxDecisionPointsPerFunction: 12,
@@ -39,12 +39,13 @@ try {
     submittedBy: 'rehearsal',
     staticPolicy: policy,
     review,
-    quality: { mode: 'rehearsal', objective: { performance: { score: 88, evidence: ['benchmark-rehearsal'], kind: 'benchmark' } } },
+    // 性能维度已移除；三维的客观分由静态分析提供，这里不额外注入。
+    quality: { mode: 'rehearsal' },
   });
   const status = readRunStatus(store, outcome.submission.attempt.runId, outcome.submission.attempt.attemptId);
   const score = readExecutionScore(outcome.submission.directory);
   console.log('执行结论：' + outcome.execution.classification + '（隔离 ' + outcome.execution.isolation + '）');
-  console.log('评分模式：' + score?.mode + '（脚本评审与假设性能输入，仅供演练）');
+  console.log('评分模式：' + score?.mode + '（脚本评审输入，仅供演练）');
   console.log('可用验证：' + score?.functional + ' / 50');
   console.log('质量维度：' + JSON.stringify(score?.dimensions));
   console.log('代码质量：' + score?.quality + ' / 50');

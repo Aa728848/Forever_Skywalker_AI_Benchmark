@@ -29,7 +29,7 @@ it('uses the DSH workspace chain, disables review tools, and parses a valid verd
   const { env } = fixture(); const launches: DshRunOptions[] = [];
   const run: DshJudgeDependencies['run'] = vi.fn(async (options: DshRunOptions): Promise<DshRunResult> => {
     launches.push(options);
-    return { finishReason: 'completed', finalResponse: JSON.stringify(sampleVerdict(request, { simplicity: 80, maintainability: 70, decoupling: 90, performance: 60 }, ['candidate-1'], env.BENCH_JUDGE_DSH_MODEL, request.promptVersion)), usage: null,
+    return { finishReason: 'completed', finalResponse: JSON.stringify(sampleVerdict(request, { simplicity: 80, maintainability: 70, decoupling: 90 }, ['candidate-1'], env.BENCH_JUDGE_DSH_MODEL, request.promptVersion)), usage: null,
       requestedModel: { provider: options.provider, model: options.model, reasoningEffort: options.reasoningEffort ?? null, maxTokens: options.maxTokens }, requestedPreset: 'minimal', observedPresets: ['minimal'], presetFingerprint: 'f'.repeat(64), observedRoutes: [{ provider: options.provider, model: options.model }], responseModels: [], dshVersion: '1.2.3', runtimeClosed: true, cleanupScope: 'sdk-runtime', durationMs: 1 };
   });
   const judge = createDshJudgeFromEnvironment(env, { run });
@@ -40,13 +40,13 @@ it('uses the DSH workspace chain, disables review tools, and parses a valid verd
 
 it('accepts a verdict that declares a dimension unjudgeable and writes structured notes', async () => {
   // 真实故障（2026-09-26）：提示词要求「无法从材料判断时拒绝输出判决，不能猜分」，
-  // 模型照做，把 performance.score 写成 null 并按提示词的六个字段交了 notes 对象。
+  // 模型照做，把某一维的 score 写成 null 并按提示词的六个字段交了 notes 对象。
   // 契约当时只收 number 与 string，整份有效判决被判协议错误，质量分与总分永远待定。
   const { env } = fixture();
-  const verdict = sampleVerdict(request, { simplicity: 88, maintainability: 90, decoupling: 100, performance: 0 }, ['candidate-1'], env.BENCH_JUDGE_DSH_MODEL, request.promptVersion);
-  (verdict.dimensions.performance as { score: number | null }).score = null;
-  (verdict as unknown as { notes: unknown[] }).notes = [{ dimension: 'performance', ruleId: 'PERF-UNJUDGEABLE-NO-BASELINE',
-    materialId: 'candidate-1', location: 'phases[].resource', symptom: '缺少同口径对照', impact: '无法归因本次改动' }];
+  const verdict = sampleVerdict(request, { simplicity: 88, maintainability: 90, decoupling: 100 }, ['candidate-1'], env.BENCH_JUDGE_DSH_MODEL, request.promptVersion);
+  (verdict.dimensions.decoupling as { score: number | null }).score = null;
+  (verdict as unknown as { notes: unknown[] }).notes = [{ dimension: 'decoupling', ruleId: 'DECOUPLE-UNJUDGEABLE',
+    materialId: 'candidate-1', location: 'starter/src/keyed-loader.ts', symptom: '材料不足以判断依赖边界', impact: '拒绝猜分，声明不可判' }];
   const run: DshJudgeDependencies['run'] = vi.fn(async (options: DshRunOptions): Promise<DshRunResult> => ({
     finishReason: 'completed', finalResponse: JSON.stringify(verdict), usage: null,
     requestedModel: { provider: options.provider, model: options.model, reasoningEffort: options.reasoningEffort ?? null, maxTokens: options.maxTokens },
@@ -55,13 +55,13 @@ it('accepts a verdict that declares a dimension unjudgeable and writes structure
     runtimeClosed: true, cleanupScope: 'sdk-runtime', durationMs: 1,
   } as DshRunResult));
   const result = await createDshJudgeFromEnvironment(env, { run }).review(request);
-  expect(result.verdict.dimensions.performance.score).toBeNull();
+  expect(result.verdict.dimensions.decoupling.score).toBeNull();
   expect(result.verdict.dimensions.simplicity.score).toBe(88);
   // 结构化 note 被压成可读字符串，六个字段的内容一字不丢。
   expect(result.verdict.notes).toHaveLength(1);
-  expect(result.verdict.notes[0]).toContain('dimension=performance');
-  expect(result.verdict.notes[0]).toContain('ruleId=PERF-UNJUDGEABLE-NO-BASELINE');
-  expect(result.verdict.notes[0]).toContain('symptom=缺少同口径对照');
+  expect(result.verdict.notes[0]).toContain('dimension=decoupling');
+  expect(result.verdict.notes[0]).toContain('ruleId=DECOUPLE-UNJUDGEABLE');
+  expect(result.verdict.notes[0]).toContain('symptom=材料不足以判断依赖边界');
   expect(result.normalizations).toContain('压平结构化 notes');
 });
 
@@ -70,7 +70,7 @@ it('tells the judge that an unjudgeable dimension is declared with null', async 
   const { env } = fixture(); const prompts: string[] = [];
   const run: DshJudgeDependencies['run'] = vi.fn(async (options: DshRunOptions): Promise<DshRunResult> => {
     prompts.push(options.prompt);
-    return { finishReason: 'completed', finalResponse: JSON.stringify(sampleVerdict(request, { simplicity: 80, maintainability: 80, decoupling: 80, performance: 80 }, ['candidate-1'], env.BENCH_JUDGE_DSH_MODEL, request.promptVersion)), usage: null,
+    return { finishReason: 'completed', finalResponse: JSON.stringify(sampleVerdict(request, { simplicity: 80, maintainability: 80, decoupling: 80 }, ['candidate-1'], env.BENCH_JUDGE_DSH_MODEL, request.promptVersion)), usage: null,
       requestedModel: { provider: options.provider, model: options.model, reasoningEffort: options.reasoningEffort ?? null, maxTokens: options.maxTokens },
       requestedPreset: 'minimal', observedPresets: ['minimal'], presetFingerprint: 'f'.repeat(64),
       observedRoutes: [{ provider: options.provider, model: options.model }], responseModels: [], dshVersion: '1.2.3',
@@ -83,7 +83,7 @@ it('tells the judge that an unjudgeable dimension is declared with null', async 
 });
 it('accepts fenced JSON but rejects identity or evidence mismatches', async () => {
   const { env } = fixture();
-  const run: DshJudgeDependencies['run'] = vi.fn(async (options: DshRunOptions): Promise<DshRunResult> => ({ finishReason: 'completed', finalResponse: '```json\n' + JSON.stringify(sampleVerdict(request, { simplicity: 1, maintainability: 1, decoupling: 1, performance: 1 }, ['candidate-1'], env.BENCH_JUDGE_DSH_MODEL, request.promptVersion)) + '\n```', usage: null,
+  const run: DshJudgeDependencies['run'] = vi.fn(async (options: DshRunOptions): Promise<DshRunResult> => ({ finishReason: 'completed', finalResponse: '```json\n' + JSON.stringify(sampleVerdict(request, { simplicity: 1, maintainability: 1, decoupling: 1 }, ['candidate-1'], env.BENCH_JUDGE_DSH_MODEL, request.promptVersion)) + '\n```', usage: null,
     requestedModel: { provider: options.provider, model: options.model, reasoningEffort: null, maxTokens: options.maxTokens }, requestedPreset: 'minimal', observedPresets: ['minimal'], presetFingerprint: 'f'.repeat(64), observedRoutes: [{ provider: options.provider, model: options.model }], responseModels: [], dshVersion: '1.2.3', runtimeClosed: true, cleanupScope: 'sdk-runtime', durationMs: 1 }));
   const judge = createDshJudgeFromEnvironment(env, { run }); await expect(judge.review(request)).resolves.toBeDefined();
   await expect(judge.review({ ...request, materials: [{ id: 'only', kind: 'task', text: 'contract' }, { id: 'candidate-2', kind: 'candidate', text: 'source' }] })).rejects.toThrow('未提供');
@@ -93,7 +93,7 @@ it('accepts a valid verdict surrounded by short model commentary', async () => {
   const { env } = fixture();
   const run: DshJudgeDependencies['run'] = vi.fn(async (options: DshRunOptions): Promise<DshRunResult> => ({
     finishReason: 'completed',
-    finalResponse: '评审结果如下：\n' + JSON.stringify(sampleVerdict(request, { simplicity: 80, maintainability: 80, decoupling: 80, performance: 80 }, ['candidate-1'], env.BENCH_JUDGE_DSH_MODEL, request.promptVersion)) + '\n以上。',
+    finalResponse: '评审结果如下：\n' + JSON.stringify(sampleVerdict(request, { simplicity: 80, maintainability: 80, decoupling: 80 }, ['candidate-1'], env.BENCH_JUDGE_DSH_MODEL, request.promptVersion)) + '\n以上。',
     usage: null,
     requestedModel: { provider: options.provider, model: options.model, reasoningEffort: options.reasoningEffort ?? null, maxTokens: options.maxTokens },
     requestedPreset: 'minimal', observedPresets: ['minimal'], presetFingerprint: 'f'.repeat(64),
@@ -104,7 +104,7 @@ it('accepts a valid verdict surrounded by short model commentary', async () => {
 
 it('accepts a verdict when the platform-owned fields are missing and records harmless decorations', async () => {
   const { env } = fixture();
-  const modelVerdict = structuredClone(sampleVerdict(request, { simplicity: 70, maintainability: 60, decoupling: 80, performance: 50 }, ['candidate-1'], env.BENCH_JUDGE_DSH_MODEL, request.promptVersion)) as unknown as Record<string, unknown>;
+  const modelVerdict = structuredClone(sampleVerdict(request, { simplicity: 70, maintainability: 60, decoupling: 80 }, ['candidate-1'], env.BENCH_JUDGE_DSH_MODEL, request.promptVersion)) as unknown as Record<string, unknown>;
   delete modelVerdict.cost; delete modelVerdict.reviewedAt;
   const dimensions = modelVerdict.dimensions as Record<string, unknown>;
   dimensions.simplicity = { score: 70, evidence: ['candidate-1', 'candidate-1'], note: '重复引用' };
@@ -124,7 +124,7 @@ it('accepts a verdict when the platform-owned fields are missing and records har
 
 it('keeps the raw response and field paths when a verdict violates the protocol', async () => {
   const { env } = fixture();
-  const sample = structuredClone(sampleVerdict(request, { simplicity: 70, maintainability: 60, decoupling: 80, performance: 50 }, ['candidate-1'], env.BENCH_JUDGE_DSH_MODEL, request.promptVersion)) as unknown as Record<string, unknown>;
+  const sample = structuredClone(sampleVerdict(request, { simplicity: 70, maintainability: 60, decoupling: 80 }, ['candidate-1'], env.BENCH_JUDGE_DSH_MODEL, request.promptVersion)) as unknown as Record<string, unknown>;
   const sampleDimensions = sample.dimensions as Record<string, { score: number; evidence: string[] }>;
   sampleDimensions.simplicity = { score: 120, evidence: ['candidate-1'] };
   const broken = JSON.stringify(sample);
@@ -151,6 +151,6 @@ it('keeps the partial response when the review session does not finish', async (
 
 it('creates independent sessions for two rounds and refuses a third uncached call', async () => {
   const { env } = fixture(); const ids: string[] = [];
-  const judge = createDshJudgeFromEnvironment(env, { run: async (options: DshRunOptions): Promise<DshRunResult> => { ids.push(options.sessionId); return { finishReason: 'completed', finalResponse: JSON.stringify(sampleVerdict(request, { simplicity: 1, maintainability: 1, decoupling: 1, performance: 1 }, ['candidate-1'], env.BENCH_JUDGE_DSH_MODEL, request.promptVersion)), usage: null, requestedModel: { provider: options.provider, model: options.model, reasoningEffort: null, maxTokens: options.maxTokens }, requestedPreset: 'minimal', observedPresets: ['minimal'], presetFingerprint: 'f'.repeat(64), observedRoutes: [{ provider: options.provider, model: options.model }], responseModels: [], dshVersion: '1.2.3', runtimeClosed: true, cleanupScope: 'sdk-runtime', durationMs: 1 }; } });
+  const judge = createDshJudgeFromEnvironment(env, { run: async (options: DshRunOptions): Promise<DshRunResult> => { ids.push(options.sessionId); return { finishReason: 'completed', finalResponse: JSON.stringify(sampleVerdict(request, { simplicity: 1, maintainability: 1, decoupling: 1 }, ['candidate-1'], env.BENCH_JUDGE_DSH_MODEL, request.promptVersion)), usage: null, requestedModel: { provider: options.provider, model: options.model, reasoningEffort: null, maxTokens: options.maxTokens }, requestedPreset: 'minimal', observedPresets: ['minimal'], presetFingerprint: 'f'.repeat(64), observedRoutes: [{ provider: options.provider, model: options.model }], responseModels: [], dshVersion: '1.2.3', runtimeClosed: true, cleanupScope: 'sdk-runtime', durationMs: 1 }; } });
   await judge.review(request); await judge.review({ ...request, roundId: '2' }); expect(new Set(ids).size).toBe(2); await expect(judge.review({ ...request, roundId: '3' })).rejects.toThrow('两轮');
 });

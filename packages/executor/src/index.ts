@@ -721,7 +721,6 @@ async function scoreAttemptExecution(
       simplicity: { score: dimensions.simplicity.score, evidence: dimensions.simplicity.evidence },
       maintainability: { score: dimensions.maintainability.score, evidence: dimensions.maintainability.evidence },
       decoupling: { score: dimensions.decoupling.score, evidence: dimensions.decoupling.evidence },
-      performance: { score: dimensions.performance.score, evidence: dimensions.performance.evidence },
     };
     appendRunEvent(outcome.directory, {
       type: 'review.finished',

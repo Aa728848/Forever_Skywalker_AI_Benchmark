@@ -4,7 +4,7 @@ Status: implemented
 
 ## Problem
 
-评分标准里代码质量占 50 分，四个维度各由「客观分 × 权重 + 独立评审 × 权重」合成。
+评分标准里代码质量占 50 分，现由三维（simplicity/maintainability/decoupling）各按「客观分 × 权重 + 独立评审 × 权重」合成。
 平台此前既没有评审协议，也没有评审适配器：`scoreExecution` 只能把四个质量维度全部置 null，
 因此 `total` 永远是待定。要解锁总分，第一步是让「独立评审」成为一条受控、可校验、有预算的链路。
 
@@ -12,7 +12,7 @@ Status: implemented
 
 - `packages/contracts` 新增两个文档类型：
   - `ReviewVerdictSchema`：runId/attemptId/taskId、`rubricVersion`、`model`、`promptVersion`、
-    四维分数（每维必须至少引用一条证据）、notes、`cost`（调用次数与输入/输出 token）、评审时间。
+    三维分数（每维必须至少引用一条证据）、notes、`cost`（调用次数与输入/输出 token）、评审时间。
   - `JudgeConfigSchema`：provider、model、endpoint、`promptVersion`、`maxCalls`、
     `maxInputTokens`、`maxOutputTokens`。
 - 新包 `@fsa/judge`：

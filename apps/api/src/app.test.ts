@@ -68,7 +68,14 @@ describe('正式运行入口', () => {
     const directory = mkdtempSync(join(tmpdir(), 'fsa-api-runs-'));
     const submissions = join(directory, 'submissions');
     const candidate = join(submissions, 'cache-02-defect');
-    const app = buildApp(join(directory, 'reports.sqlite'), { runRoot: join(directory, 'runs'), submissionsRoot: submissions, runToken: 'secret-token' });
+    // 必须隔离仓库根 .env：它含 BENCH_JUDGE_DSH_*，会让本用例真的去调用模型裁判，
+    // 分数因此随裁判输出漂移（实测同一用例在不同运行给出 39.63 与 null 两种结果）。
+    // 这里只断言平台自身的评分链路，裁判输入由脚本类证据提供或干脆缺席。
+    writeFileSync(join(directory, '.env'), 'BENCH_RUN_TOKEN=secret-token\n');
+    const app = buildApp(join(directory, 'reports.sqlite'), {
+      runRoot: join(directory, 'runs'), submissionsRoot: submissions, runToken: 'secret-token',
+      configRoot: directory, configEnv: {},
+    });
     try {
       exportWorkspace('CACHE-02', candidate);
       expect((await app.inject('/api/health')).json()).toMatchObject({ runEntry: true });
@@ -83,6 +90,8 @@ describe('正式运行入口', () => {
       expect(created.statusCode).toBe(201);
       const status = created.json();
       expect(status).toMatchObject({ taskId: 'CACHE-02', phase: 'verified', classification: 'check-failed' });
+      // 本用例不配置裁判：三维的评审一侧缺失，质量分与总分保持待定，可用分照常得出。
+      // 这验证的是「缺证据不补分」仍然生效，而不是删维后凭空产生分数。
       expect(status.scoring).toMatchObject({ mode: 'local', quality: null, total: null });
       expect(status.scoring.functional).toBeGreaterThan(0);
       expect(status.knownFailures.map((item: { id: string }) => item.id).sort()).toEqual([
@@ -134,3 +143,4 @@ describe('正式运行入口', () => {
     }
   }, 180_000);
 });
+

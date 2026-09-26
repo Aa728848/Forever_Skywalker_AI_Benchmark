@@ -19,7 +19,7 @@ BENCH_JUDGE_PROMPT_VERSION=dsh-review-v1
 
 评分默认使用 `minimal` 的无工具评分配置，并要求两轮使用新的 DSH session。工作区权限仍从 DSH 链传入；建议设为 `read-only`。评分 Agent 不读取隐藏检查、参考补丁或其它作答，无法解析 JSON、身份/证据不匹配、超时或回收失败都会保持质量分待定。
 
-`cost` 与 `reviewedAt` 属于平台字段，提示词声明由平台覆盖，适配器在校验前自行写入，模型是否回显不影响判决。模型附带的未知字段、维度内的装饰字段与重复证据引用会被记录后归一化（写入 `normalizations` 与执行说明），四维分数、证据引用、身份与版本仍严格校验。判决被拒时保留失败轮次、原始响应（≤64 KiB）与字段路径：执行目录写入 `review-round-<n>-error.json`，`review-error.json` 记录 `roundId` 与 `issues`；报告对这类行输出「待定原因」。两轮任何一轮不通过都仍保持质量分待定，不做补分。
+`cost` 与 `reviewedAt` 属于平台字段，提示词声明由平台覆盖，适配器在校验前自行写入，模型是否回显不影响判决。模型附带的未知字段、维度内的装饰字段与重复证据引用会被记录后归一化（写入 `normalizations` 与执行说明），三维分数、证据引用、身份与版本仍严格校验。判决被拒时保留失败轮次、原始响应（≤64 KiB）与字段路径：执行目录写入 `review-round-<n>-error.json`，`review-error.json` 记录 `roundId` 与 `issues`；报告对这类行输出「待定原因」。两轮任何一轮不通过都仍保持质量分待定，不做补分。
 
 DSH 评分 Agent 只需在本项目 `.env` 填入 `BENCH_JUDGE_DSH_PROVIDER`、`BENCH_JUDGE_DSH_MODEL` 与思考/预算字段；供应商密钥继续由共用的 DSH home 管理。旧 HTTP 入口的端点与令牌不参与自动评分。
 

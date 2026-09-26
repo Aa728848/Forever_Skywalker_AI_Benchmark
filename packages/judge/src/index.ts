@@ -233,7 +233,7 @@ export function createScriptedJudge(script: readonly string[], model = 'scripted
 /** 构造一份符合协议的评审判决样本（供测试与演练使用）。 */
 export function sampleVerdict(
   request: { runId: string; attemptId: string; taskId: string },
-  scores: { simplicity: number; maintainability: number; decoupling: number; performance: number },
+  scores: { simplicity: number; maintainability: number; decoupling: number },
   evidence: readonly string[],
   model = 'scripted-judge',
   promptVersion = 'review-v1',
@@ -251,7 +251,6 @@ export function sampleVerdict(
       simplicity: dimension(scores.simplicity),
       maintainability: dimension(scores.maintainability),
       decoupling: dimension(scores.decoupling),
-      performance: dimension(scores.performance),
     },
     notes: ['脚本评审样本'],
     cost: { calls: 1, inputTokens: 100, outputTokens: 50 },

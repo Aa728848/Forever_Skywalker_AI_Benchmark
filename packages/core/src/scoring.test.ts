@@ -14,10 +14,15 @@ function input(functional = 100, objective = 100, review = objective): Assessmen
 }
 
 describe('50/50 评分与门槛', () => {
-  it('保持四维比例及各自的客观/评审比例', () => {
+  it('保持三维比例及各自的客观/评审比例', () => {
+    // 性能维度已移除；三维各占质量分 50/3。(40+30+50)/100×50/3=20。
     const result = scoreAssessment(input(100, 100, 0));
-    expect(result).toMatchObject({ functional: 50, quality: 25, total: 75, thresholdMet: true, mode: 'preview' });
-    expect(result.dimensions).toEqual({ simplicity: 40, maintainability: 30, decoupling: 50, performance: 80 });
+    expect(result).toMatchObject({ functional: 50, quality: 20, total: 70, thresholdMet: true, mode: 'preview' });
+    expect(result.dimensions).toEqual({ simplicity: 40, maintainability: 30, decoupling: 50 });
+  });
+  it('三维齐备时质量分满分仍为 50，不因删维缩小刻度', () => {
+    const result = scoreAssessment(input());
+    expect(result).toMatchObject({ quality: 50, total: 100 });
   });
   it('不以代码高分补偿可用验证门槛', () => {
     expect(scoreAssessment(input(70))).toMatchObject({ total: 85, functional: 35, thresholdMet: false });
@@ -197,14 +202,15 @@ describe('质量维度合成与总分', () => {
     'public/behavior': 'passed' as const, 'public/boundary': 'passed' as const, 'public/state': 'passed' as const,
     'public/regression': 'passed' as const, 'public/resources': 'passed' as const,
   };
-  const objective = (kind: 'static' | 'benchmark', score: number) => ({ score, evidence: ['static-report'], kind });
+  const objective = (score: number) => ({ score, evidence: ['static-report'], kind: 'static' as const });
   const review = (score: number) => ({ score, evidence: ['review-1'] });
+  const full = (score: number) => ({
+    objective: { simplicity: objective(score), maintainability: objective(score), decoupling: objective(score) },
+    review: { simplicity: review(score), maintainability: review(score), decoupling: review(score) },
+  });
 
   it('检查全部打印通过但进程异常时仍不合格', () => {
-    const result = scoreExecution(executionFixture(allPassed, 'check-failed'), manifestFixture(), {
-      objective: { simplicity: objective('static', 100), maintainability: objective('static', 100), decoupling: objective('static', 100), performance: objective('benchmark', 100) },
-      review: { simplicity: review(100), maintainability: review(100), decoupling: review(100), performance: review(100) },
-    });
+    const result = scoreExecution(executionFixture(allPassed, 'check-failed'), manifestFixture(), full(100));
     expect(result).toMatchObject({ total: 100, thresholdMet: false });
   });
 
@@ -213,70 +219,67 @@ describe('质量维度合成与总分', () => {
     // 早期实现用 Number.isFinite(null) 判定，会把合法的 null 当成越界值抛 RangeError；
     // 若改成把 null 当 0，则会伪造一个低分。两者都必须避免。
     const score = scoreExecution(executionFixture(allPassed, 'passed'), manifestFixture(), {
-      objective: {
-        simplicity: objective('static', 100), maintainability: objective('static', 100),
-        decoupling: objective('static', 100), performance: objective('benchmark', 100),
-      },
-      review: { simplicity: review(0), maintainability: review(0), decoupling: review(0), performance: { score: null, evidence: ['review-1'] } },
+      objective: { simplicity: objective(100), maintainability: objective(100), decoupling: objective(100) },
+      review: { simplicity: review(0), maintainability: review(0), decoupling: { score: null, evidence: ['review-1'] } },
     });
-    expect(score.dimensions.performance).toBeNull();
-    // 其余三维按各自权重照常合成，不因一维待定而重算或清零：
-    // 100×0.4+0×0.6=40；100×0.3+0×0.7=30；100×0.5+0×0.5=50。
+    expect(score.dimensions.decoupling).toBeNull();
+    // 其余两维按各自权重照常合成，不因一维待定而重算或清零：100×0.4+0×0.6=40；100×0.3+0×0.7=30。
     expect(score.dimensions.simplicity).toBe(40);
     expect(score.dimensions.maintainability).toBe(30);
-    expect(score.dimensions.decoupling).toBe(50);
     expect(score.quality).toBeNull();
     expect(score.total).toBeNull();
     expect(score.reasons.join('；')).toContain('评审分声明不可判');
   });
 
   it('缺失客观分的维度保持待定，不因评审分存在而单独给分', () => {
-    // 客观分由本项目自己的测量产生：测不到时应省略该维度，而不是传 null。
+    // 客观分由本项目自己的静态分析产生：测不到时应省略该维度。
     // 该维缺少客观一侧即保持待定，评审分不得单独构成维度分。
     const score = scoreExecution(executionFixture(allPassed, 'passed'), manifestFixture(), {
-      objective: {
-        simplicity: objective('static', 100), maintainability: objective('static', 100), decoupling: objective('static', 100),
-      },
-      review: { simplicity: review(0), maintainability: review(0), decoupling: review(0), performance: review(100) },
+      objective: { simplicity: objective(100), maintainability: objective(100) },
+      review: { simplicity: review(0), maintainability: review(0), decoupling: review(100) },
     });
-    expect(score.dimensions.performance).toBeNull();
+    expect(score.dimensions.decoupling).toBeNull();
     expect(score.dimensions.simplicity).toBe(40);
     expect(score.quality).toBeNull();
   });
+
   it('客观分与评审分齐备时按权重合成维度分与总分', () => {
     const score = scoreExecution(executionFixture(allPassed, 'passed'), manifestFixture(), {
-      objective: {
-        simplicity: objective('static', 100), maintainability: objective('static', 100),
-        decoupling: objective('static', 100), performance: objective('benchmark', 100),
-      },
-      review: { simplicity: review(0), maintainability: review(0), decoupling: review(0), performance: review(0) },
+      objective: { simplicity: objective(100), maintainability: objective(100), decoupling: objective(100) },
+      review: { simplicity: review(0), maintainability: review(0), decoupling: review(0) },
     });
-    expect(score.dimensions).toEqual({ simplicity: 40, maintainability: 30, decoupling: 50, performance: 80 });
-    expect(score.quality).toBe(25);
+    // 三维各占总分 50/3；S=40、M=30、D=50，(40+30+50)/100×50/3=20。
+    expect(score.dimensions).toEqual({ simplicity: 40, maintainability: 30, decoupling: 50 });
+    expect(score.quality).toBe(20);
     expect(score.functional).toBe(50);
-    expect(score.total).toBe(75);
+    expect(score.total).toBe(70);
     expect(score.thresholdMet).toBe(true);
+  });
+
+  it('三维齐备时质量分满分仍是 50，总分满分 100', () => {
+    // 移除性能维度不得缩小质量分刻度：50/50 量表必须保持。
+    const score = scoreExecution(executionFixture(allPassed, 'passed'), manifestFixture(), full(100));
+    expect(score.quality).toBe(50);
+    expect(score.total).toBe(100);
   });
 
   it('缺评审分时该维度与总分保持待定，并指出缺哪些维度', () => {
     const score = scoreExecution(executionFixture(allPassed, 'passed'), manifestFixture(), {
-      objective: { simplicity: objective('static', 100), maintainability: objective('static', 100), decoupling: objective('static', 100) },
-      review: { simplicity: review(80), maintainability: review(70), decoupling: review(60) },
+      objective: { simplicity: objective(100), maintainability: objective(100) },
+      review: { simplicity: review(80), maintainability: review(70) },
     });
-    expect(score.dimensions.performance).toBeNull();
+    expect(score.dimensions.decoupling).toBeNull();
     expect(score.quality).toBeNull();
     expect(score.total).toBeNull();
     expect(score.thresholdMet).toBeNull();
-    expect(score.reasons.join(' ')).toContain('performance');
+    expect(score.reasons.join(' ')).toContain('decoupling');
   });
 
-  it('性能维度的客观证据必须是 benchmark，类型不符时该维度为 null', () => {
-    const score = scoreExecution(executionFixture(allPassed, 'passed'), manifestFixture(), {
-      objective: { performance: objective('static', 90) },
-      review: { performance: review(90) },
-    });
-    expect(score.dimensions.performance).toBeNull();
-    expect(score.reasons.join(' ')).toContain('performance 的客观证据类型必须是 benchmark');
+  it('性能维度已从评分口径移除：不接受该维输入，也不出现在报告里', () => {
+    // 该维已删除，因为受控验证成本配对测量的是验证链路耗时而非候选代码性能。
+    const score = scoreExecution(executionFixture(allPassed, 'passed'), manifestFixture(), full(100));
+    expect(Object.keys(score.dimensions)).toEqual(['simplicity', 'maintainability', 'decoupling']);
+    expect(score.quality).toBe(50);
   });
 
   it('分数缺少证据引用时拒绝合成', () => {
@@ -289,10 +292,7 @@ describe('质量维度合成与总分', () => {
   });
 
   it('总分不足门槛时明确不合格', () => {
-    const score = scoreExecution(executionFixture({ 'public/behavior': 'passed' }, 'timeout'), manifestFixture(), {
-      objective: { simplicity: objective('static', 0), maintainability: objective('static', 0), decoupling: objective('static', 0), performance: objective('benchmark', 0) },
-      review: { simplicity: review(0), maintainability: review(0), decoupling: review(0), performance: review(0) },
-    });
+    const score = scoreExecution(executionFixture({ 'public/behavior': 'passed' }, 'timeout'), manifestFixture(), full(0));
     expect(score.functional).toBe(20);
     expect(score.quality).toBe(0);
     expect(score.total).toBe(20);
@@ -301,15 +301,13 @@ describe('质量维度合成与总分', () => {
 
   it.each([NaN, Infinity, -1, 101])('正式质量输入拒绝非法分数 %s', value => {
     expect(() => scoreExecution(executionFixture(allPassed, 'passed'), manifestFixture(), {
-      objective: { simplicity: objective('static', value) }, review: { simplicity: review(80) },
+      objective: { simplicity: objective(value) }, review: { simplicity: review(80) },
     })).toThrow(/有限数/);
   });
 
   it('以未舍入分数比较70分门槛，并保留质量证据引用', () => {
-    const score = scoreExecution(executionFixture(allPassed, 'passed'), manifestFixture(), {
-      objective: { simplicity: objective('static', 39.998), maintainability: objective('static', 39.998), decoupling: objective('static', 39.998), performance: objective('benchmark', 39.998) },
-      review: { simplicity: review(39.998), maintainability: review(39.998), decoupling: review(39.998), performance: review(39.998) },
-    });
+    const score = scoreExecution(executionFixture(allPassed, 'passed'), manifestFixture(), full(39.998));
+    // 每维 39.998 → 质量 19.999 → 总分 69.999，显示舍入为 70 但门槛按未舍入值判定。
     expect(score).toMatchObject({ total: 70, thresholdMet: false });
     expect(score.evidenceRefs).toEqual(['public.stdout', 'static-report', 'review-1']);
   });

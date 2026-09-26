@@ -395,7 +395,7 @@ describe('质量证据接入执行档案', () => {
       for (const path of [storeRoot, candidate]) rmSync(path, { recursive: true, force: true });
     }
   }, 180_000);
-  it('静态规则与评审判决落盘并进入评分，缺 benchmark 客观分时总分保持待定', async () => {
+  it('静态规则与评审判决落盘并进入评分，三维齐备即得质量分', async () => {
     const storeRoot = tempDirectory('fsa-quality-store-');
     const candidate = tempDirectory('fsa-quality-candidate-');
     try {
@@ -413,7 +413,7 @@ describe('质量证据接入执行档案', () => {
         rubricVersion: '0.1.0',
         model: 'bench-judge-1',
         promptVersion: 'review-v1',
-        dimensions: { simplicity: dimension(), maintainability: dimension(), decoupling: dimension(), performance: dimension() },
+        dimensions: { simplicity: dimension(), maintainability: dimension(), decoupling: dimension() },
         notes: ['测试评审'],
         cost: { calls: 1, inputTokens: 10, outputTokens: 5 },
         reviewedAt: '2026-01-01T00:00:00.000Z',
@@ -432,10 +432,13 @@ describe('质量证据接入执行档案', () => {
       expect(types).toContain('review.finished');
       const score = readExecutionScore(directory);
       expect(typeof score?.dimensions.simplicity).toBe('number');
-      expect(score?.dimensions.performance).toBeNull();
-      expect(score?.quality).toBeNull();
-      expect(score?.total).toBeNull();
-      expect(score?.reasons.join(' ')).toContain('performance');
+      // 性能维度已移除；维度对象只含三维。
+      expect(Object.keys(score!.dimensions).sort()).toEqual(['decoupling', 'maintainability', 'simplicity']);
+      // 三维都有静态客观分与评审分，质量分因此可以落地——这正是删维的目的：
+      // 不再因为缺少一个度量不到候选代码性能的维度而让总分永远待定。
+      expect(typeof score?.quality).toBe('number');
+      expect(typeof score?.total).toBe('number');
+      expect(score!.total!).toBeGreaterThan(score!.functional!);
       expect(manifest.taskId).toBe(taskId);
     } finally {
       for (const path of [storeRoot, candidate]) rmSync(path, { recursive: true, force: true });
@@ -468,3 +471,5 @@ describe('静态客观分的运行时适配', () => {
     expect(staticObjectiveFor(manifest, report)).toBeNull();
   });
 });
+
+

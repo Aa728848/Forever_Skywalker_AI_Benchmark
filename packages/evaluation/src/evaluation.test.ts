@@ -52,7 +52,7 @@ it('第 2 轮判决不符合协议时保留该轮原始响应与字段路径，�
             { roundId: '2', rawResponse: raw, issues: ['/dimensions：必须包含四项'] });
         }
         return { source: 'scripted', calls: 1, inputTokens: null, outputTokens: null,
-          verdict: sampleVerdict(request, { simplicity: 80, maintainability: 80, decoupling: 80, performance: 80 },
+          verdict: sampleVerdict(request, { simplicity: 80, maintainability: 80, decoupling: 80 },
             ['task-contract', 'execution-evidence', 'source-0'], 'test') };
       },
     };
@@ -75,7 +75,7 @@ it('第 2 轮判决不符合协议时保留该轮原始响应与字段路径，�
   }
 }, 30000);
 
-it('真实执行后使用冻结材料评审，缺性能证据不补分，显式重评保留历史', async () => {
+it('真实执行后使用冻结材料评审，三维齐备即得质量分，显式重评保留历史', async () => {
   const scratch = mkdtempSync(join(tmpdir(), 'fsa-evaluation-'));
   try {
     const candidate = join(scratch, 'candidate');
@@ -91,7 +91,7 @@ it('真实执行后使用冻结材料评审，缺性能证据不补分，显式�
         calls.push(structuredClone(request));
         return { source: 'scripted', calls: calls.length, inputTokens: 20, outputTokens: 10,
           configuration: calls.length === 4 ? { ...configuration, parametersFingerprint: 'b'.repeat(64) } : configuration,
-          verdict: sampleVerdict(request, { simplicity: 80, maintainability: 80, decoupling: 80, performance: 80 },
+          verdict: sampleVerdict(request, { simplicity: 80, maintainability: 80, decoupling: 80 },
             ['task-contract', 'execution-evidence', 'source-0'], 'scripted-test') };
       },
     };
@@ -104,7 +104,8 @@ it('真实执行后使用冻结材料评审，缺性能证据不补分，显式�
     expect(calls[0]!.materials).toEqual(calls[1]!.materials);
     expect(calls[0]!.roundId).toBe('1');
     expect(calls[1]!.roundId).toBe('2');
-    expect(readExecutionScore(first.submission.directory)).toMatchObject({ mode: 'rehearsal', functional: 50, quality: null, total: null });
+    // 性能维度已移除：静态客观分覆盖三维，评审三维齐备，质量分与总分因此落地。
+    expect(readExecutionScore(first.submission.directory)).toMatchObject({ mode: 'rehearsal', functional: 50, quality: 44, total: 94 });
     const originalScorePath = join(first.submission.directory, 'execution', 'score.json');
     const originalScore = readFileSync(originalScorePath, 'utf8');
     const materialText = readFileSync(join(first.submission.directory, 'execution', 'review-materials.json'), 'utf8');
@@ -176,7 +177,7 @@ it('不同题目的裁判参数不混入同一汇总，统一配置的补评修�
     return createQualityProvider({ measurePerformance: false, env: {}, judge: {
       model: 'test-judge', promptVersion: 'review-v1', configuration,
       async review(request) { return { source: 'scripted', configuration, calls: 1, inputTokens: 10, outputTokens: 10,
-        verdict: sampleVerdict(request, { simplicity: 80, maintainability: 80, decoupling: 80, performance: 80 }, ['task-contract', 'execution-evidence'], 'test-judge') }; },
+        verdict: sampleVerdict(request, { simplicity: 80, maintainability: 80, decoupling: 80 }, ['task-contract', 'execution-evidence'], 'test-judge') }; },
     } });
   };
   try {
