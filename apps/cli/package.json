@@ -5,6 +5,7 @@
   "type": "module",
   "dependencies": {
     "@fsa/catalog": "workspace:*",
+    "@fsa/config": "workspace:*",
     "@fsa/contracts": "workspace:*",
     "@fsa/core": "workspace:*",
     "@fsa/runs": "workspace:*",

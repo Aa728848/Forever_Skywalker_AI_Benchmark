@@ -1,9 +1,13 @@
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { JudgeUnavailableError } from '@fsa/judge';
-import { dshJudgeOptionsFromEnvironment } from '../../../packages/evaluation/src/dsh-judge.ts';
-import { discoverDshModels, type DshCatalogModel, type DshCatalogProvider, type DshModelCatalog } from '../../../packages/evaluation/src/dsh-catalog.ts';
-import { readProjectEnvironment, saveProjectEnvironment } from './env-file.ts';
+import { readProjectEnvironment, saveProjectEnvironment } from '@fsa/config';
+import { discoverDshModels, dshJudgeOptionsFromEnvironment } from '@fsa/evaluation';
+
+/** 目录结构类型由 discoverDshModels 的签名派生，不必再走深层相对路径。 */
+type DshModelCatalog = Awaited<ReturnType<typeof discoverDshModels>>;
+type DshCatalogProvider = DshModelCatalog['providers'][number];
+type DshCatalogModel = DshCatalogProvider['models'][number];
 
 /** 交互面：与启动向导、环境配置共用同一个最小 IO 形状。 */
 export interface DshJudgeSetupIO {

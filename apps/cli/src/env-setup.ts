@@ -2,30 +2,14 @@ import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { judgeConfigFromEnvironment, JudgeUnavailableError } from '@fsa/judge';
-import { dshJudgeOptionsFromEnvironment } from '../../../packages/evaluation/src/dsh-judge.ts';
-import { readProjectEnvironment, saveProjectEnvironment } from './env-file.ts';
+import { readProjectEnvironment, saveProjectEnvironment, missingGroups } from '@fsa/config';
+import { dshWorkspacePermissionLabels, resolveDshWorkspacePermission, type discoverDshModels } from '@fsa/evaluation';
 import { collectJudgeSetup, type JudgeSetupIO } from './judge-setup.ts';
-import { dshWorkspacePermissionLabels, resolveDshWorkspacePermission } from '../../../packages/evaluation/src/dsh.ts';
-import type { discoverDshModels } from '../../../packages/evaluation/src/dsh-catalog.ts';
 
 export interface EnvironmentSetupResult { env: NodeJS.ProcessEnv; saved: boolean; cancelled: boolean }
 class SetupCancelled extends Error {}
 const present = (value: string | undefined) => Boolean(value?.trim());
 const imageId = /^sha256:[a-f0-9]{64}$/;
-
-function missingGroups(env: NodeJS.ProcessEnv): string[] {
-  const groups: string[] = [];
-  if (!present(env.BENCH_RUN_TOKEN) || !present(env.BENCH_SUBMISSIONS_DIR) || !present(env.BENCH_PROFILE)) groups.push('基础运行配置');
-  if (env.BENCH_PROFILE === 'linux-container' && (!present(env.BENCH_IMAGE) || !present(env.BENCH_IMAGE_DIGEST))) groups.push('固定 Linux 镜像');
-  if (present(env.BENCH_DSH_ROOT) && present(env.BENCH_DSH_HOME) && !present(env.BENCH_DSH_WORKSPACE_PERMISSION)) groups.push('DSH 工作区权限');
-  try {
-    if (present(env.BENCH_DSH_ROOT) && present(env.BENCH_DSH_HOME)) dshJudgeOptionsFromEnvironment(env);
-    else judgeConfigFromEnvironment(env);
-  }
-  catch (error) { if (!(error instanceof JudgeUnavailableError)) throw error; groups.push('裁判配置'); }
-  return groups;
-}
 
 async function value(io: JudgeSetupIO, prompt: string, fallback = ''): Promise<string> {
   const answer = await io.ask(`${prompt}${fallback ? ` [回车：${fallback}]` : ''}：`);

@@ -4,9 +4,7 @@ import { tasks } from '@fsa/catalog';
 import { difficulties, difficultyLabels } from '@fsa/contracts';
 import { repositoryRoot } from '../../../packages/tasks/src/index.ts';
 import { JudgeUnavailableError } from '@fsa/judge';
-import { dshJudgeOptionsFromEnvironment } from '../../../packages/evaluation/src/dsh-judge.ts';
-import { dshPresetLabels, dshWorkspacePermissionLabels, resolveDshPreset, resolveDshWorkspacePermission } from '../../../packages/evaluation/src/dsh.ts';
-import { discoverDshModels } from '../../../packages/evaluation/src/dsh-catalog.ts';
+import { discoverDshModels, dshJudgeOptionsFromEnvironment, dshPresetLabels, dshWorkspacePermissionLabels, resolveDshPreset, resolveDshWorkspacePermission } from '@fsa/evaluation';
 
 export interface LauncherIO {
   ask(prompt: string): Promise<string | null>;

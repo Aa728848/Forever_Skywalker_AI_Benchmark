@@ -1,0 +1,11 @@
+{
+  "name": "@fsa/config",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "dependencies": {
+    "@fsa/evaluation": "workspace:*",
+    "@fsa/judge": "workspace:*"
+  }
+}

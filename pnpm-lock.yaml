@@ -56,6 +56,9 @@ importers:
       '@fsa/catalog':
         specifier: workspace:*
         version: link:../../packages/catalog
+      '@fsa/config':
+        specifier: workspace:*
+        version: link:../../packages/config
       '@fsa/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -108,6 +111,15 @@ importers:
       '@fsa/contracts':
         specifier: workspace:*
         version: link:../contracts
+
+  packages/config:
+    dependencies:
+      '@fsa/evaluation':
+        specifier: workspace:*
+        version: link:../evaluation
+      '@fsa/judge':
+        specifier: workspace:*
+        version: link:../judge
 
   packages/contracts:
     dependencies:
