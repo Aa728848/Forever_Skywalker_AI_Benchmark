@@ -39,6 +39,18 @@ export interface DshComparisonOptions {
    * 等级/重复次数）必须与既有报告一致，否则拒绝——不同配置的分数不可合并。
    */
   resume?: boolean;
+  /**
+   * 同时推进的作答数（默认 1 = 既有串行行为）。
+   *
+   * 为什么值得开：一次 55 题实测里，作答只占 46%（120 分钟），其余 54% 是容器验证与
+   * 两轮裁判会话；而主循环是逐个 row 串到底的，于是两者都不重叠。3 路可让作答、
+   * 容器验证与裁判同时发生。
+   *
+   * 隔离前提（都已成立，不因并行而改变）：每题一个独立 workspace、一个唯一容器名
+   * （fsa-<uuid>）、一个独立 DSH 会话、一个独立裁判实例（每题新建）。
+   * 唯一需要额外处理的是共享的报告落盘与停止语义，见下方 persist/stop 的处理。
+   */
+  concurrency?: number;
 }
 
 export interface ComparisonEvaluation {
@@ -108,6 +120,9 @@ export function validateComparison(options: DshComparisonOptions): void {
   if (!Number.isSafeInteger(options.repeats) || options.repeats < 1 || options.repeats > 20) throw new Error('重复次数须为 1–20。');
   if (!Number.isSafeInteger(options.maxTokens) || options.maxTokens < 1) throw new Error('每次请求输出上限须为正整数。');
   if (!Number.isSafeInteger(options.timeoutMs) || options.timeoutMs < 1000 || options.timeoutMs > 86_400_000) throw new Error('每次作答时间上限须为 1 秒至 24 小时。');
+  // 上限取 8：再多也只是把同一份模型配额摊得更碎，却让限流与容器争用显著上升。
+  const concurrency = options.concurrency ?? 1;
+  if (!Number.isSafeInteger(concurrency) || concurrency < 1 || concurrency > 8) throw new Error('并行度须为 1–8 的整数。');
 }
 
 /** 缺测不补零，也不只挑完成作答计算均分。不同实际环境或裁判不合并。 */
@@ -324,13 +339,49 @@ export async function runDshComparison(options: DshComparisonOptions, services: 
     persist();
     services.onProgress?.(message);
   };
-  const persist = () => {
-    writeFileSync(join(options.outputDirectory, 'experiment.json.tmp'), JSON.stringify(report, null, 2) + '\n');
-    renameWithRetry(join(options.outputDirectory, 'experiment.json.tmp'), join(options.outputDirectory, 'experiment.json'));
+  /**
+   * 报告落盘。并行时多个 worker 会同时要求落盘，因此这里做两件事：
+   *  1) 用唯一临时名——固定名 `experiment.json.tmp` 会被并发写互相覆盖；
+   *  2) 用一条 Promise 链把落盘串起来——否则两次 rename 可能乱序，
+   *     让较早的完整快照覆盖较新的那个。
+   * 落盘内容始终是**当前这份 report** 的完整快照，所以谁最后写谁是对的。
+   */
+  let persistChain: Promise<void> = Promise.resolve();
+  // 收尾后不再落盘：否则链上的任务会跑到 runDshComparison 返回之后，
+  // 那时调用方（尤其是测试）可能已删掉输出目录，产生 ENOENT 未处理拒绝。
+  let persistClosed = false;
+  const persistNow = () => {
+    const stamp = randomUUID();
+    const jsonTemp = join(options.outputDirectory, 'experiment.json.' + stamp + '.tmp');
+    const markdownTemp = join(options.outputDirectory, 'report.md.' + stamp + '.tmp');
+    writeFileSync(jsonTemp, JSON.stringify(report, null, 2) + '\n');
+    renameWithRetry(jsonTemp, join(options.outputDirectory, 'experiment.json'));
     // 与 experiment.json 相同的先写临时文件再改名：读者不会看到写了一半的 Markdown。
-    writeFileSync(join(options.outputDirectory, 'report.md.tmp'), renderComparison(report));
-    renameWithRetry(join(options.outputDirectory, 'report.md.tmp'), join(options.outputDirectory, 'report.md'));
+    writeFileSync(markdownTemp, renderComparison(report));
+    renameWithRetry(markdownTemp, join(options.outputDirectory, 'report.md'));
   };
+  /**
+   * 落盘：串行排队，且**吞掉链上错误**——错误必须由 await 到的调用方看到，
+   * 而不是变成未处理拒绝。persistClosed 之后调用直接成为空操作。
+   */
+  const persist = (): Promise<void> => {
+    if (persistClosed) return Promise.resolve();
+    persistChain = persistChain.then(persistNow, persistNow).catch(error => {
+      // 记下来，交给下一次同步落盘或收尾抛出；不在这里抛，避免未处理拒绝。
+      persistError = error instanceof Error ? error : new Error(String(error));
+    });
+    return persistChain;
+  };
+  /**
+   * 等链排空（**不关闭**），并把链上的错误交给调用方。
+   * 关闭是另一件事，只在真正返回前做一次——否则 finally 里写最终状态与 cleanup 的
+   * persist() 会全部变成空操作，磁盘上的 state 会停在 'running'。
+   */
+  const drainPersist = async (): Promise<void> => {
+    await persistChain;
+    if (persistError !== null) { const error = persistError; persistError = null; throw error; }
+  };
+  let persistError: Error | null = null;
   const solve = services.solve ?? runDsh;
   const evaluate = services.evaluate ?? (async (taskId, workspace, row) => {
     const envelope = createEnvelope(taskId, workspace, { idempotencyKey: row.sessionId, reason: 'agent-completed' });
@@ -342,62 +393,91 @@ export async function runDshComparison(options: DshComparisonOptions, services: 
     const identity = inspectRunSelection(store, [{ runId, attemptId }]);
     return { status: readRunStatus(store, runId, attemptId), environmentKey: identity.environmentKey, judgeKey: identity.judgeKey };
   });
-  try {
-    persist();
-    for (const row of report.rows) {
-      if (services.signal?.aborted) { report.state = 'cancelled'; break; }
-      // 续跑复用下来的已完成行：跳过，不重新作答，分数原样保留。
-      if (resumed !== null && isSettledRow(row)) continue;
-      const runtimeDirectory = join(scratch.directory, 'runtime', row.sessionId);
-      const workspace = join(scratch.directory, 'workspaces', row.sessionId);
-      try {
-        exportWorkspace(row.taskId, workspace);
-        row.phase = 'solving'; persist();
-        progress(`${row.taskId} · ${row.preset} / ${row.mode} · 第 ${row.repetition} 次：DSH 作答中`);
-        row.solver = await solve({ dshRoot: options.dshRoot, dshHome: options.dshHome, profile: options.profile,
-          agentPreset: row.preset, scratchDirectory: runtimeDirectory,
-          workspacePermission: options.workspacePermission,
-          workspace, provider: options.provider, model: options.model, reasoningEffort: row.mode,
-          maxTokens: options.maxTokens, sessionId: row.sessionId, prompt: comparisonPrompt, timeoutMs: options.timeoutMs, env,
-          ...(services.signal ? { signal: services.signal } : {}) });
-        if (row.solver.finishReason !== 'completed') {
-          row.phase = 'solver-stopped';
-          if (row.solver.finishReason === 'cancelled' || services.signal?.aborted) { report.state = 'cancelled'; break; }
-          continue;
-        }
-        if (services.signal?.aborted) { row.phase = 'solver-stopped'; report.state = 'cancelled'; break; }
-        row.phase = 'grading'; persist();
-        progress(`${row.taskId} · ${row.preset} / ${row.mode}：Linux 验证与评分中`);
-        row.evaluation = await evaluate(row.taskId, workspace, row, store);
-        if (judgeCleanupError) throw judgeCleanupError;
-        row.phase = 'done';
-        if (services.signal?.aborted) { report.state = 'cancelled'; break; }
-        if (row.evaluation.status.classification === 'infrastructure-error') throw new Error('评分基础设施失败，已停止后续模型调用。');
-        if (comparisonGroups(report).drift.length > 0) throw new Error('检测到环境或模型漂移，已停止后续作答。');
-      } catch (error) {
-        if (error instanceof DshCleanupError) { cleanupAllowed = false; retentionReason = error.message; }
-        row.phase = 'error'; row.error = error instanceof Error ? error.message : String(error);
-        throw error;
-      } finally {
-        // 失败作答也保留代码证据；只有报告成功落盘后才删除工作副本。
-        if (cleanupAllowed && existsSync(workspace)) {
-          try {
-            const digest = digestTree(workspace);
-            const answerRoot = join(scratch.directory, 'evidence', 'answers', row.sessionId);
-            mkdirSync(answerRoot, { recursive: true });
-            for (const file of digest.files) {
-              const target = join(answerRoot, file.path);
-              mkdirSync(dirname(target), { recursive: true }); copyFileSync(join(workspace, file.path), target);
-            }
-            if (digestTree(answerRoot).treeHash !== digest.treeHash) throw new Error('作答证据复制时发生变化。');
-          } catch (error) {
-            cleanupAllowed = false; retentionReason = '作答证据保存失败，保留临时目录。';
-            throw error;
-          }
-        }
-        persist();
+  /**
+   * 停止派发：串行时一个 break 就够，并行时只能用标记让「还没开始的」行不再开始，
+   * 在飞行的行必须收尾——否则它们的 workspace 与证据会半途而废。
+   */
+  let stopReason: 'cancelled' | 'failed' | null = null;
+  const requestStop = (reason: 'cancelled' | 'failed') => { if (stopReason === null) stopReason = reason; };
+  const shouldStop = () => stopReason !== null || services.signal?.aborted === true;
+
+  /** 处理一条作答：作答 -> 容器验证 -> 裁判评分 -> 落盘。每条 row 只被一个 worker 处理。 */
+  const runRow = async (row: ComparisonRow): Promise<void> => {
+    const runtimeDirectory = join(scratch.directory, 'runtime', row.sessionId);
+    const workspace = join(scratch.directory, 'workspaces', row.sessionId);
+    try {
+      exportWorkspace(row.taskId, workspace);
+      row.phase = 'solving'; persist();
+      progress(`${row.taskId} · ${row.preset} / ${row.mode} · 第 ${row.repetition} 次：DSH 作答中`);
+      row.solver = await solve({ dshRoot: options.dshRoot, dshHome: options.dshHome, profile: options.profile,
+        agentPreset: row.preset, scratchDirectory: runtimeDirectory,
+        workspacePermission: options.workspacePermission,
+        workspace, provider: options.provider, model: options.model, reasoningEffort: row.mode,
+        maxTokens: options.maxTokens, sessionId: row.sessionId, prompt: comparisonPrompt, timeoutMs: options.timeoutMs, env,
+        ...(services.signal ? { signal: services.signal } : {}) });
+      if (row.solver.finishReason !== 'completed') {
+        row.phase = 'solver-stopped';
+        if (row.solver.finishReason === 'cancelled' || services.signal?.aborted) requestStop('cancelled');
+        return;
       }
+      if (services.signal?.aborted) { row.phase = 'solver-stopped'; requestStop('cancelled'); return; }
+      row.phase = 'grading'; persist();
+      progress(`${row.taskId} · ${row.preset} / ${row.mode}：Linux 验证与评分中`);
+      row.evaluation = await evaluate(row.taskId, workspace, row, store);
+      if (judgeCleanupError) throw judgeCleanupError;
+      row.phase = 'done';
+      if (services.signal?.aborted) { requestStop('cancelled'); return; }
+      if (row.evaluation.status.classification === 'infrastructure-error') throw new Error('评分基础设施失败，已停止后续模型调用。');
+      // 漂移检查只读已落定行的 environmentKey/judgeKey；未完成的行 evaluation 为 null，不参与。
+      if (comparisonGroups(report).drift.length > 0) throw new Error('检测到环境或模型漂移，已停止后续作答。');
+    } catch (error) {
+      if (error instanceof DshCleanupError) { cleanupAllowed = false; retentionReason = error.message; }
+      row.phase = 'error'; row.error = error instanceof Error ? error.message : String(error);
+      requestStop('failed');
+      throw error;
+    } finally {
+      // 失败作答也保留代码证据；只有报告成功落盘后才删除工作副本。
+      if (cleanupAllowed && existsSync(workspace)) {
+        try {
+          const digest = digestTree(workspace);
+          const answerRoot = join(scratch.directory, 'evidence', 'answers', row.sessionId);
+          mkdirSync(answerRoot, { recursive: true });
+          for (const file of digest.files) {
+            const target = join(answerRoot, file.path);
+            mkdirSync(dirname(target), { recursive: true }); copyFileSync(join(workspace, file.path), target);
+          }
+          if (digestTree(answerRoot).treeHash !== digest.treeHash) throw new Error('作答证据复制时发生变化。');
+        } catch (error) {
+          cleanupAllowed = false; retentionReason = '作答证据保存失败，保留临时目录。';
+          throw error;
+        }
+      }
+      persist();
     }
+  };
+
+  try {
+    await persist();
+    // 待执行的行（续跑复用的已落定行不在此列）。
+    const queue = report.rows.filter(row => !(resumed !== null && isSettledRow(row)));
+    const concurrency = Math.min(options.concurrency ?? 1, Math.max(1, queue.length));
+    if (concurrency > 1) progress('并行度 ' + concurrency + '：同时推进 ' + queue.length + ' 条作答。');
+    let cursor = 0;
+    /** 一个 worker：不断取下一行，直到队列取空或收到停止标记。 */
+    const worker = async (): Promise<void> => {
+      while (cursor < queue.length && !shouldStop()) {
+        const row = queue[cursor]!;
+        cursor += 1;
+        await runRow(row);
+      }
+    };
+    // Promise.all 让第一条失败的 worker 立即冒泡；其余 worker 因 shouldStop() 不再取新行。
+    // 在飞行的行仍会收尾（runRow 内部的 finally 必须跑完），因此不会留下半截证据。
+    const results = await Promise.allSettled(Array.from({ length: concurrency }, () => worker()));
+    const rejected = results.find(result => result.status === 'rejected');
+    if (rejected !== undefined && rejected.status === 'rejected') throw rejected.reason;
+    if (stopReason === 'cancelled' || services.signal?.aborted) report.state = 'cancelled';
+    else if (stopReason === 'failed') report.state = 'failed';
     if (report.state === 'running') report.state = 'completed';
     // 每模式/每次重复单独选择，沿用原分级门槛与集成题单列规则。
     if (services.evaluate === undefined) {
@@ -410,24 +490,31 @@ export async function runDshComparison(options: DshComparisonOptions, services: 
         if (selection.length > 0) writeFileSync(join(summariesRoot, `${preset}-${mode}-r${repetition}-summary.json`), JSON.stringify(summarizeRuns(store, selection), null, 2) + '\n');
       }
     }
+    // 返回前排空落盘链：之后 persist 变成空操作，避免写入跑到调用方清理之后。
+    await drainPersist();
   } catch (error) {
     report.state = services.signal?.aborted ? 'cancelled' : 'failed';
     report.issues.push(error instanceof Error ? error.message : String(error));
+    // 失败路径同样排空：在途写入必须先落完，再进 finally 归档与清理。
+    await drainPersist().catch(() => undefined);
   } finally {
     report.finishedAt = new Date().toISOString();
     try {
       report.evidence = archiveComparisonEvidence(scratch, options.outputDirectory, { merge: resumed !== null });
-      persist();
+      await persist();
       if (!cleanupAllowed) throw new Error(retentionReason || '运行数据尚不能安全清理，保留临时目录。');
       cleanupComparisonScratch(scratch);
       report.cleanup = { state: 'complete', directory: null, reason: null };
-      persist();
+      await persist();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       report.state = 'failed'; report.issues.push(message);
       if (existsSync(scratch.directory)) report.cleanup = { state: 'retained', directory: scratch.directory, reason: message };
-      try { persist(); } catch { throw new Error(`报告写入失败：${message}。保留的运行数据：${report.cleanup.directory ?? options.outputDirectory}`); }
+      try { await persist(); } catch { throw new Error(`报告写入失败：${message}。保留的运行数据：${report.cleanup.directory ?? options.outputDirectory}`); }
     }
+    // 最后一次排空 + 关闭：确保返回时没有任何在途写入，调用方随后清理目录才安全。
+    await drainPersist().catch(() => undefined);
+    persistClosed = true;
   }
   return report;
 }

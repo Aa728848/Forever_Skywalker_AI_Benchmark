@@ -64,6 +64,7 @@ interface LaunchForm {
   repeats: number;
   timeoutMinutes: number;
   maxTokens: number;
+  concurrency: number;
   measurePerformance: boolean;
   outputRoot: string;
 }
@@ -71,6 +72,7 @@ interface LaunchForm {
 const initialForm: LaunchForm = {
   scope: 'one', difficulty: 'medium', taskIds: ['CACHE-02'], provider: '', model: '',
   presets: ['standard'], modes: ['off', 'high'], repeats: 1, timeoutMinutes: 20, maxTokens: 16384,
+  concurrency: 1,
   measurePerformance: false, outputRoot: '',
 };
 
@@ -250,7 +252,7 @@ export function LaunchPanel({ tasks }: { tasks: Task[] }) {
     ...(form.provider.trim() === '' ? {} : { provider: form.provider.trim() }),
     ...(form.model.trim() === '' ? {} : { model: form.model.trim() }),
     presets: form.presets, modes: form.modes, repeats: form.repeats, timeoutMinutes: form.timeoutMinutes,
-    maxTokens: form.maxTokens, measurePerformance: form.measurePerformance,
+    maxTokens: form.maxTokens, measurePerformance: form.measurePerformance, concurrency: form.concurrency,
     ...(form.outputRoot.trim() === '' ? {} : { outputRoot: form.outputRoot.trim() }),
   });
 
@@ -364,6 +366,12 @@ export function LaunchPanel({ tasks }: { tasks: Task[] }) {
         <input id="launch-minutes" type="number" min={1} max={1440} value={form.timeoutMinutes} onChange={event => edit({ timeoutMinutes: Number(event.target.value) })} />
         <label htmlFor="launch-tokens">每次请求输出上限</label>
         <input id="launch-tokens" type="number" min={1} value={form.maxTokens} onChange={event => edit({ maxTokens: Number(event.target.value) })} />
+        <label htmlFor="launch-concurrency">并行度（1–8）</label>
+        <input id="launch-concurrency" type="number" min={1} max={8} value={form.concurrency}
+          onChange={event => edit({ concurrency: Math.min(8, Math.max(1, Number(event.target.value) || 1)) })} />
+        <small>1 = 串行。大于 1 时同时推进多道题：作答、容器验证与裁判评分重叠进行。
+          实测 55 题串行约 259 分钟（作答 46%、验证与评分 54%），3 路可让两者不再互相等待。
+          每题仍用独立 workspace、独立容器与独立裁判会话，结果与串行可比。</small>
       </div>
       <div className="launch-field">
         <label htmlFor="launch-output">报告根</label>

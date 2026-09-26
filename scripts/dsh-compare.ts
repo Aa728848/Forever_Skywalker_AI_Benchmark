@@ -31,6 +31,8 @@ pnpm dsh:compare --model <模型 ID> --check
 --all 选择全部已具备题目包的题，不能与 --tasks 同时使用。
 --check 只核对本地文件、容器和裁判参数；不启动 DSH、不调用模型。
 --minutes / --max-tokens 调整作答预算；--no-measure 跳过性能采样（完整质量分保持待定）。
+--concurrency <1-8> 同时推进的作答数，默认 1（串行）。3 可让作答、容器验证与裁判评分重叠进行。
+  实测 55 题串行约 259 分钟（作答 46%、验证与评分 54%），并行后两者不再互相等待。
 --experiment-id <id> 用固定标识认领报告目录（<报告根>/<id>），已存在即拒绝，绝不覆盖已有实验；省略时沿用时间戳+随机后缀。
 --resume <id> 续跑既有实验：只补跑未完成/出错的行，已完成的作答与分数原样保留。
   用于「55 题跑完大部分、少数未作答或出错」的场景，避免为少数失败重付整轮模型额度。
@@ -109,7 +111,7 @@ try {
     repeat: { type: 'string', default: '1' }, minutes: { type: 'string', default: '20' },
     'max-tokens': { type: 'string', default: '16384' }, 'no-measure': { type: 'boolean' },
     'experiment-id': { type: 'string' }, 'supervisor-token': { type: 'string' }, 'launch-record': { type: 'string' },
-    resume: { type: 'string' },
+    resume: { type: 'string' }, concurrency: { type: 'string' },
   } });
   if (values.help) console.log(usage);
   else {
@@ -137,6 +139,7 @@ try {
       taskIds: values.all ? tasks.filter(task => task.status !== 'designed').map(task => task.id) : (values.tasks ?? 'CACHE-02').split(/[,\s]+/).filter(Boolean),
       modes: (values.modes || values.reasoning || process.env.BENCH_DSH_REASONING_EFFORT || 'off,high').split(/[,\s]+/).filter(Boolean),
       repeats: Number(values.repeat), maxTokens: Number(values['max-tokens']), timeoutMs: Number(values.minutes) * 60_000,
+      ...(values.concurrency === undefined ? {} : { concurrency: Number(values.concurrency) }),
       outputDirectory: values.resume !== undefined
         ? existingExperimentDirectory(outputRoot, values.resume)
         : values['experiment-id'] === undefined || values['experiment-id'] === ''

@@ -330,6 +330,7 @@ export function buildApp(databasePath = ':memory:', options: AppOptions = {}) {
         ...(number(raw.repeats, 'repeats') === undefined ? {} : { repeats: number(raw.repeats, 'repeats')! }),
         ...(number(raw.timeoutMinutes, 'timeoutMinutes') === undefined ? {} : { timeoutMinutes: number(raw.timeoutMinutes, 'timeoutMinutes')! }),
         ...(number(raw.maxTokens, 'maxTokens') === undefined ? {} : { maxTokens: number(raw.maxTokens, 'maxTokens')! }),
+        ...(number(raw.concurrency, 'concurrency') === undefined ? {} : { concurrency: number(raw.concurrency, 'concurrency')! }),
         ...(raw.measurePerformance === undefined ? {} : { measurePerformance: raw.measurePerformance === true }),
         ...(taskIds === undefined ? {} : { taskIds }), ...(presets === undefined ? {} : { presets }), ...(modes === undefined ? {} : { modes }),
       };

@@ -271,6 +271,46 @@ it('续跑拒绝与既有报告不一致的配置，避免把两套配置的分�
       .rejects.toThrow(/续跑要求报告目录里已有 experiment.json/);
   } finally { context.clean(); }
 }, 30_000);
+it('并行度 N 真的让 N 条作答同时在飞，并缩短墙钟', async () => {
+  // 直接证据：记录「同时在飞」的峰值。串行时峰值恒为 1。
+  const measure = async (concurrency: number) => {
+    const context = setup();
+    try {
+      let inFlight = 0; let peak = 0;
+      const started = Date.now();
+      const report = await runDshComparison({ ...context.options, taskIds: ['CACHE-02', 'CACHE-03', 'CACHE-04'], repeats: 1, modes: ['off'], concurrency },
+        { env: {},
+          async solve(options) {
+            inFlight += 1; peak = Math.max(peak, inFlight);
+            await new Promise(resolve => setTimeout(resolve, 120));
+            inFlight -= 1;
+            return solverResult(options);
+          },
+          async evaluate(taskId, workspace, row, store) {
+            inFlight += 1; peak = Math.max(peak, inFlight);
+            await new Promise(resolve => setTimeout(resolve, 120));
+            inFlight -= 1;
+            const outcome = await verifySubmission({ store, taskId, candidateDirectory: workspace,
+              envelope: createEnvelope(taskId, workspace, { idempotencyKey: row.sessionId }), submittedBy: 'scripted-' + row.mode, profile: 'local' });
+            const { runId, attemptId } = outcome.submission.attempt;
+            const identity = inspectRunSelection(store, [{ runId, attemptId }]);
+            return { status: readRunStatus(store, runId, attemptId), environmentKey: identity.environmentKey, judgeKey: identity.judgeKey };
+          },
+        });
+      return { peak, elapsed: Date.now() - started, state: report.state, rows: report.rows.length };
+    } finally { context.clean(); }
+  };
+  const serial = await measure(1);
+  const parallel = await measure(3);
+  // 串行峰值必须是 1；3 路必须达到 3。
+  expect(serial.peak).toBe(1);
+  expect(parallel.peak).toBe(3);
+  // 三条各睡 240ms（solve+evaluate），3 路应显著快于串行。
+  expect(parallel.elapsed).toBeLessThan(serial.elapsed);
+  // 并行不改变结果完整性。
+  expect(parallel.state).toBe('completed');
+  expect(parallel.rows).toBe(3);
+}, 40_000);
 it('错误、超时和取消保留为未评分，取消后不启动剩余作答', async () => {
   const context = setup();
   const controller = new AbortController();

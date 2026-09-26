@@ -133,6 +133,8 @@ export interface LaunchPlan {
   readonly model: string;
   /** 计划总作答次数 = 题数 × 预设数 × 等级数 × 重复次数。 */
   readonly answers: number;
+  /** 同时推进的作答数；1 = 串行。 */
+  readonly concurrency: number;
 }
 
 export interface DescendantEntry {
@@ -248,6 +250,8 @@ export interface LaunchRequest {
   timeoutMinutes?: number;
   maxTokens?: number;
   measurePerformance?: boolean;
+  /** 同时推进的作答数（1–8，默认 1）。 */
+  concurrency?: number;
   provider?: string;
   model?: string;
   /** 仅预检：传 --check，不启动 DSH、不调用模型。 */
@@ -508,6 +512,8 @@ export function createLaunches(options: LaunchesOptions): Launches {
       '--tasks', plan.taskIds.join(','), '--repeat', String(plan.repeats),
       '--minutes', String(plan.timeoutMinutes), '--max-tokens', String(plan.maxTokens)];
     if (!plan.measurePerformance) argv.push('--no-measure');
+    // 只在真的并行时下发，避免串行运行的命令行与既有记录产生无意义差异。
+    if (plan.concurrency > 1) argv.push('--concurrency', String(plan.concurrency));
     if (check) argv.push('--check');
     return argv;
   }
@@ -547,6 +553,7 @@ export function createLaunches(options: LaunchesOptions): Launches {
         measurePerformance: settings.measurePerformance === true,
         provider: typeof settings.provider === 'string' ? settings.provider : '',
         model: typeof settings.model === 'string' ? settings.model : '',
+        concurrency: numberOf(settings.concurrency, 1),
         answers: taskIds.length * presets.length * modes.length * repeats,
       };
     } catch { return null; }
@@ -586,6 +593,7 @@ export function createLaunches(options: LaunchesOptions): Launches {
     const maxTokens = request.maxTokens ?? 16384;
     const measurePerformance = request.measurePerformance ?? snapshot.BENCH_MEASURE_PERFORMANCE === '1';
     const taskIds = resolveScopeTaskIds(request);
+    const concurrency = request.concurrency ?? 1;
     // 复用 @fsa/evaluation 的 validateComparison：参数规则只有一个家，API 不另写一套。
     const candidate: DshComparisonOptions = {
       dshRoot: resolve(snapshot.BENCH_DSH_ROOT ?? join(repositoryRoot, 'missing-dsh')),
@@ -594,17 +602,17 @@ export function createLaunches(options: LaunchesOptions): Launches {
       workspacePermission: (snapshot.BENCH_DSH_WORKSPACE_PERMISSION ?? 'workspace-write') as DshComparisonOptions['workspacePermission'],
       provider, model, presets: presets as DshComparisonOptions['presets'], modes, taskIds, repeats, maxTokens,
       timeoutMs: timeoutMinutes * 60_000, outputDirectory: join(outputRootOf(request), 'pending-claim'), image: 'pending', imageDigest: 'pending',
-      measurePerformance,
+      measurePerformance, concurrency,
     };
     try { validateComparison(candidate); }
     catch (error) { throw new LaunchError(400, error instanceof Error ? error.message : '测评参数无效。'); }
-    return { taskIds, presets, modes, repeats, timeoutMinutes, maxTokens, measurePerformance, provider, model,
+    return { taskIds, presets, modes, repeats, timeoutMinutes, maxTokens, measurePerformance, provider, model, concurrency,
       answers: taskIds.length * presets.length * modes.length * repeats };
   }
 
   /* ------------------------------ 纯读视图 ------------------------------ */
 
-  const emptyPlan: LaunchPlan = { taskIds: [], presets: [], modes: [], repeats: 0, timeoutMinutes: 0, maxTokens: 0, measurePerformance: false, provider: '', model: '', answers: 0 };
+  const emptyPlan: LaunchPlan = { taskIds: [], presets: [], modes: [], repeats: 0, timeoutMinutes: 0, maxTokens: 0, measurePerformance: false, provider: '', model: '', concurrency: 1, answers: 0 };
 
   function unreadableView(launchId: string, error: string): LaunchView {
     return { launchId, kind: 'comparison', experimentId: launchId, outputRoot: '', startedAt: '', state: 'unknown', exitCode: null,

@@ -232,6 +232,23 @@ await new Promise(r => setTimeout(r, Number(process.env.FAKE_SLEEP_MS ?? 300)));
     await expect(launchesFor(h.config, { launchesRoot: h.launchesRoot, childPath: h.childPath, baseEnv: h.baseEnv })
       .launch({ resumeExperimentId: existing, outputRoot: h.outputRoot })).rejects.toThrow(/settings 无法解析/);
   }, 30_000);
+  it('并行度大于 1 时下发 --concurrency；默认串行不下发', async () => {
+    const h = harness();
+    const launches = launchesFor(h.config, { launchesRoot: h.launchesRoot, childPath: h.childPath, baseEnv: h.baseEnv });
+    // 默认 1：命令行保持原样，不产生无意义差异。
+    const serial = await launches.launch(launchRequest(h));
+    expect(serial.plan.concurrency).toBe(1);
+    expect(serial.args).not.toContain('--concurrency');
+    // 3 路：透传 plan 与命令行。
+    const parallel = await launches.launch(launchRequest(h, { concurrency: 3 }));
+    expect(parallel.plan.concurrency).toBe(3);
+    const at = parallel.args.indexOf('--concurrency');
+    expect(at).toBeGreaterThanOrEqual(0);
+    expect(parallel.args[at + 1]).toBe('3');
+    // 越界被拒。
+    await expect(launches.launch(launchRequest(h, { concurrency: 9 }))).rejects.toThrow(/并行度/);
+    await expect(launches.launch(launchRequest(h, { concurrency: 0 }))).rejects.toThrow(/并行度/);
+  }, 30_000);
   it('新建路径仍然用 --experiment-id，不受续跑改动影响', async () => {
     const h = harness();
     const view = await (launchesFor(h.config, { launchesRoot: h.launchesRoot, childPath: h.childPath, baseEnv: h.baseEnv }))
