@@ -509,6 +509,115 @@ export type SuiteReport = Type.Static<typeof SuiteReportSchema>;
 export const suiteReportValidator = Schema.Compile(SuiteReportSchema);
 
 
+/**
+ * DSH 自动比较（experiment.json）的只读出口协议。
+ * 报告目录由 CLI 直接落盘，这里只描述读取侧的事实：损坏的报告必须仍然出现在列表里并带原因，
+ * 不允许被静默隐藏；不透明 reportId 由 API 生成，不是磁盘上的目录名。
+ */
+export const ProgressEntrySchema = Type.Object({
+  at: text,
+  message: text,
+}, { additionalProperties: false });
+export type ProgressEntry = Type.Static<typeof ProgressEntrySchema>;
+
+export const ExperimentPhaseCountsSchema = Type.Object({
+  pending: Type.Number({ minimum: 0 }),
+  solving: Type.Number({ minimum: 0 }),
+  grading: Type.Number({ minimum: 0 }),
+  done: Type.Number({ minimum: 0 }),
+  solverStopped: Type.Number({ minimum: 0 }),
+  error: Type.Number({ minimum: 0 }),
+}, { additionalProperties: false });
+export type ExperimentPhaseCounts = Type.Static<typeof ExperimentPhaseCountsSchema>;
+
+/** 一次作答的编排记录；solver 与 evaluation 原样透传，其协议由 @fsa/evaluation 拥有。 */
+export const ExperimentRowSchema = Type.Object({
+  taskId: id,
+  taskVersion: text,
+  preset: text,
+  mode: text,
+  repetition: Type.Number({ minimum: 1 }),
+  sessionId: text,
+  phase: Type.Union([
+    Type.Literal('pending'), Type.Literal('solving'), Type.Literal('grading'),
+    Type.Literal('done'), Type.Literal('solver-stopped'), Type.Literal('error'),
+  ]),
+  solver: Type.Unknown(),
+  evaluation: Type.Unknown(),
+  finishReason: Type.Union([text, Type.Null()]),
+  durationMs: Type.Union([Type.Number({ minimum: 0 }), Type.Null()]),
+  classification: Type.Union([text, Type.Null()]),
+  runId: Type.Union([id, Type.Null()]),
+  attemptId: Type.Union([id, Type.Null()]),
+  total: score,
+}, { additionalProperties: false });
+export type ExperimentRow = Type.Static<typeof ExperimentRowSchema>;
+
+const experimentEvidence = Type.Object({
+  filename: text,
+  sha256: treeHash,
+  fileCount: Type.Number({ minimum: 0 }),
+}, { additionalProperties: false });
+
+const experimentCleanup = Type.Object({
+  state: text,
+  directory: Type.Union([text, Type.Null()]),
+  reason: Type.Union([text, Type.Null()]),
+}, { additionalProperties: false });
+
+const experimentSummaryFields = {
+  reportId: Type.String({ minLength: 1, maxLength: 512, pattern: '^[A-Za-z0-9_-]+$' }),
+  root: text,
+  directoryName: text,
+  modifiedAt: text,
+  // unreadable：experiment.json 缺失、损坏或不符合本协议；error 必须写明原因。
+  status: Type.Union([Type.Literal('ok'), Type.Literal('unreadable')]),
+  error: Type.Union([text, Type.Null()]),
+  id: Type.Union([id, Type.Null()]),
+  startedAt: Type.Union([text, Type.Null()]),
+  finishedAt: Type.Union([text, Type.Null()]),
+  state: Type.Union([text, Type.Null()]),
+  provider: Type.Union([text, Type.Null()]),
+  model: Type.Union([text, Type.Null()]),
+  presets: Type.Array(text, { maxItems: 16, uniqueItems: true }),
+  modes: Type.Array(text, { maxItems: 32, uniqueItems: true }),
+  taskCount: Type.Number({ minimum: 0 }),
+  planned: Type.Number({ minimum: 0 }),
+  phaseCounts: ExperimentPhaseCountsSchema,
+  evidence: Type.Union([experimentEvidence, Type.Null()]),
+  cleanup: Type.Union([experimentCleanup, Type.Null()]),
+};
+
+export const ExperimentSummarySchema = Type.Object(experimentSummaryFields, { additionalProperties: false });
+export type ExperimentSummary = Type.Static<typeof ExperimentSummarySchema>;
+
+/** 明细在列表字段之上补充原报告设置与逐条记录；settings 是 CLI 写入的宽松对象。 */
+export const ExperimentDetailSchema = Type.Object({
+  ...experimentSummaryFields,
+  settings: Type.Record(Type.String(), Type.Unknown()),
+  rows: Type.Array(ExperimentRowSchema, { maxItems: 40_000 }),
+  issues: Type.Array(text, { maxItems: 1000 }),
+  progress: Type.Array(ProgressEntrySchema, { maxItems: 500 }),
+}, { additionalProperties: false });
+export type ExperimentDetail = Type.Static<typeof ExperimentDetailSchema>;
+
+export const ExperimentListSchema = Type.Array(ExperimentSummarySchema, { maxItems: 5000 });
+export type ExperimentList = Type.Static<typeof ExperimentListSchema>;
+
+export const progressEntryValidator = Schema.Compile(ProgressEntrySchema);
+export const experimentSummaryValidator = Schema.Compile(ExperimentSummarySchema);
+export const experimentDetailValidator = Schema.Compile(ExperimentDetailSchema);
+export const experimentListValidator = Schema.Compile(ExperimentListSchema);
+
+/** 报告出口校验失败时的字段路径；损坏报告要出现在列表里并写明原因，不允许只报一句协议错误。 */
+export function explainExperimentSummary(input: unknown): string[] {
+  return Value.Errors(ExperimentSummarySchema, input).map(error => `${error.instancePath || '/'}：${error.message}`);
+}
+
+export function explainExperimentDetail(input: unknown): string[] {
+  return Value.Errors(ExperimentDetailSchema, input).map(error => `${error.instancePath || '/'}：${error.message}`);
+}
+
 
 /** 校验失败时给出可定位的字段路径，避免只报一句“不符合协议”。 */
 export function explainExecutionResult(input: unknown): string[] {

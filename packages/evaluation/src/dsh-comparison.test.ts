@@ -8,7 +8,7 @@ import { readRunStatus, verifySubmission } from '@fsa/executor';
 import { applyReferencePatch, readManifest } from '@fsa/tasks';
 import { inspectRunSelection } from './suite.ts';
 import { DshCleanupError, type DshRunOptions, type DshRunResult } from './dsh.ts';
-import { comparisonGroups, renderComparison, runDshComparison, type DshComparisonOptions } from './dsh-comparison.ts';
+import { appendComparisonProgress, comparisonGroups, comparisonProgressLimit, renderComparison, runDshComparison, type DshComparisonOptions, type DshComparisonReport } from './dsh-comparison.ts';
 
 function setup() {
   const scratch = mkdtempSync(join(tmpdir(), 'fsa-dsh-comparison-test-'));
@@ -94,6 +94,40 @@ it('独立导出、反转重复顺序，模拟作答经真实验证，并保留�
     expect(comparisonGroups(providerDefault).groups.find(group => group.mode === 'off')!.functional).toBeLessThan(50);
     expect(renderComparison(providerDefault)).toContain('default 表示未向 DSH 指定思考等级');
   } finally { context.clean(); }
+}, 30_000);
+
+it('进度只追加落盘、最多保留最近 500 条，报告与 Markdown 都按原子替换写入', async () => {
+  const context = setup();
+  const seen: string[] = [];
+  try {
+    const report = await runDshComparison({ ...context.options, repeats: 1 }, {
+      env: {}, onProgress: message => seen.push(message), async solve(options) { return solverResult(options); },
+      async evaluate(taskId, workspace, _row, store) {
+        const outcome = await verifySubmission({ store, taskId, candidateDirectory: workspace,
+          envelope: createEnvelope(taskId, workspace), submittedBy: 'progress-test', profile: 'local' });
+        const { runId, attemptId } = outcome.submission.attempt;
+        const identity = inspectRunSelection(store, [{ runId, attemptId }]);
+        return { status: readRunStatus(store, runId, attemptId), environmentKey: identity.environmentKey, judgeKey: identity.judgeKey };
+      },
+    });
+    expect(report.schemaVersion).toBe('0.3.0');
+    // 两道作答（off/high）各产生两条进度，且与 CLI 打印的内容一致。
+    expect(seen).toEqual(['CACHE-02 · standard / off · 第 1 次：DSH 作答中', 'CACHE-02 · standard / off：Linux 验证与评分中',
+      'CACHE-02 · standard / high · 第 1 次：DSH 作答中', 'CACHE-02 · standard / high：Linux 验证与评分中']);
+    expect(report.progress.map(entry => entry.message)).toEqual(seen);
+    expect(report.progress.every(entry => !Number.isNaN(Date.parse(entry.at)))).toBe(true);
+    const persisted = JSON.parse(readFileSync(join(context.options.outputDirectory, 'experiment.json'), 'utf8')) as DshComparisonReport;
+    expect(persisted.progress).toEqual(report.progress);
+    // 只有三个产物，且没有留下 .tmp：临时文件必须已经改名。
+    expect(readdirSync(context.options.outputDirectory).sort()).toEqual(['evidence.json.gz', 'experiment.json', 'report.md']);
+  } finally { context.clean(); }
+
+  // 上限：超出时丢弃最旧的，experiment.json 不随实验时长无界增长。
+  const overflow = structuredClone({ progress: [] } as unknown as DshComparisonReport);
+  for (let index = 0; index < comparisonProgressLimit + 25; index++) appendComparisonProgress(overflow, `进度 ${index}`, '2026-09-14T00:00:00.000Z');
+  expect(overflow.progress).toHaveLength(comparisonProgressLimit);
+  expect(overflow.progress[0]!.message).toBe('进度 25');
+  expect(overflow.progress.at(-1)!.message).toBe(`进度 ${comparisonProgressLimit + 24}`);
 }, 30_000);
 
 it('相同思考等级下不同 DSH 预设分别评分，指定模型透传且不混合均分', async () => {

@@ -51,8 +51,21 @@ export interface ComparisonRow {
   error: string | null;
 }
 
+export interface ComparisonProgress {
+  at: string;
+  message: string;
+}
+
+/** 只保留最近 500 条进度，超出时丢弃最旧的，避免 experiment.json 随实验时长无界增长。 */
+export const comparisonProgressLimit = 500;
+
+export function appendComparisonProgress(report: DshComparisonReport, message: string, at: string = new Date().toISOString()): void {
+  report.progress.push({ at, message });
+  if (report.progress.length > comparisonProgressLimit) report.progress.splice(0, report.progress.length - comparisonProgressLimit);
+}
+
 export interface DshComparisonReport {
-  schemaVersion: '0.2.0';
+  schemaVersion: '0.3.0';
   id: string;
   startedAt: string;
   finishedAt: string | null;
@@ -61,6 +74,7 @@ export interface DshComparisonReport {
   prompt: string;
   rows: ComparisonRow[];
   issues: string[];
+  progress: ComparisonProgress[];
   evidence: { filename: string; sha256: string; fileCount: number } | null;
   cleanup: { state: 'pending' | 'complete' | 'retained'; directory: string | null; reason: string | null };
 }
@@ -166,8 +180,8 @@ export async function runDshComparison(options: DshComparisonOptions, services: 
   let judgeCleanupError: DshCleanupError | undefined;
   const qualityProvider = createQualityProvider({ env, measurePerformance: options.measurePerformance,
     onJudgeCleanupError(error) { judgeCleanupError = error; } });
-  const report: DshComparisonReport = { schemaVersion: '0.2.0', id: randomUUID(), startedAt: new Date().toISOString(), finishedAt: null,
-    state: 'running', settings: { ...options }, prompt: comparisonPrompt, rows: [], issues: [], evidence: null,
+  const report: DshComparisonReport = { schemaVersion: '0.3.0', id: randomUUID(), startedAt: new Date().toISOString(), finishedAt: null,
+    state: 'running', settings: { ...options }, prompt: comparisonPrompt, rows: [], issues: [], progress: [], evidence: null,
     cleanup: { state: 'pending', directory: scratch.directory, reason: null } };
   let cleanupAllowed = true;
   let retentionReason = '';
@@ -180,10 +194,18 @@ export async function runDshComparison(options: DshComparisonOptions, services: 
         sessionId: `bench-${randomUUID()}`, phase: 'pending', solver: null, evaluation: null, error: null });
     }
   }
+  // 进度既交给调用方展示（CLI 打印行为不变），也作为只读出口的持久化记录。
+  const progress = (message: string) => {
+    appendComparisonProgress(report, message);
+    persist();
+    services.onProgress?.(message);
+  };
   const persist = () => {
     writeFileSync(join(options.outputDirectory, 'experiment.json.tmp'), JSON.stringify(report, null, 2) + '\n');
     renameSync(join(options.outputDirectory, 'experiment.json.tmp'), join(options.outputDirectory, 'experiment.json'));
-    writeFileSync(join(options.outputDirectory, 'report.md'), renderComparison(report));
+    // 与 experiment.json 相同的先写临时文件再改名：读者不会看到写了一半的 Markdown。
+    writeFileSync(join(options.outputDirectory, 'report.md.tmp'), renderComparison(report));
+    renameSync(join(options.outputDirectory, 'report.md.tmp'), join(options.outputDirectory, 'report.md'));
   };
   const solve = services.solve ?? runDsh;
   const evaluate = services.evaluate ?? (async (taskId, workspace, row) => {
@@ -205,7 +227,7 @@ export async function runDshComparison(options: DshComparisonOptions, services: 
       try {
         exportWorkspace(row.taskId, workspace);
         row.phase = 'solving'; persist();
-        services.onProgress?.(`${row.taskId} · ${row.preset} / ${row.mode} · 第 ${row.repetition} 次：DSH 作答中`);
+        progress(`${row.taskId} · ${row.preset} / ${row.mode} · 第 ${row.repetition} 次：DSH 作答中`);
         row.solver = await solve({ dshRoot: options.dshRoot, dshHome: options.dshHome, profile: options.profile,
           agentPreset: row.preset, scratchDirectory: runtimeDirectory,
           workspacePermission: options.workspacePermission,
@@ -219,7 +241,7 @@ export async function runDshComparison(options: DshComparisonOptions, services: 
         }
         if (services.signal?.aborted) { row.phase = 'solver-stopped'; report.state = 'cancelled'; break; }
         row.phase = 'grading'; persist();
-        services.onProgress?.(`${row.taskId} · ${row.preset} / ${row.mode}：Linux 验证与评分中`);
+        progress(`${row.taskId} · ${row.preset} / ${row.mode}：Linux 验证与评分中`);
         row.evaluation = await evaluate(row.taskId, workspace, row, store);
         if (judgeCleanupError) throw judgeCleanupError;
         row.phase = 'done';
