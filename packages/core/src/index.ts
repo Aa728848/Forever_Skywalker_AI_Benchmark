@@ -124,7 +124,8 @@ export interface QualityObjective {
 }
 
 export interface QualityReview {
-  readonly score: number;
+  /** null = 该维不可判（裁判无法从材料判断，按规则不得猜分）；该维保持待定，不当作 0。 */
+  readonly score: number | null;
   readonly evidence: readonly string[];
 }
 
@@ -149,11 +150,14 @@ function composeQuality(evidence: QualityEvidence, reasons: string[]): { dimensi
     const objective = evidence.objective?.[key];
     const review = evidence.review?.[key];
     for (const item of [objective, review]) {
-      if (item !== undefined && (!Number.isFinite(item.score) || item.score < 0 || item.score > 100)) {
-        throw new RangeError('质量维度 ' + key + ' 的分数必须是 0–100 的有限数。');
+      // score 为 null 是「该维不可判」的合法声明（裁判无法从材料判断时不得猜分），不是越界值。
+      if (item !== undefined && item.score !== null && (!Number.isFinite(item.score) || item.score < 0 || item.score > 100)) {
+        throw new RangeError('质量维度 ' + key + ' 的分数必须是 0–100 的有限数或 null。');
       }
     }
-    if (objective === undefined || review === undefined) {
+    // 任一侧缺失或声明不可判，该维保持 null；不做重新归一化，也不把 null 当作 0。
+    if (objective === undefined || review === undefined || objective.score === null || review.score === null) {
+      if (objective !== undefined && review !== undefined) reasons.push('质量维度 ' + key + ' 的评审分声明不可判，该维保持待定。');
       complete = false;
       if (objective !== undefined && objective.evidence.length === 0) reasons.push('质量维度 ' + key + ' 的客观分缺少证据引用。');
       if (review !== undefined && review.evidence.length === 0) reasons.push('质量维度 ' + key + ' 的评审分缺少证据引用。');

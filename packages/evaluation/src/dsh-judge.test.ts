@@ -38,6 +38,49 @@ it('uses the DSH workspace chain, disables review tools, and parses a valid verd
   expect(result.inputTokens).toBeNull(); expect(result.configuration?.provider).toBe('dsh:deepseek-official');
 });
 
+it('accepts a verdict that declares a dimension unjudgeable and writes structured notes', async () => {
+  // 真实故障（2026-09-26）：提示词要求「无法从材料判断时拒绝输出判决，不能猜分」，
+  // 模型照做，把 performance.score 写成 null 并按提示词的六个字段交了 notes 对象。
+  // 契约当时只收 number 与 string，整份有效判决被判协议错误，质量分与总分永远待定。
+  const { env } = fixture();
+  const verdict = sampleVerdict(request, { simplicity: 88, maintainability: 90, decoupling: 100, performance: 0 }, ['candidate-1'], env.BENCH_JUDGE_DSH_MODEL, request.promptVersion);
+  (verdict.dimensions.performance as { score: number | null }).score = null;
+  (verdict as unknown as { notes: unknown[] }).notes = [{ dimension: 'performance', ruleId: 'PERF-UNJUDGEABLE-NO-BASELINE',
+    materialId: 'candidate-1', location: 'phases[].resource', symptom: '缺少同口径对照', impact: '无法归因本次改动' }];
+  const run: DshJudgeDependencies['run'] = vi.fn(async (options: DshRunOptions): Promise<DshRunResult> => ({
+    finishReason: 'completed', finalResponse: JSON.stringify(verdict), usage: null,
+    requestedModel: { provider: options.provider, model: options.model, reasoningEffort: options.reasoningEffort ?? null, maxTokens: options.maxTokens },
+    requestedPreset: 'minimal', observedPresets: ['minimal'], presetFingerprint: 'f'.repeat(64),
+    observedRoutes: [{ provider: options.provider, model: options.model }], responseModels: [], dshVersion: '1.2.3',
+    runtimeClosed: true, cleanupScope: 'sdk-runtime', durationMs: 1,
+  } as DshRunResult));
+  const result = await createDshJudgeFromEnvironment(env, { run }).review(request);
+  expect(result.verdict.dimensions.performance.score).toBeNull();
+  expect(result.verdict.dimensions.simplicity.score).toBe(88);
+  // 结构化 note 被压成可读字符串，六个字段的内容一字不丢。
+  expect(result.verdict.notes).toHaveLength(1);
+  expect(result.verdict.notes[0]).toContain('dimension=performance');
+  expect(result.verdict.notes[0]).toContain('ruleId=PERF-UNJUDGEABLE-NO-BASELINE');
+  expect(result.verdict.notes[0]).toContain('symptom=缺少同口径对照');
+  expect(result.normalizations).toContain('压平结构化 notes');
+});
+
+it('tells the judge that an unjudgeable dimension is declared with null', async () => {
+  // 提示词必须说明 null 这种写法，否则模型只能猜，而猜错会让整份判决作废。
+  const { env } = fixture(); const prompts: string[] = [];
+  const run: DshJudgeDependencies['run'] = vi.fn(async (options: DshRunOptions): Promise<DshRunResult> => {
+    prompts.push(options.prompt);
+    return { finishReason: 'completed', finalResponse: JSON.stringify(sampleVerdict(request, { simplicity: 80, maintainability: 80, decoupling: 80, performance: 80 }, ['candidate-1'], env.BENCH_JUDGE_DSH_MODEL, request.promptVersion)), usage: null,
+      requestedModel: { provider: options.provider, model: options.model, reasoningEffort: options.reasoningEffort ?? null, maxTokens: options.maxTokens },
+      requestedPreset: 'minimal', observedPresets: ['minimal'], presetFingerprint: 'f'.repeat(64),
+      observedRoutes: [{ provider: options.provider, model: options.model }], responseModels: [], dshVersion: '1.2.3',
+      runtimeClosed: true, cleanupScope: 'sdk-runtime', durationMs: 1 } as DshRunResult;
+  });
+  await createDshJudgeFromEnvironment(env, { run }).review(request);
+  expect(prompts[0]).toContain('该维 score 写 null');
+  // 模板必须给出 note 实例，否则模型无从得知该用字符串还是六字段对象。
+  expect(prompts[0]).toContain('dimension=simplicity');
+});
 it('accepts fenced JSON but rejects identity or evidence mismatches', async () => {
   const { env } = fixture();
   const run: DshJudgeDependencies['run'] = vi.fn(async (options: DshRunOptions): Promise<DshRunResult> => ({ finishReason: 'completed', finalResponse: '```json\n' + JSON.stringify(sampleVerdict(request, { simplicity: 1, maintainability: 1, decoupling: 1, performance: 1 }, ['candidate-1'], env.BENCH_JUDGE_DSH_MODEL, request.promptVersion)) + '\n```', usage: null,

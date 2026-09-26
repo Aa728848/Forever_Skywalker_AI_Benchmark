@@ -8,11 +8,16 @@ export function compareReviews(first: ReviewVerdict, second: ReviewVerdict, func
     throw new JudgeUnavailableError('两轮评审不属于同一冻结作答、模型或规则版本。');
   }
   const dimensions = Object.keys(qualityWeights) as (keyof typeof qualityWeights)[];
-  const averages = Object.fromEntries(dimensions.map(key => [key, (first.dimensions[key].score + second.dimensions[key].score) / 2])) as Record<keyof typeof qualityWeights, number>;
-  const differences = Object.fromEntries(dimensions.map(key => [key, Math.abs(first.dimensions[key].score - second.dimensions[key].score)])) as Record<keyof typeof qualityWeights, number>;
-  const reasons = dimensions.filter(key => differences[key] > 20).map(key => key + ' 两轮差异超过 20 分。');
+  // 任一维在两轮中声明为不可判（score 为 null）时，该维不计入均值和分歧：
+  // 把 null 当 0 会伪造均值，并把「未判」误报成「两轮差异过大」。
+  const judged = (key: keyof typeof qualityWeights): boolean => first.dimensions[key].score !== null && second.dimensions[key].score !== null;
+  const averages = Object.fromEntries(dimensions.map(key => [key, judged(key) ? (first.dimensions[key].score! + second.dimensions[key].score!) / 2 : null])) as Record<keyof typeof qualityWeights, number | null>;
+  const differences = Object.fromEntries(dimensions.map(key => [key, judged(key) ? Math.abs(first.dimensions[key].score! - second.dimensions[key].score!) : null])) as Record<keyof typeof qualityWeights, number | null>;
+  const reasons = dimensions.filter(key => differences[key] !== null && differences[key]! > 20).map(key => key + ' 两轮差异超过 20 分。');
+  const unjudged = dimensions.filter(key => !judged(key));
+  if (unjudged.length > 0) reasons.push('两轮均未判定这些维度，其分数保持待定：' + unjudged.join('、') + '。');
   // 客观分尚未知时，用其合法取值范围检查两轮是否可能跨越总分门槛。
-  const reviewContribution = (verdict: ReviewVerdict) => dimensions.reduce((sum, key) => sum + verdict.dimensions[key].score * (1 - qualityWeights[key]) * 0.125, 0);
+  const reviewContribution = (verdict: ReviewVerdict) => dimensions.reduce((sum, key) => sum + (verdict.dimensions[key].score ?? 0) * (1 - qualityWeights[key]) * 0.125, 0);
   const low = Math.min(reviewContribution(first), reviewContribution(second));
   const high = Math.max(reviewContribution(first), reviewContribution(second));
   const objectiveMaximum = dimensions.reduce((sum, key) => sum + qualityWeights[key] * 12.5, 0);

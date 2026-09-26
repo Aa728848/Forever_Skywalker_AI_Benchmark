@@ -83,6 +83,17 @@ const verdictText: Record<string, string> = {
 const residueKind = (status: string): 'ok' | 'warn' | 'bad' => status === 'none' ? 'ok' : status === 'present' ? 'bad' : 'warn';
 const residueText: Record<string, string> = { none: '已确认无残留', unknown: '残留未知', present: '仍有残留' };
 
+/**
+ * 取消按钮为何不可用。以前只在无法取消时把按钮变灰，鼠标还显示「等待」光标，
+ * 看起来像在加载——其实进程早已结束。这里把原因直接写在按钮旁，不再需要靠光标猜。
+ */
+function cancelDisabledReason(busy: boolean, process: string): string {
+  if (busy) return '正在处理上一个请求，稍后可取消。';
+  if (process === 'live') return '测评进行中，点击即终止整棵进程树。';
+  if (process === 'unknown') return '进程状态未知：无法确认它是否仍在运行，因此不提供取消，避免误终止。';
+  return '进程已结束，没有可终止的对象。已结束的测评不能取消。';
+}
+
 async function readError(response: Response): Promise<string> {
   try {
     const value: unknown = await response.json();
@@ -267,7 +278,7 @@ export function LaunchPanel({ tasks }: { tasks: Task[] }) {
 
   return <section>
     <div className="section-head"><h2>发起测评 <small>{launches.length} 条启动记录</small></h2>
-      <button className="secondary" disabled={busy} onClick={() => setRevision(value => value + 1)}>刷新</button></div>
+      <button className="secondary" disabled={busy} aria-busy={busy} onClick={() => setRevision(value => value + 1)}>刷新</button></div>
     <p>发起后由受控 supervisor 持有实验子进程：API 只负责登记与对账，通过它的心跳与退出事实判断真实状态。默认按钮是「仅预检」，不调用模型；真实作答需要二次确认。</p>
 
     <div className="token-bar">
@@ -335,13 +346,13 @@ export function LaunchPanel({ tasks }: { tasks: Task[] }) {
 
     <div className="launch-actions">
       <div className="planned-answers" role="status">计划总作答次数 <b>{answers}</b> 次 <small>= {taskCount} 题 × {form.presets.length} 预设 × {form.modes.length} 等级 × {form.repeats} 重复</small></div>
-      <button className="primary" disabled={busy || answers === 0} onClick={() => void submit(true)}>仅预检</button>
-      <button className="secondary" disabled={busy || answers === 0} onClick={() => setPending({ answers })}>发起真实作答…</button>
+      <button className="primary" disabled={busy || answers === 0} aria-busy={busy} onClick={() => void submit(true)}>仅预检</button>
+      <button className="secondary" disabled={busy || answers === 0} aria-busy={busy} onClick={() => setPending({ answers })}>发起真实作答…</button>
     </div>
     {pending !== null && <div className="warn" role="alert">
       <b>确认发起真实作答？</b>
       <p>本次会调用已配置的作答模型与裁判，计划 <b>{pending.answers}</b> 次作答（{taskCount} 题 × {form.presets.length} 预设 × {form.modes.length} 等级 × {form.repeats} 重复）。这会消耗真实额度。</p>
-      <div className="launch-actions"><button className="primary" disabled={busy} onClick={() => void submit(false)}>确认发起</button><button className="secondary" disabled={busy} onClick={() => setPending(null)}>取消</button></div>
+      <div className="launch-actions"><button className="primary" disabled={busy} aria-busy={busy} onClick={() => void submit(false)}>确认发起</button><button className="secondary" disabled={busy} onClick={() => setPending(null)}>取消</button></div>
     </div>}
 
     <h3>启动记录 <small>{launches.length} 条</small></h3>
@@ -372,7 +383,10 @@ export function LaunchPanel({ tasks }: { tasks: Task[] }) {
               {current.exit !== null && <p>退出事实：code {String(current.exit.code)} · signal {String(current.exit.signal)} · {time(current.exit.at)} · 后代已确认退出 {current.exit.descendantsVerified ? '是' : '否（无法确认）'}{current.exit.note ? ' · ' + current.exit.note : ''}</p>}
               {current.note !== null && <p className="experiment-path">{current.note}</p>}
               <div className="launch-actions">
-                <button className="secondary" disabled={busy || current.merged.process !== 'live'} onClick={() => void cancel(current.launchId)}>取消这次测评</button>
+                <button className="secondary" disabled={busy || current.merged.process !== 'live'} aria-busy={busy}
+                  title={cancelDisabledReason(busy, current.merged.process)}
+                  onClick={() => void cancel(current.launchId)}>取消这次测评</button>
+                <small className="experiment-path">{cancelDisabledReason(busy, current.merged.process)}</small>
                 {current.args.length > 0 && <small className="experiment-path">子进程参数：{current.args.join(' ')}</small>}
               </div>
               {cancelText !== null && cancelResult?.launchId === current.launchId && <div className={'warn ' + (cancelText.confirmedExit ? '' : 'broken')} role="status">

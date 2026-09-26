@@ -208,6 +208,41 @@ describe('质量维度合成与总分', () => {
     expect(result).toMatchObject({ total: 100, thresholdMet: false });
   });
 
+  it('评审声明某维不可判时该维保持待定，不当作 0 分计入', () => {
+    // 裁判按规则可以对某一维写 null（无法从材料判断时不得猜分）。
+    // 早期实现用 Number.isFinite(null) 判定，会把合法的 null 当成越界值抛 RangeError；
+    // 若改成把 null 当 0，则会伪造一个低分。两者都必须避免。
+    const score = scoreExecution(executionFixture(allPassed, 'passed'), manifestFixture(), {
+      objective: {
+        simplicity: objective('static', 100), maintainability: objective('static', 100),
+        decoupling: objective('static', 100), performance: objective('benchmark', 100),
+      },
+      review: { simplicity: review(0), maintainability: review(0), decoupling: review(0), performance: { score: null, evidence: ['review-1'] } },
+    });
+    expect(score.dimensions.performance).toBeNull();
+    // 其余三维按各自权重照常合成，不因一维待定而重算或清零：
+    // 100×0.4+0×0.6=40；100×0.3+0×0.7=30；100×0.5+0×0.5=50。
+    expect(score.dimensions.simplicity).toBe(40);
+    expect(score.dimensions.maintainability).toBe(30);
+    expect(score.dimensions.decoupling).toBe(50);
+    expect(score.quality).toBeNull();
+    expect(score.total).toBeNull();
+    expect(score.reasons.join('；')).toContain('评审分声明不可判');
+  });
+
+  it('缺失客观分的维度保持待定，不因评审分存在而单独给分', () => {
+    // 客观分由本项目自己的测量产生：测不到时应省略该维度，而不是传 null。
+    // 该维缺少客观一侧即保持待定，评审分不得单独构成维度分。
+    const score = scoreExecution(executionFixture(allPassed, 'passed'), manifestFixture(), {
+      objective: {
+        simplicity: objective('static', 100), maintainability: objective('static', 100), decoupling: objective('static', 100),
+      },
+      review: { simplicity: review(0), maintainability: review(0), decoupling: review(0), performance: review(100) },
+    });
+    expect(score.dimensions.performance).toBeNull();
+    expect(score.dimensions.simplicity).toBe(40);
+    expect(score.quality).toBeNull();
+  });
   it('客观分与评审分齐备时按权重合成维度分与总分', () => {
     const score = scoreExecution(executionFixture(allPassed, 'passed'), manifestFixture(), {
       objective: {

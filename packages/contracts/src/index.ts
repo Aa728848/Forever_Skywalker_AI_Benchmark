@@ -361,11 +361,13 @@ export const ReviewVerdictSchema = Type.Object({
   rubricVersion: text,
   model: text,
   promptVersion: text,
+  // 维度分允许 null：提示词要求「无法从材料判断时拒绝输出判决，不能猜分」，模型必须能声明
+  // 某一维不可判。null 不产生分数——下游 composeQuality 见到 null 即让该维保持待定。
   dimensions: Type.Object({
-    simplicity: Type.Object({ score: Type.Number({ minimum: 0, maximum: 100 }), evidence: Type.Array(id, { minItems: 1, maxItems: 20 }) }, { additionalProperties: false }),
-    maintainability: Type.Object({ score: Type.Number({ minimum: 0, maximum: 100 }), evidence: Type.Array(id, { minItems: 1, maxItems: 20 }) }, { additionalProperties: false }),
-    decoupling: Type.Object({ score: Type.Number({ minimum: 0, maximum: 100 }), evidence: Type.Array(id, { minItems: 1, maxItems: 20 }) }, { additionalProperties: false }),
-    performance: Type.Object({ score: Type.Number({ minimum: 0, maximum: 100 }), evidence: Type.Array(id, { minItems: 1, maxItems: 20 }) }, { additionalProperties: false }),
+    simplicity: Type.Object({ score, evidence: Type.Array(id, { minItems: 1, maxItems: 20 }) }, { additionalProperties: false }),
+    maintainability: Type.Object({ score, evidence: Type.Array(id, { minItems: 1, maxItems: 20 }) }, { additionalProperties: false }),
+    decoupling: Type.Object({ score, evidence: Type.Array(id, { minItems: 1, maxItems: 20 }) }, { additionalProperties: false }),
+    performance: Type.Object({ score, evidence: Type.Array(id, { minItems: 1, maxItems: 20 }) }, { additionalProperties: false }),
   }, { additionalProperties: false }),
   notes: Type.Array(text, { maxItems: 32 }),
   cost: Type.Object({

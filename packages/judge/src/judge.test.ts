@@ -152,6 +152,24 @@ describe('独立双轮比较', () => {
     expect(compareReviews(first, first).needsHumanReview).toBe(false);
     expect(() => compareReviews(first, { ...second, attemptId: 'another' })).toThrow(/同一冻结作答/);
   });
+
+  it('两轮都未判定的维度不参与均值与分歧，并明确列为待定', () => {
+    // null 若被当成 0：均值变成分数的一半，|null-30|=30 还会误报「两轮差异超过 20 分」。
+    // 正确的语义是「两轮均未判定」——既不合成均值，也不算分歧，但必须报出来。
+    const unjudged = (verdict: ReturnType<typeof sampleVerdict>) => {
+      (verdict.dimensions.performance as { score: number | null }).score = null;
+      return verdict;
+    };
+    const first = unjudged(sampleVerdict(request, scores, ['candidate-1']));
+    const second = unjudged(sampleVerdict(request, { ...scores, simplicity: 30 }, ['candidate-1']));
+    const compared = compareReviews(first, second);
+    expect(compared.averages.performance).toBeNull();
+    expect(compared.differences.performance).toBeNull();
+    // 只有 simplicity 真正相差 50 分，performance 不得再贡献一条虚假分歧。
+    expect(compared.reasons.filter(reason => reason.includes('两轮差异超过 20 分'))).toHaveLength(1);
+    expect(compared.reasons.join('；')).toContain('两轮均未判定这些维度');
+    expect(compared.reasons.join('；')).toContain('performance');
+  });
 });
 
 describe('脚本评审', () => {
