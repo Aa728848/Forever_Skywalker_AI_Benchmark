@@ -6,21 +6,44 @@ import { createEnvelope, createRunStore, defaultRunRoot, readRunEvents } from '@
 import { completedExecutionDirectory, listRunStatuses, readExecutionResult, readExecutionScore, readRunStatus, renderRunReport, retryCompletedAttempt, reviewCompletedAttempt, verifySubmission, type QualityProvider } from '@fsa/executor';
 import { createQualityProvider } from '@fsa/evaluation';
 
-/** 正式运行入口：需要提交根目录与访问令牌同时配置才会启用。 */
+/**
+ * 质量证据提供者工厂：每次操作按当时的有效配置构造，因此裁判/性能测量配置保存后立即生效。
+ * 传入工厂而不是实例，是这里唯一的正确形状——一个已构造的 provider 会永久冻结旧配置。
+ */
+export type QualityProviderFactory = (env: NodeJS.ProcessEnv) => QualityProvider;
+
+/** 正式运行入口的配置来源。 */
 export interface RunEntryOptions {
+  /**
+   * 运行记录根目录。启动时固定，不随配置改动：它决定既有 run 记录的物理位置，
+   * 改动会让历史记录消失。只读暴露给 /api/config。
+   */
   runRoot?: string;
+  /** 当前配置来源；每次操作重新读取，保存配置后无需重启即生效。 */
+  config?: { current(): NodeJS.ProcessEnv };
+  /** 显式覆盖项（优先于 config）：CLI 与测试注入固定值。 */
   submissionsRoot?: string | null;
   token?: string | null;
-  /** 平台统一的执行档案：容器档案必须同时给出镜像引用与 digest。 */
   profile?: 'local' | 'linux-container';
   image?: string | null;
   imageDigest?: string | null;
-  qualityProvider?: QualityProvider;
+  qualityProvider?: QualityProviderFactory;
 }
 
+/**
+ * 正式运行入口。
+ * enabled / disabledReason / profile / image / imageDigest / token 都是函数：
+ * 它们在每次操作时按当前配置求值，而不是在 openRunEntry 时固定一次。
+ */
 export interface RunEntry {
-  readonly enabled: boolean;
-  readonly disabledReason: string | null;
+  /** 固定不变的运行记录根（BENCH_RUN_DIR），只读。 */
+  readonly runRoot: string;
+  enabled(): boolean;
+  disabledReason(): string | null;
+  profile(): 'local' | 'linux-container';
+  image(): string | null;
+  imageDigest(): string | null;
+  token(): string | null;
   submit(submission: RunSubmission): Promise<RunStatus>;
   status(runId: string, attemptId: string): RunStatus;
   report(runId: string, attemptId: string): string;
@@ -33,21 +56,34 @@ export interface RunEntry {
   close(): Promise<void>;
 }
 
+const present = (value: string | null | undefined): value is string => value !== null && value !== undefined && value.trim() !== '';
+
 export function openRunEntry(options: RunEntryOptions = {}): RunEntry {
-  const store = createRunStore(options.runRoot ?? defaultRunRoot);
-  const submissionsRoot = options.submissionsRoot ?? null;
-  const token = options.token ?? null;
-  const disabledReason = submissionsRoot === null || submissionsRoot.trim() === ''
-    ? '正式提交入口未启用：未配置 BENCH_SUBMISSIONS_DIR。'
-    : token === null || token.trim() === ''
-      ? '正式提交入口未启用：未配置 BENCH_RUN_TOKEN。'
-      : null;
-  const qualityProvider = options.qualityProvider ?? createQualityProvider();
+  // runRoot 在启动时固定；其余配置全部按操作求值。
+  const runRoot = options.runRoot ?? defaultRunRoot;
+  const store = createRunStore(runRoot);
+  const env = (): NodeJS.ProcessEnv => options.config?.current() ?? process.env;
+  const pick = <T>(explicit: T | undefined, read: () => T): T => explicit === undefined ? read() : explicit;
+
+  const submissionsRoot = (): string | null => pick(options.submissionsRoot, () => env().BENCH_SUBMISSIONS_DIR ?? null);
+  const token = (): string | null => pick(options.token, () => env().BENCH_RUN_TOKEN ?? null);
+  const profile = (): 'local' | 'linux-container' => pick(options.profile, () => env().BENCH_PROFILE === 'linux-container' ? 'linux-container' : 'local');
+  const image = (): string | null => pick(options.image, () => env().BENCH_IMAGE ?? null);
+  const imageDigest = (): string | null => pick(options.imageDigest, () => env().BENCH_IMAGE_DIGEST ?? null);
+
+  const disabledReason = (): string | null => {
+    const root = submissionsRoot();
+    if (!present(root)) return '正式提交入口未启用：未配置 BENCH_SUBMISSIONS_DIR。';
+    return present(token()) ? null : '正式提交入口未启用：未配置 BENCH_RUN_TOKEN。';
+  };
+  /** 每次操作以当前配置构造；不缓存实例，避免把旧配置冻结进运行。 */
+  const quality = (): QualityProvider => options.qualityProvider?.(env()) ?? createQualityProvider({ env: env() });
   const active = new Map<string, { controller: AbortController; promise: Promise<RunStatus> }>();
 
   const resolveCandidate = (candidate: string): string => {
-    if (submissionsRoot === null) throw new Error('正式提交入口未启用：未配置提交根目录。');
-    const root = realpathSync(resolve(submissionsRoot));
+    const configured = submissionsRoot();
+    if (!present(configured)) throw new Error('正式提交入口未启用：未配置提交根目录。');
+    const root = realpathSync(resolve(configured));
     const requested = resolve(root, candidate);
     if (!existsSync(requested)) throw new Error(`候选目录不存在：${candidate}`);
     const target = realpathSync(requested);
@@ -59,21 +95,32 @@ export function openRunEntry(options: RunEntryOptions = {}): RunEntry {
     return target;
   };
 
+  /** 本次操作使用的档案与镜像：按当前配置求值后传入冻结与执行链路。 */
+  const environment = (): { profile: 'local' | 'linux-container'; image: string | null; imageDigest: string | null } =>
+    ({ profile: profile(), image: image(), imageDigest: imageDigest() });
+
   return {
-    enabled: disabledReason === null,
+    runRoot,
+    enabled: () => disabledReason() === null,
     disabledReason,
+    profile,
+    image,
+    imageDigest,
+    token,
     async submit(submission: RunSubmission): Promise<RunStatus> {
-      if (disabledReason !== null) throw new Error(disabledReason);
+      const reason = disabledReason();
+      if (reason !== null) throw new Error(reason);
       const candidateDirectory = resolveCandidate(submission.candidateDirectory);
+      const current = environment();
       const envelope = createEnvelope(submission.taskId, candidateDirectory, {
         idempotencyKey: submission.idempotencyKey,
         reason: submission.reason,
       });
       const frozen = store.submit({
         taskId: submission.taskId, envelope, candidateDirectory, submittedBy: submission.submittedBy,
-        ...(options.profile === undefined ? {} : { profile: options.profile }),
-        ...(options.image === undefined ? {} : { image: options.image }),
-        ...(options.imageDigest === undefined ? {} : { imageDigest: options.imageDigest }),
+        profile: current.profile,
+        image: current.image,
+        imageDigest: current.imageDigest,
       });
       const key = `${frozen.attempt.runId}/${frozen.attempt.attemptId}`;
       const existing = active.get(key);
@@ -86,10 +133,10 @@ export function openRunEntry(options: RunEntryOptions = {}): RunEntry {
         candidateDirectory,
         submittedBy: submission.submittedBy,
         signal: controller.signal,
-        qualityProvider,
-        ...(options.profile === undefined ? {} : { profile: options.profile }),
-        ...(options.image === undefined ? {} : { image: options.image }),
-        ...(options.imageDigest === undefined ? {} : { imageDigest: options.imageDigest }),
+        qualityProvider: quality(),
+        profile: current.profile,
+        image: current.image,
+        imageDigest: current.imageDigest,
       }).then(outcome => readRunStatus(store, outcome.submission.attempt.runId, outcome.submission.attempt.attemptId));
       active.set(key, { controller, promise: pending });
       try { return await pending; }
@@ -129,7 +176,7 @@ export function openRunEntry(options: RunEntryOptions = {}): RunEntry {
       if (human && (human.verdict.runId !== runId || human.verdict.attemptId !== attemptId || human.verdict.taskId !== frozen.attempt.taskId)) throw new Error('人工复核与指定作答不一致。');
       const key = `${runId}/${attemptId}`;
       const controller = new AbortController();
-      const pending = reviewCompletedAttempt({ store, runId, attemptId, signal: controller.signal, qualityProvider: human === undefined ? qualityProvider : createQualityProvider({ humanReview: human }) })
+      const pending = reviewCompletedAttempt({ store, runId, attemptId, signal: controller.signal, qualityProvider: human === undefined ? quality() : createQualityProvider({ env: env(), humanReview: human }) })
         .then(() => readRunStatus(store, runId, attemptId));
       active.set(key, { controller, promise: pending });
       try { return await pending; } finally { active.delete(key); }
@@ -139,7 +186,7 @@ export function openRunEntry(options: RunEntryOptions = {}): RunEntry {
       const existing = active.get(key);
       if (existing) return existing.promise;
       const controller = new AbortController();
-      const pending = retryCompletedAttempt({ store, runId, attemptId, signal: controller.signal, qualityProvider })
+      const pending = retryCompletedAttempt({ store, runId, attemptId, signal: controller.signal, qualityProvider: quality() })
         .then(() => readRunStatus(store, runId, attemptId));
       active.set(key, { controller, promise: pending });
       try { return await pending; } finally { active.delete(key); }
