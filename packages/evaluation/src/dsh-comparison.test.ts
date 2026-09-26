@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -25,6 +25,42 @@ function setup() {
   } };
 }
 
+it('受控启动已认领的空报告目录可直接使用，非空目录仍被拒绝覆盖', async () => {
+  // 回归：网页发起测评时，dsh-compare.ts 的 --experiment-id 分支先用
+  // mkdirSync(recursive:false) 原子认领报告目录，随后 runDshComparison 又无条件
+  // mkdirSync 同一路径，必然 EEXIST 退出——受控启动因此从未成功过。
+  // 修复后只区分：空目录是调用方刚认领的（可用），非空目录才是既有实验（拒绝覆盖）。
+  const refused = setup();
+  const refusedDir = refused.options.outputDirectory;
+  mkdirSync(refusedDir, { recursive: true });
+  writeFileSync(join(refusedDir, 'report.md'), '既有实验');
+  try {
+    await expect(runDshComparison(refused.options, { solve: async o => solverResult(o) })).rejects.toThrow(/非空|拒绝覆盖/);
+    // 既有内容必须原样保留，不能被本次运行改写。
+    expect(readdirSync(refusedDir)).toEqual(['report.md']);
+    expect(readFileSync(join(refusedDir, 'report.md'), 'utf8')).toBe('既有实验');
+  } finally { refused.clean(); }
+
+  // 已认领的空目录必须能跑完整条链路（这正是网页发起测评的路径，此前从未成功过）。
+  const claimed = setup();
+  mkdirSync(claimed.options.outputDirectory, { recursive: true });
+  try {
+    const report = await runDshComparison(claimed.options, {
+      env: {},
+      async solve(options) { return solverResult(options); },
+      async evaluate(taskId, workspace, row, store) {
+        const outcome = await verifySubmission({ store, taskId, candidateDirectory: workspace,
+          envelope: createEnvelope(taskId, workspace), submittedBy: 'scripted-' + row.mode, profile: 'local' });
+        const { runId, attemptId } = outcome.submission.attempt;
+        const identity = inspectRunSelection(store, [{ runId, attemptId }]);
+        return { status: readRunStatus(store, runId, attemptId), environmentKey: identity.environmentKey, judgeKey: identity.judgeKey };
+      },
+    });
+    expect(report.state).toBe('completed');
+    // 三个产物必须落进调用方已认领的目录。
+    expect(readdirSync(claimed.options.outputDirectory).sort()).toEqual(['evidence.json.gz', 'experiment.json', 'report.md']);
+  } finally { claimed.clean(); }
+}, 20_000);
 function solverResult(options: DshRunOptions, finishReason = 'completed'): DshRunResult {
   return { finishReason, durationMs: 1, finalResponse: '模拟作答，仅测试编排', usage: null,
     requestedModel: { provider: options.provider, model: options.model, reasoningEffort: options.reasoningEffort === 'default' ? null : options.reasoningEffort, maxTokens: options.maxTokens },

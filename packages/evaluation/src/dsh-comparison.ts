@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { copyFileSync, existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { requireTask } from '@fsa/catalog';
 import type { RunStatus } from '@fsa/contracts';
@@ -167,10 +167,25 @@ export function renderComparison(report: DshComparisonReport): string {
   ].join('\n');
 }
 
+/**
+ * 认领报告目录，保持「绝不覆盖既有实验」的语义。
+ *
+ * 调用方 `--experiment-id` 分支已经用 mkdirSync(recursive:false) 原子认领过该目录，
+ * 因此这里必须区分两种情况：目录**不存在**时由本函数创建（普通 CLI 路径）；
+ * 目录**已存在且为空**说明是调用方刚认领的，继续使用；
+ * 目录已存在且**非空**才是有既有实验，拒绝覆盖。
+ * 早期实现无条件 mkdirSync(recursive:false)，导致受控启动（网页发起）必然 EEXIST 退出。
+ */
+function claimOutputDirectory(directory: string): void {
+  if (!existsSync(directory)) { mkdirSync(directory, { recursive: false }); return; }
+  // 已存在：空目录视为调用方的认领，非空目录才是需要拒绝的既有实验。
+  if (readdirSync(directory).length > 0) throw new Error(`报告目录已存在且非空，拒绝覆盖：${directory}`);
+}
+
 /** 串行完成独立作答、冻结和验证；报告每次状态变更落盘，中断后不自动重做收费作答。 */
 export async function runDshComparison(options: DshComparisonOptions, services: ComparisonServices = {}): Promise<DshComparisonReport> {
   validateComparison(options);
-  mkdirSync(options.outputDirectory, { recursive: false });
+  claimOutputDirectory(options.outputDirectory);
   const scratch = createComparisonScratch();
   const store = createRunStore(join(scratch.directory, 'evidence', 'runs'));
   const env = { ...(services.env ?? process.env) };
