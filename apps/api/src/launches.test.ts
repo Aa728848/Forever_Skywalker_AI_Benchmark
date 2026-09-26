@@ -138,6 +138,109 @@ const launchRequest = (h: Harness, extra: Record<string, unknown> = {}) => ({
   provider: 'fake-provider', model: 'fake-model', outputRoot: h.outputRoot, ...extra,
 });
 
+describe('续跑（--resume）经真实启动链路', () => {
+  /** 假子进程记录收到的 argv，供断言续跑参数确实下发。 */
+  const argvRecordingChild = `
+import { writeFileSync } from 'node:fs';
+writeFileSync(process.env.FAKE_ARGV_LOG, JSON.stringify(process.argv.slice(2)));
+await new Promise(r => setTimeout(r, Number(process.env.FAKE_SLEEP_MS ?? 300)));
+`;
+
+  it('续跑指向既有实验：下发 --resume 而非 --experiment-id，且实验目录不被新建', async () => {
+    const h = harness();
+    const existing = 'exp-existing-report';
+    mkdirSync(join(h.outputRoot, existing), { recursive: true });
+    // 续跑的 plan 取自报告 settings，所以夹具必须是含 settings 的报告（真实报告即如此）。
+    writeFileSync(join(h.outputRoot, existing, 'experiment.json'), JSON.stringify({ schemaVersion: '0.3.0', rows: [],
+      settings: { provider: 'fake-provider', model: 'fake-model', presets: ['standard'], modes: ['off'], repeats: 1, taskIds: ['CACHE-02'] } }));
+    const argvLog = join(h.root, 'argv.json');
+    const childPath = join(h.root, 'argv-child.mjs');
+    writeFileSync(childPath, argvRecordingChild);
+    const launches = createLaunches({ config: h.config, launchesRoot: h.launchesRoot, repositoryRoot, childScript: childPath,
+      env: { ...h.baseEnv, FAKE_ARGV_LOG: argvLog }, pollMs: 50, confirmMs: 20_000, registrationWaitMs: 10_000 });
+    const view = await launches.launch({ scope: 'manual', taskIds: ['CACHE-02'], presets: ['standard'], modes: ['off'], repeats: 1,
+      provider: 'fake-provider', model: 'fake-model', outputRoot: h.outputRoot, resumeExperimentId: existing });
+    // 实验标识是既有的那个；launchId 是新的（启动记录独立可审计）。
+    expect(view.experimentId).toBe(existing);
+    expect(view.launchId).not.toBe(existing);
+    expect(view.args[0]).toBe('--resume');
+    expect(view.args[1]).toBe(existing);
+    expect(view.args).not.toContain('--experiment-id');
+    // 既有报告必须原样保留，续跑不覆盖它。
+    expect(existsSync(join(h.outputRoot, existing, 'experiment.json'))).toBe(true);
+    await launches.cancel(view.launchId).catch(() => undefined);
+  }, 30_000);
+
+  it('续跑目标不存在或没有 experiment.json 时拒绝，且不创建任何目录', async () => {
+    const h = harness();
+    // 目标不存在。
+    await expect(launchesFor(h.config, { launchesRoot: h.launchesRoot, childPath: h.childPath, baseEnv: h.baseEnv })
+      .launch(launchRequest(h, { resumeExperimentId: 'no-such-experiment' }))).rejects.toThrow(/续跑目标不存在或没有 experiment.json/);
+    // 目录存在但没有 experiment.json。
+    mkdirSync(join(h.outputRoot, 'empty-dir'), { recursive: true });
+    await expect(launchesFor(h.config, { launchesRoot: h.launchesRoot, childPath: h.childPath, baseEnv: h.baseEnv })
+      .launch(launchRequest(h, { resumeExperimentId: 'empty-dir' }))).rejects.toThrow(/续跑目标不存在或没有 experiment.json/);
+    // 续跑标识非法。
+    await expect(launchesFor(h.config, { launchesRoot: h.launchesRoot, childPath: h.childPath, baseEnv: h.baseEnv })
+      .launch(launchRequest(h, { resumeExperimentId: '../escape' }))).rejects.toThrow(/续跑标识不合法/);
+    // 续跑不能与预检同时使用：预检不调用模型，续跑会。
+    await expect(launchesFor(h.config, { launchesRoot: h.launchesRoot, childPath: h.childPath, baseEnv: h.baseEnv })
+      .launch(launchRequest(h, { resumeExperimentId: 'x', check: true }))).rejects.toThrow(/续跑不能与预检同时使用/);
+    // 以上全部拒绝：目录必须保持原样，不留下任何新建实验目录。
+    expect(readdirSync(h.outputRoot).sort()).toEqual(['empty-dir']);
+  }, 30_000);
+
+  it('续跑只发实验标识即可：plan 取自报告里的 settings，不被界面缺省值拒绝', async () => {
+    // 回归：报告中心的续跑按钮只发 { resumeExperimentId }（用户不该重选题目与等级）。
+    // 若 plan 仍按界面缺省值构造（默认题目范围、配置里的预设与等级），
+    // 与报告里的 55 题/ptc/high 必然不符，--resume 的配置核对会拒绝自己。
+    const h = harness();
+    const existing = 'exp-with-settings';
+    mkdirSync(join(h.outputRoot, existing), { recursive: true });
+    writeFileSync(join(h.outputRoot, existing, 'experiment.json'), JSON.stringify({
+      schemaVersion: '0.3.0', rows: [],
+      // 故意用与配置缺省值全都不同的参数，确保断言真的检验「取自报告」。
+      settings: { provider: 'deepseek-official', model: 'deepseek-flash', presets: ['ptc'], modes: ['high'],
+        repeats: 1, maxTokens: 64000, timeoutMs: 1_200_000, measurePerformance: false,
+        taskIds: ['CACHE-02', 'CACHE-03', 'THR-01'] },
+    }));
+    const launches = launchesFor(h.config, { launchesRoot: h.launchesRoot, childPath: h.childPath, baseEnv: h.baseEnv });
+    // 只发实验标识：不传 taskIds / presets / modes / maxTokens。
+    const view = await launches.launch({ resumeExperimentId: existing, outputRoot: h.outputRoot });
+    // plan 必须逐项等于报告里的 settings，而不是界面缺省值。
+    expect(view.plan.taskIds).toEqual(['CACHE-02', 'CACHE-03', 'THR-01']);
+    expect(view.plan.presets).toEqual(['ptc']);
+    expect(view.plan.modes).toEqual(['high']);
+    expect(view.plan.maxTokens).toBe(64000);
+    expect(view.plan.provider).toBe('deepseek-official');
+    expect(view.plan.model).toBe('deepseek-flash');
+    expect(view.plan.answers).toBe(3);
+    expect(view.args[0]).toBe('--resume');
+    // 下发的 argv 也必须带上报告里的参数，否则子进程按自己的默认值跑，配置核对照样失败。
+    expect(view.args.join(' ')).toContain('--tasks CACHE-02,CACHE-03,THR-01');
+    expect(view.args.join(' ')).toContain('--presets ptc');
+    expect(view.args.join(' ')).toContain('--modes high');
+    expect(view.args.join(' ')).toContain('--max-tokens 64000');
+    await launches.cancel(view.launchId).catch(() => undefined);
+  }, 30_000);
+
+  it('报告的 settings 无法解析时明确拒绝续跑，而不是静默按缺省值跑', async () => {
+    const h = harness();
+    const existing = 'exp-broken-settings';
+    mkdirSync(join(h.outputRoot, existing), { recursive: true });
+    writeFileSync(join(h.outputRoot, existing, 'experiment.json'), JSON.stringify({ schemaVersion: '0.3.0', rows: [], settings: { presets: ['ptc'] } }));
+    await expect(launchesFor(h.config, { launchesRoot: h.launchesRoot, childPath: h.childPath, baseEnv: h.baseEnv })
+      .launch({ resumeExperimentId: existing, outputRoot: h.outputRoot })).rejects.toThrow(/settings 无法解析/);
+  }, 30_000);
+  it('新建路径仍然用 --experiment-id，不受续跑改动影响', async () => {
+    const h = harness();
+    const view = await (launchesFor(h.config, { launchesRoot: h.launchesRoot, childPath: h.childPath, baseEnv: h.baseEnv }))
+      .launch(launchRequest(h));
+    expect(view.args[0]).toBe('--experiment-id');
+    expect(view.args[1]).toBe(view.launchId);
+    expect(view.args).not.toContain('--resume');
+  }, 30_000);
+});
 describe('自动测评状态归并（mergeState 真值表）', () => {
   const exit = (code: number | null, signal: string | null = null, cancelled = false) =>
     ({ code, signal, at: '2026-09-14T00:00:00.000Z', descendantsVerified: true, note: null, cancelled });

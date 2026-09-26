@@ -17,7 +17,7 @@
  */
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { existsSync, lstatSync, mkdirSync, readdirSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { moveToTrash, trashDirectoryName } from './cleanup.ts';
 import { join, resolve } from 'node:path';
 import { tasks } from '@fsa/catalog';
@@ -517,8 +517,61 @@ export function createLaunches(options: LaunchesOptions): Launches {
     return resolve(request.outputRoot ?? snapshot.BENCH_DSH_REPORT_DIR ?? join(repositoryRoot, 'data', 'experiments'));
   }
 
+  /**
+   * 续跑既有实验时，配置以**报告里的 settings** 为准，而不是界面缺省值。
+   *
+   * 为什么必须这样：`--resume` 会核对本次配置与既有报告是否一致，不一致直接拒绝。
+   * 而报告中心的续跑按钮只发实验标识——用户不需要、也不该重新选择题目与等级，
+   * 续跑的语义是「照原样继续」。若 plan 仍按界面缺省值构造（默认题目范围、配置里的
+   * 预设与等级），与报告里的 55 题/ptc/high 必然不符，续跑会被自己拒绝。
+   */
+  function planFromExistingReport(outputRoot: string, experimentId: string): LaunchPlan | null {
+    const path = join(outputRoot, experimentId, 'experiment.json');
+    if (!existsSync(path)) return null;
+    try {
+      const parsed = JSON.parse(readFileSync(path, 'utf8')) as { settings?: Record<string, unknown> };
+      const settings = parsed.settings;
+      if (settings === undefined || typeof settings !== 'object' || settings === null) return null;
+      const arrayOf = (value: unknown): string[] => Array.isArray(value) && value.every(item => typeof item === 'string') ? value as string[] : [];
+      const numberOf = (value: unknown, fallback: number): number => typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback;
+      const taskIds = arrayOf(settings.taskIds);
+      const presets = arrayOf(settings.presets);
+      const modes = arrayOf(settings.modes);
+      if (taskIds.length === 0 || presets.length === 0 || modes.length === 0) return null;
+      const repeats = numberOf(settings.repeats, 1);
+      const timeoutMs = numberOf(settings.timeoutMs, 1_200_000);
+      return {
+        taskIds, presets: presets as LaunchPlan['presets'], modes, repeats,
+        timeoutMinutes: Math.max(1, Math.round(timeoutMs / 60_000)),
+        maxTokens: numberOf(settings.maxTokens, 16_384),
+        measurePerformance: settings.measurePerformance === true,
+        provider: typeof settings.provider === 'string' ? settings.provider : '',
+        model: typeof settings.model === 'string' ? settings.model : '',
+        answers: taskIds.length * presets.length * modes.length * repeats,
+      };
+    } catch { return null; }
+  }
+
   function planOf(request: LaunchRequest): LaunchPlan {
     const snapshot = options.config.snapshot();
+    // 续跑：完全沿用既有报告的配置，绝不掺入界面缺省值。
+    if ((request.resumeExperimentId ?? '').trim() !== '') {
+      // 参数级冲突先判：与标识形状、路径存在性都无关，只取决于请求本身。
+      if (request.check === true) throw new LaunchError(400, '续跑不能与预检同时使用：续跑会真实调用模型。');
+      const root = outputRootOf(request);
+      const id = (request.resumeExperimentId ?? '').trim();
+      // 再校验标识形状，最后才谈存在性：`../escape` 这类输入必须报「标识不合法」，
+      // 而不是拼出一个越界路径再去检查它是否存在。
+      if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(id)) throw new LaunchError(400, '续跑标识不合法：只接受字母或数字开头、由字母数字下划线和连字符组成的 1–64 字符标识。');
+      // planOf 在 launch 之前被调用，所以「目标不存在」要在这里就说清楚，
+      // 否则用户看到的会是「settings 无法解析」这种误导性的原因。
+      const path = join(root, id, 'experiment.json');
+      if (!existsSync(path)) throw new LaunchError(400, '续跑目标不存在或没有 experiment.json：' + path + '。');
+      const existing = planFromExistingReport(root, id);
+      if (existing === null) throw new LaunchError(400, '续跑需要既有报告里有可用的 settings（题目、预设、等级）；该报告的 settings 无法解析，请改用「发起测评」新建一次。');
+      // 不做范围校验：题目与等级都来自已成立的报告，它们当初已通过校验。
+      return existing;
+    }
     const provider = (request.provider ?? snapshot.BENCH_DSH_PROVIDER ?? '').trim();
     const model = (request.model ?? snapshot.BENCH_DSH_MODEL ?? '').trim();
     // 省略 = 沿用配置默认；显式给出（含空数组）就按 validateComparison 的规则校验，绝不静默补默认值。
