@@ -90,10 +90,10 @@ describe('正式运行入口', () => {
       expect(created.statusCode).toBe(201);
       const status = created.json();
       expect(status).toMatchObject({ taskId: 'CACHE-02', phase: 'verified', classification: 'check-failed' });
-      // 本用例不配置裁判：三维的评审一侧缺失，质量分与总分保持待定，可用分照常得出。
-      // 这验证的是「缺证据不补分」仍然生效，而不是删维后凭空产生分数。
-      expect(status.scoring).toMatchObject({ mode: 'local', quality: null, total: null });
-      expect(status.scoring.functional).toBeGreaterThan(0);
+      // 本用例不配置裁判：三维的评审一侧缺失，质量分与总分保持待定。
+      // 该题分类是 check-failed，按用户决定可用验证分直接记 0（不按通过项比例给部分分）；
+      // 这条断言同时验证「缺证据不补分」仍然生效——0 来自明确的失败结论，不是补出来的分。
+      expect(status.scoring).toMatchObject({ mode: 'local', quality: null, total: null, functional: 0 });
       expect(status.knownFailures.map((item: { id: string }) => item.id).sort()).toEqual([
         'public/retry-after-failure', 'public/sync-throw-becomes-rejection',
         'hidden/no-cache-of-rejected-attempt', 'hidden/retry-then-coalesce-again',

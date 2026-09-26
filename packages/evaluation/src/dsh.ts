@@ -65,6 +65,16 @@ export interface DshRunOptions {
   sessionId: string;
   prompt: string;
   timeoutMs: number;
+  /**
+   * DSH 会话 initialize 的等待上限。
+   *
+   * 为什么需要：DSH 的默认值是 **10 秒**（sdk/client/src/launch.ts 的
+   * DEFAULT_INITIALIZE_TIMEOUT_MS），那是按**单进程**启动估的。并行测评会同时拉起
+   * N 个 DSH 进程，每个都要加载 profile、插件与适配器；实测 3 路并行时第 4 个会话
+   * 在 10 秒处超时（「initialize timed out after 10000ms waiting for dsh profile "sdk"」），
+   * 那一次整轮 55 题只跑完 4 题就 failed。
+   */
+  initializeTimeoutMs?: number;
   signal?: AbortSignal;
   env?: NodeJS.ProcessEnv;
 }
@@ -331,6 +341,8 @@ export async function runDsh(options: DshRunOptions, dependencies: DshDependenci
     profile: options.profile ?? 'sdk', provider: options.provider, model: options.model,
     ...(options.reasoningEffort === 'default' ? {} : { reasoningEffort: options.reasoningEffort }), maxTokens: options.maxTokens,
     patches: [prepared.patch, ...prepared.presets],
+    // 不传就沿用 DSH 默认 10 秒；并行测评由调用方按并行度放大。
+    ...(options.initializeTimeoutMs === undefined ? {} : { initializeTimeoutMs: options.initializeTimeoutMs }),
     env: childEnvironment(options.env ?? process.env, dshHome, workspacePermission),
   };
   // 显式工厂用于不调用模型的协议/生命周期测试；生产只加载上述已验证的构建产物。

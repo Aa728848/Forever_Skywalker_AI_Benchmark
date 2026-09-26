@@ -187,6 +187,16 @@ export function scoreExecution(execution: ExecutionResult, manifest: TaskManifes
   if (execution.checks.some(check => !manifest.checks.some(declared => declared.id === check.id))) throw new Error('执行结果含题目未声明的检查。');
   const statusOf = (id: string) => execution.checks.find(check => check.id === id)?.status ?? 'not-run';
   const undone = execution.classification === 'infrastructure-error' || execution.classification === 'cancelled';
+  /**
+   * 可用验证未通过时直接判 0，不给按比例的部分分。
+   *
+   * 「check 不通过」是明确的失败结论，不是「部分可用」：按通过项权重给部分分
+   * （实测 ARCH-04 因此拿到 79.58 总分）会让没通过的改动看起来接近通过，
+   * 也让这一半分数的含义变成「做了多少」而不是「有没有达到可用标准」。
+   * 质量分仍由裁判独立评——用户明确要求只把可用验证分归零。
+   * 未取得结论的两种情形（基础设施故障、取消）保持 null，那是「无法判断」，与「没通过」不同。
+   */
+  const checkFailed = execution.classification === 'check-failed';
   const groups = executionGroups.map(group => {
     const declared = manifest.checks.filter(check => check.group === group);
     const weightTotal = declared.reduce((sum, check) => sum + check.weight, 0);
@@ -199,7 +209,7 @@ export function scoreExecution(execution: ExecutionResult, manifest: TaskManifes
     return {
       group,
       weight: functionalWeights[group],
-      score: complete ? round((weightPassed / weightTotal) * 100) : null,
+      score: complete ? (checkFailed ? 0 : round((weightPassed / weightTotal) * 100)) : null,
       weightPassed,
       weightTotal,
       passed: passed.map(check => check.id),
@@ -209,7 +219,7 @@ export function scoreExecution(execution: ExecutionResult, manifest: TaskManifes
   });
   const complete = groups.every(group => group.score !== null);
   const functional = complete
-    ? groups.reduce((sum, group) => sum + (group.weightPassed / group.weightTotal) * group.weight, 0)
+    ? (checkFailed ? 0 : groups.reduce((sum, group) => sum + (group.weightPassed / group.weightTotal) * group.weight, 0))
     : null;
   const criticalPassed = manifest.checks.filter(check => check.critical).every(check => statusOf(check.id) === 'passed');
   const reasons: string[] = [];
@@ -221,6 +231,7 @@ export function scoreExecution(execution: ExecutionResult, manifest: TaskManifes
   if (execution.classification === 'cancelled') reasons.push('执行被取消：未取得结论，总分保持待定。');
   if (execution.classification === 'timeout') reasons.push('候选未在时间预算内完成：未取得的检查项按被测失败记 0。');
   if (execution.classification === 'memory-exceeded') reasons.push('候选因内存耗尽终止：未取得的检查项按被测失败记 0。');
+  if (checkFailed) reasons.push('可用验证未通过：可用验证分按 0 计，不按通过项比例给部分分；代码质量分仍独立评审。');
   const notRunTotal = groups.reduce((sum, group) => sum + group.notRun.length, 0);
   if (!undone && notRunTotal > 0) reasons.push('仍有 ' + notRunTotal + ' 项检查未取得结论，' + (execution.classification === 'passed' ? '通过声明缺少完整证据，保持待定。' : '按被测失败记 0。'));
   const criticalFailed = manifest.checks.some(check => check.critical && (statusOf(check.id) === 'failed' || (!undone && execution.classification !== 'passed' && statusOf(check.id) === 'not-run')));

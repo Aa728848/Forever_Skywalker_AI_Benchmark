@@ -77,6 +77,23 @@ export interface ComparisonProgress {
   message: string;
 }
 
+/**
+ * DSH 会话 initialize 的等待上限，按并行度放大。
+ *
+ * DSH 默认 10 秒（sdk/client/src/launch.ts 的 DEFAULT_INITIALIZE_TIMEOUT_MS）是按
+ * **单进程**启动估的。并行测评会同时拉起多个 DSH 进程，每个都要加载 profile、
+ * 插件与适配器；实测 3 路并行时第 4 个会话正好在 10 秒处超时
+ * （「initialize timed out after 10000ms waiting for dsh profile "sdk"」），
+ * 那一次整轮 55 题只跑完 4 题就以 failed 结束。
+ *
+ * 作答与裁判都用它：两者都会并发启动 DSH 会话，放大的理由相同，
+ * 因此这里是这一个事实的唯一归属。
+ */
+export function dshInitializeTimeoutMs(concurrency: number): number {
+  // 基线给足冷启动，再按并发线性加一点；宁可可等待，也不要因启动慢丢掉一整题。
+  return 30_000 + 15_000 * Math.max(1, concurrency);
+}
+
 /** 只保留最近 500 条进度，超出时丢弃最旧的，避免 experiment.json 随实验时长无界增长。 */
 export const comparisonProgressLimit = 500;
 
@@ -279,6 +296,8 @@ export async function runDshComparison(options: DshComparisonOptions, services: 
   const restoredEvidence = resumed === null ? null : restoreComparisonEvidence(scratch, options.outputDirectory);
   const store = createRunStore(join(scratch.directory, 'evidence', 'runs'));
   const env = { ...(services.env ?? process.env) };
+  // 裁判会话与作答会话一样会并发启动，因此 initialize 超时按同一规则放大。
+  env.BENCH_JUDGE_DSH_INITIALIZE_TIMEOUT_MS = String(dshInitializeTimeoutMs(options.concurrency ?? 1));
   // 包含 CLI/向导已解析的覆盖值，保证作答与评分采用同一条非模型配置链。
   Object.assign(env, { BENCH_DSH_ROOT: options.dshRoot, BENCH_DSH_HOME: options.dshHome,
     BENCH_DSH_PROFILE: options.profile, BENCH_DSH_WORKSPACE_PERMISSION: options.workspacePermission });
@@ -401,6 +420,8 @@ export async function runDshComparison(options: DshComparisonOptions, services: 
   const requestStop = (reason: 'cancelled' | 'failed') => { if (stopReason === null) stopReason = reason; };
   const shouldStop = () => stopReason !== null || services.signal?.aborted === true;
 
+  const initializeTimeoutMs = dshInitializeTimeoutMs(options.concurrency ?? 1);
+
   /** 处理一条作答：作答 -> 容器验证 -> 裁判评分 -> 落盘。每条 row 只被一个 worker 处理。 */
   const runRow = async (row: ComparisonRow): Promise<void> => {
     const runtimeDirectory = join(scratch.directory, 'runtime', row.sessionId);
@@ -414,10 +435,26 @@ export async function runDshComparison(options: DshComparisonOptions, services: 
         workspacePermission: options.workspacePermission,
         workspace, provider: options.provider, model: options.model, reasoningEffort: row.mode,
         maxTokens: options.maxTokens, sessionId: row.sessionId, prompt: comparisonPrompt, timeoutMs: options.timeoutMs, env,
+        initializeTimeoutMs,
         ...(services.signal ? { signal: services.signal } : {}) });
       if (row.solver.finishReason !== 'completed') {
-        row.phase = 'solver-stopped';
-        if (row.solver.finishReason === 'cancelled' || services.signal?.aborted) requestStop('cancelled');
+        // 取消：真的没有结论，保持未评分并停止派发。
+        if (row.solver.finishReason === 'cancelled' || services.signal?.aborted) {
+          row.phase = 'solver-stopped'; requestStop('cancelled'); return;
+        }
+        /**
+         * 超时、内存超限、DSH 异常结束等**被测失败**：仍然走容器验证并记 0 分。
+         *
+         * 为什么不再跳过：跳过的行没有 evaluation，总分会保持待定——而「超时」
+         * 本身就是一个明确的失败结论，不是「无法判断」。留作待定会让一次实验
+         * 出现大量「待定」，用户看到的是一份没有成绩的报告。
+         * 容器验证会把未取得的检查项按被测失败记 0（见 scoreExecution 的 timeout/
+         * memory-exceeded 分支），所以这里只是让它走到那一步。
+         */
+        row.phase = 'grading'; persist();
+        progress(`${row.taskId} · ${row.preset} / ${row.mode}：作答未完成（${row.solver.finishReason}），按 0 分验证`);
+        row.evaluation = await evaluate(row.taskId, workspace, row, store);
+        row.phase = 'done';
         return;
       }
       if (services.signal?.aborted) { row.phase = 'solver-stopped'; requestStop('cancelled'); return; }
@@ -427,14 +464,47 @@ export async function runDshComparison(options: DshComparisonOptions, services: 
       if (judgeCleanupError) throw judgeCleanupError;
       row.phase = 'done';
       if (services.signal?.aborted) { requestStop('cancelled'); return; }
-      if (row.evaluation.status.classification === 'infrastructure-error') throw new Error('评分基础设施失败，已停止后续模型调用。');
-      // 漂移检查只读已落定行的 environmentKey/judgeKey；未完成的行 evaluation 为 null，不参与。
-      if (comparisonGroups(report).drift.length > 0) throw new Error('检测到环境或模型漂移，已停止后续作答。');
+      /**
+       * 基础设施故障（初始化超时、容器不可用等）：记在该行上并按 0 分收尾，**继续下一题**。
+       *
+       * 为什么不再中止整轮：一次 55 题实验里单题的基础设施抖动，不该让其余 54 题
+       * 全部停在 pending——实测就是这样丢掉了一整轮（只跑完 4 题）。
+       * 错误原因如实记在 row.error 与 reasons 里，不伪装成正常成绩。
+       */
+      if (row.evaluation.status.classification === 'infrastructure-error') {
+        row.error = '评分基础设施失败：该题按 0 分计，继续后续作答。';
+        progress(`${row.taskId} · ${row.preset} / ${row.mode}：基础设施失败，按 0 分计并继续`);
+        return;
+      }
+      /**
+       * 环境/模型漂移：**记录并继续**，不再中止整轮。
+       *
+       * 漂移意味着这些结果不可比——而 comparisonGroups 已经在汇总时拒绝合并
+       * （drift 非空则各组均分返回 null，报告显示「待定」），诚实性不依赖中途停下。
+       * 中止的代价却是丢掉其余全部作答（实测一次 55 题因此只剩 4 题）。
+       * 因此改为逐次如实记录，跑到最后，由报告说明为什么不能合并。
+       */
+      const drift = comparisonGroups(report).drift;
+      if (drift.length > 0) {
+        const note = '环境或模型漂移：' + drift.join('；') + '。分数不合并，继续完成其余作答。';
+        if (!report.issues.includes(note)) { report.issues.push(note); progress(note); }
+      }
     } catch (error) {
-      if (error instanceof DshCleanupError) { cleanupAllowed = false; retentionReason = error.message; }
-      row.phase = 'error'; row.error = error instanceof Error ? error.message : String(error);
-      requestStop('failed');
-      throw error;
+      /**
+       * 单题失败不再中止整轮。
+       *
+       * 例外只有两类，它们说明**后续作答不可能正确**或**环境已被破坏**，必须停下：
+       *  · 取消：操作者要求停止；
+       *  · DSH 运行时回收未确认（DshCleanupError）：临时目录与进程状态已不可信；
+       *  · 环境/模型漂移：后续结果与前面的不可比。
+       * 其余（初始化超时、容器故障、单题异常）都记为该题失败并继续。
+       */
+      if (error instanceof DshCleanupError) { cleanupAllowed = false; retentionReason = error.message; row.phase = 'error';
+        row.error = error.message; requestStop('failed'); throw error; }
+      const message = error instanceof Error ? error.message : String(error);
+      if (/漂移/.test(message)) { row.phase = 'error'; row.error = message; requestStop('failed'); throw error; }
+      row.phase = 'error'; row.error = message;
+      progress(`${row.taskId} · ${row.preset} / ${row.mode}：该题失败（${message.slice(0, 80)}），已跳过并继续`);
     } finally {
       // 失败作答也保留代码证据；只有报告成功落盘后才删除工作副本。
       if (cleanupAllowed && existsSync(workspace)) {

@@ -129,6 +129,8 @@ export function ReportCenter({ onCount }: { onCount?: (count: number) => void })
   const [pendingRetry, setPendingRetry] = useState<string | null>(null);
   const [retryBusy, setRetryBusy] = useState(false);
   const [retryResult, setRetryResult] = useState<{ reportId: string; message: string; ok: boolean } | null>(null);
+  /** 已发起续跑的报告：在界面上显示「续跑中」，让用户看到操作确实生效。 */
+  const [retrying, setRetrying] = useState<{ reportId: string; launchId: string | null } | null>(null);
   const { token, setToken, authHeaders } = useBenchToken();
 
   /**
@@ -148,8 +150,19 @@ export function ReportCenter({ onCount }: { onCount?: (count: number) => void })
         return;
       }
       const launch = typeof value === 'object' && value !== null && 'launch' in value ? (value as { launch?: { launchId?: string } }).launch : undefined;
-      setRetryResult({ reportId, ok: true, message: '已发起续跑（启动记录 ' + (launch?.launchId ?? '未登记') + '）：只重跑未完成与待定的作答，已完成的分数不变。进度见「启动记录」，完成后本页刷新即可看到新分数。' });
+      setRetryResult({ reportId, ok: true, message: '已发起续跑（启动记录 ' + (launch?.launchId ?? '未登记') + '）：只重跑未完成与待定的作答，已完成的分数不变。本页会自动跟随进度刷新，完成后直接显示新分数。' });
       setPendingRetry(null);
+      setRetrying({ reportId, launchId: launch?.launchId ?? null });
+      /**
+       * 立刻进入轮询状态。
+       *
+       * 否则：报告此刻仍是 failed/旧状态，而轮询只在列表里**已有 running 报告**时才启动——
+       * 续跑没能自己把界面推向轮询，页面看起来毫无变化，用户以为「点了没反应」。
+       * 现在只要发起了续跑，就持续刷新，直到状态落定。
+       */
+      live.current = true;
+      autoRef.current = true;
+      setRevision(value => value + 1);
     } catch (cause) {
       setRetryResult({ reportId, ok: false, message: '续跑失败：' + (cause instanceof Error ? cause.message : '网络错误。') });
     } finally { setRetryBusy(false); }
@@ -216,6 +229,15 @@ export function ReportCenter({ onCount }: { onCount?: (count: number) => void })
       if (controller.signal.aborted) return;
       setExperiments(value);
       live.current = value.some(item => item.state === 'running');
+      // 续跑的报告已不再进行中，说明这轮续跑落定了：撤掉「续跑中」，并把结论留在页面上。
+      setRetrying(previous => {
+        if (previous === null) return null;
+        const target = value.find(item => item.reportId === previous.reportId);
+        if (target === undefined || target.state === 'running') return previous;
+        setRetryResult({ reportId: previous.reportId, ok: true,
+          message: '续跑已完成（启动记录 ' + (previous.launchId ?? '未登记') + '）：报告已更新，下方分数与表格即最新结果。' });
+        return null;
+      });
       onCount?.(value.length);
       const listed = value.filter(item => matchesFilter(item, filter) && searchText(item).includes(keyword));
       const selected = listed.find(item => item.reportId === currentId) ?? listed[0] ?? null;
@@ -277,7 +299,8 @@ export function ReportCenter({ onCount }: { onCount?: (count: number) => void })
         })}</aside>
         <article className="detail report-detail">
           {current === null ? <div className="empty"><h3>没有可展示的实验报告</h3><p>调整筛选条件或重新运行 pnpm dsh:compare。</p></div> : <>
-            <div className="detail-top"><h2>{current.id ?? current.directoryName}</h2>{state && <span className={'state-tag ' + state.kind}>{state.text}</span>}</div>
+            <div className="detail-top"><h2>{current.id ?? current.directoryName}</h2>{state && <span className={'state-tag ' + state.kind}>{state.text}</span>}
+              {retrying !== null && retrying.reportId === current.reportId && <span className="state-tag ok">续跑中</span>}</div>
             <p className="experiment-path">报告目录 {current.directoryName} · 读取于 {time(current.modifiedAt)}</p>
             {current.status === 'unreadable'
               ? <div className="warn broken" role="alert"><b>该实验报告不可读</b><p>{current.error ?? '原因未登记。'}</p><p>列表不会隐藏损坏报告；修复 experiment.json 后点击「刷新报告」即可重新读取。明细请求会返回 422，页面其余部分不受影响。</p><button className="secondary" onClick={() => setRevision(value => value + 1)}>刷新报告</button></div>

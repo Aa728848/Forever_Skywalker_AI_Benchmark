@@ -311,10 +311,13 @@ it('并行度 N 真的让 N 条作答同时在飞，并缩短墙钟', async () =
   expect(parallel.state).toBe('completed');
   expect(parallel.rows).toBe(3);
 }, 40_000);
-it('错误、超时和取消保留为未评分，取消后不启动剩余作答', async () => {
+it('作答未完成（错误/超时）仍按 0 分验证；取消才停止且不再启动剩余作答', async () => {
+  // 用户决定：超时等「被测失败」要走进验证并按 0 分计，不再留成待定——
+  // 待定会让一次实验出现大量没有成绩的行。只有**取消**才真的没有结论。
   const context = setup();
   const controller = new AbortController();
   let calls = 0;
+  const verified: string[] = [];
   try {
     const report = await runDshComparison(context.options, { signal: controller.signal, env: {},
       async solve(options) {
@@ -322,14 +325,58 @@ it('错误、超时和取消保留为未评分，取消后不启动剩余作答'
         if (calls === 3) controller.abort();
         return solverResult(options, calls === 1 ? 'error' : calls === 2 ? 'timeout' : 'cancelled');
       },
-      async evaluate() { throw new Error('未完成的作答不应触发评分'); },
+      async evaluate(taskId, workspace, row, store) {
+        verified.push(row.taskId);
+        const outcome = await verifySubmission({ store, taskId, candidateDirectory: workspace,
+          envelope: createEnvelope(taskId, workspace, { idempotencyKey: row.sessionId }), submittedBy: 'scripted-' + row.mode, profile: 'local' });
+        const { runId, attemptId } = outcome.submission.attempt;
+        const identity = inspectRunSelection(store, [{ runId, attemptId }]);
+        return { status: readRunStatus(store, runId, attemptId), environmentKey: identity.environmentKey, judgeKey: identity.judgeKey };
+      },
     });
     expect(report.state).toBe('cancelled'); expect(calls).toBe(3);
-    expect(report.rows.map(row => row.phase)).toEqual(['solver-stopped', 'solver-stopped', 'solver-stopped', 'pending']);
-    expect(comparisonGroups(report).groups.every(group => group.total === null && group.graded === 0 && group.planned === 2)).toBe(true);
+    // 前两条（error / timeout）走了验证并落定；第三条是取消，保持未评分；第四条从未启动。
+    expect(report.rows.map(row => row.phase)).toEqual(['done', 'done', 'solver-stopped', 'pending']);
+    expect(verified).toHaveLength(2);
+    // 取消之后不再启动剩余作答：计划 4 条，只跑了 3 条。
+    expect(comparisonGroups(report).groups.every(group => group.planned === 2)).toBe(true);
   } finally { context.clean(); }
 });
 
+it('单题作答失败不中止整轮：其余题照常完成，实验不再 failed', async () => {
+  // 回归（2026-09-27）：一次 55 题实验里 LSP-04 报「initialize timed out」后，
+  // 整轮被中止，其余 51 题全部停在 pending、state=failed。
+  // 用户要求：出现错误或超时不应阻断后续测评。
+  const context = setup();
+  let calls = 0;
+  try {
+    const report = await runDshComparison({ ...context.options, taskIds: ['CACHE-02', 'CACHE-03', 'CACHE-04'], repeats: 1, modes: ['off'] },
+      { env: {},
+        async solve(options) {
+          calls += 1;
+          // 第 2 题抛错（模拟初始化超时这类单题故障），其余正常。
+          if (calls === 2) throw new Error('initialize timed out after 10000ms waiting for dsh profile "sdk"');
+          return solverResult(options);
+        },
+        async evaluate(taskId, workspace, row, store) {
+          const outcome = await verifySubmission({ store, taskId, candidateDirectory: workspace,
+            envelope: createEnvelope(taskId, workspace, { idempotencyKey: row.sessionId }), submittedBy: 'scripted-' + row.mode, profile: 'local' });
+          const { runId, attemptId } = outcome.submission.attempt;
+          const identity = inspectRunSelection(store, [{ runId, attemptId }]);
+          return { status: readRunStatus(store, runId, attemptId), environmentKey: identity.environmentKey, judgeKey: identity.judgeKey };
+        },
+      });
+    // 关键：整轮仍然完成，不是 failed；且没有留下未作答的行。
+    expect(report.state).toBe('completed');
+    expect(calls).toBe(3);
+    const failed = report.rows.filter(row => row.phase === 'error');
+    expect(failed).toHaveLength(1);
+    // 失败原因如实记录在那一行上，不伪装成正常成绩。
+    expect(failed[0]!.error).toContain('initialize timed out');
+    // 其余两题照常完成（不再被中止）。
+    expect(report.rows.filter(row => row.phase === 'done')).toHaveLength(2);
+  } finally { context.clean(); }
+}, 30_000);
 it('运行时回收或初始化失败后落盘失败记录并阻止新的模型调用', async () => {
   const context = setup();
   let calls = 0;

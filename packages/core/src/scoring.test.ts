@@ -148,12 +148,18 @@ describe('正式评分桥：执行结果 → 可用验证分', () => {
     expect(score.reasons.join(' ')).toContain('代码质量维度仍缺证据');
   });
 
-  it('分组按权重折算，失败组记 0 而不是重新归一化', () => {
+  it('check 不通过时可用验证分记 0，不给按比例的部分分', () => {
+    // 用户决定：check 不通过直接判 0 分。
+    // 旧行为是按通过项权重给部分分（本用例原本期望 40），会让「没通过」看起来像
+    // 「差不多通过」；实测 ARCH-04 因此拿到 79.58 总分。质量分仍由裁判独立评。
     const score = scoreExecution(executionFixture({
       'public/behavior': 'passed', 'public/boundary': 'failed', 'public/state': 'passed', 'public/regression': 'passed', 'public/resources': 'passed',
     }, 'check-failed'), manifestFixture());
-    expect(score.functional).toBe(40);
+    expect(score.functional).toBe(0);
+    // 分组明细仍如实记录哪些通过了，便于定位；只是分数不按比例折算。
     expect(score.groups.find(group => group.group === 'boundary')).toMatchObject({ score: 0, weightPassed: 0, weightTotal: 1 });
+    expect(score.groups.find(group => group.group === 'behavior')).toMatchObject({ weightPassed: 1 });
+    expect(score.reasons.join(' ')).toContain('可用验证未通过');
   });
 
   it('关键验收项失败时明确不合格', () => {
@@ -209,9 +215,11 @@ describe('质量维度合成与总分', () => {
     review: { simplicity: review(score), maintainability: review(score), decoupling: review(score) },
   });
 
-  it('检查全部打印通过但进程异常时仍不合格', () => {
+  it('检查全部打印通过但进程异常时仍不合格，可用验证分记 0', () => {
+    // 分类与证据矛盾（全部检查 passed，分类却是 check-failed）说明通过声明不可信。
+    // 旧行为按通过项给了满分 50（总分 100）；现在可用验证分记 0，质量分照常 50，故总分 50。
     const result = scoreExecution(executionFixture(allPassed, 'check-failed'), manifestFixture(), full(100));
-    expect(result).toMatchObject({ total: 100, thresholdMet: false });
+    expect(result).toMatchObject({ functional: 0, total: 50, thresholdMet: false });
   });
 
   it('评审声明某维不可判时该维保持待定，不当作 0 分计入', () => {

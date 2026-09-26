@@ -17,6 +17,11 @@ export interface DshJudgeOptions {
   workspacePermission: ReturnType<typeof resolveDshWorkspacePermission>;
   maxTokens: number;
   timeoutMs: number;
+  /**
+   * 裁判会话 initialize 的等待上限。裁判与作答一样会并发启动 DSH 会话，
+   * 因此同样需要按并行度放大——默认值见 `dshInitializeTimeoutMs`。
+   */
+  initializeTimeoutMs?: number;
   promptVersion: string;
 }
 
@@ -192,9 +197,14 @@ export function dshJudgeOptionsFromEnvironment(env: NodeJS.ProcessEnv = process.
   if (!/^[a-z][a-z0-9-]{0,31}$/.test(effort)) throw new JudgeUnavailableError('评分思考等级必须是一个 DSH 等级 ID（如 default/high）。');
   const timeoutMs = integer('BENCH_JUDGE_DSH_TIMEOUT_MS', 300_000);
   if (timeoutMs > 3_600_000) throw new JudgeUnavailableError('DSH 评分限时不能超过一小时。');
+  // 会话 initialize 的等待上限：并行测评会并发启动多个裁判会话，调用方按并行度
+  // 注入这个值（见 dshInitializeTimeoutMs）；未注入时沿用 DSH 的默认 10 秒。
+  const initializeTimeoutMs = env.BENCH_JUDGE_DSH_INITIALIZE_TIMEOUT_MS === undefined || env.BENCH_JUDGE_DSH_INITIALIZE_TIMEOUT_MS.trim() === ''
+    ? undefined : integer('BENCH_JUDGE_DSH_INITIALIZE_TIMEOUT_MS', 10_000);
   return { ...dshWorkspaceOptionsFromEnvironment(env),
     provider: required('BENCH_JUDGE_DSH_PROVIDER'), model: required('BENCH_JUDGE_DSH_MODEL'), reasoningEffort: effort,
     preset: 'minimal', maxTokens: integer('BENCH_JUDGE_DSH_MAX_TOKENS', 16384), timeoutMs,
+    ...(initializeTimeoutMs === undefined ? {} : { initializeTimeoutMs }),
     promptVersion: required('BENCH_JUDGE_PROMPT_VERSION', 'dsh-review-v1') };
 }
 
@@ -243,7 +253,9 @@ export function createDshJudgeFromEnvironment(env: NodeJS.ProcessEnv = process.e
         const result = await run({ dshRoot: options.dshRoot, dshHome: options.dshHome, workspace, profile: options.profile,
           provider: options.provider, model: options.model, reasoningEffort: options.reasoningEffort, agentPreset: options.preset,
           workspacePermission: options.workspacePermission, reviewOnly: true, maxTokens: options.maxTokens, sessionId,
-          prompt, timeoutMs: options.timeoutMs, env: { ...env }, ...(dependencies.signal ? { signal: dependencies.signal } : {}) });
+          prompt, timeoutMs: options.timeoutMs, env: { ...env },
+          ...(options.initializeTimeoutMs === undefined ? {} : { initializeTimeoutMs: options.initializeTimeoutMs }),
+          ...(dependencies.signal ? { signal: dependencies.signal } : {}) });
         if (result.finishReason !== 'completed') {
           const issues = ['会话结束原因 ' + result.finishReason + '，没有完整判决'];
           throw new JudgeProtocolError(protocolMessage('DSH 评分 Agent 未完成', roundId, issues),

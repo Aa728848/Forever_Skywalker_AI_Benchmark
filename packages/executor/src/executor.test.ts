@@ -266,7 +266,9 @@ describe('提交入口自动触发验证', () => {
       expect(again.reusedExecution).toBe(true);
       expect(readRunStatus(restarted, envelope.runId, envelope.attemptId).phase).toBe('verified');
       expect(readdirSync(submission.directory).filter(name => name.startsWith('execution'))).toHaveLength(2);
-      expect(readExecutionScore(submission.directory)?.functional).toBeGreaterThan(0);
+      // 该候选有一条公开检查失败（上方断言 retry-after-failure 为 failed），
+      // 因此分类是 check-failed：可用验证分记 0，而不是按通过项给部分分。
+      expect(readExecutionScore(submission.directory)?.functional).toBe(0);
     } finally {
       for (const directory of [storeRoot, candidate]) rmSync(directory, { recursive: true, force: true });
     }
@@ -308,9 +310,10 @@ describe('提交入口自动触发验证', () => {
       // 正式评分：可用验证分项由执行结果算出，质量缺失时总分待定
       const score = readExecutionScore(first.submission.directory);
       expect(score).toMatchObject({ mode: 'local', quality: null, total: null, criticalPassed: false, thresholdMet: false });
+      // boundary 只通过 2/5，分类因此是 check-failed：可用验证分记 0（不再按比例给部分分）。
+      // 分组明细仍如实记录通过情况，便于定位是哪几项没过。
       expect(score?.groups.find(group => group.group === 'boundary')).toMatchObject({ weightPassed: 2, weightTotal: 5 });
-      expect(score?.functional).toBeGreaterThan(0);
-      expect(score?.functional).toBeLessThan(50);
+      expect(score?.functional).toBe(0);
       expect(status.scoring).toMatchObject({ mode: 'local', total: null, quality: null });
       expect(status.scoring.functional).toBe(score?.functional);
 
