@@ -105,6 +105,41 @@ export function archiveComparisonEvidence(scratch: ComparisonScratch, outputDire
   return { filename, sha256: sha256(recorded), fileCount: archive.files.length };
 }
 
+/**
+ * 续跑用：把既有归档解回本次 scratch 的 evidence/，让 run store 能看到历史作答。
+ *
+ * 为什么必须做：续跑只为**新跑的行**创建 run 记录，而复用的行其 run/attempt 数据
+ * 仍在上一次运行的 scratch 里（已随清理删除）。但报告末尾的汇总会按报告里
+ * 全部带 evaluation 的行去 `summarizeRuns`，其中第一条复用行读不到作答即抛
+ * 「未找到作答」，整次续跑被判 failed——实测 9 条全部修好、55/55 已落定，
+ * 实验状态却是 failed，就是这一条。
+ * 解回后再汇总，历史与新增都在，且证据校验（sha256/bytes）沿用同一套。
+ */
+export function restoreComparisonEvidence(scratch: ComparisonScratch, outputDirectory: string): { fileCount: number } {
+  const directory = ownedDirectory(scratch);
+  const source = join(realpathSync(outputDirectory), 'evidence.json.gz');
+  if (!existsSync(source)) return { fileCount: 0 };
+  const archive = JSON.parse(gunzipSync(readFileSync(source)).toString('utf8')) as ComparisonEvidenceArchive;
+  if (archive.schemaVersion !== '0.1.0' || !Array.isArray(archive.files)) throw new Error('既有证据归档不是可续跑的 0.1.0 格式。');
+  const evidence = join(directory, 'evidence');
+  let restored = 0;
+  let skipped = 0;
+  for (const file of archive.files) {
+    // 路径越界或摘要不符一律拒绝：归档被动手脚时不能悄悄注入数据。
+    const target = resolve(evidence, file.path);
+    const scope = relative(evidence, target);
+    if (isAbsolute(scope) || scope === '' || scope.startsWith('..' + sep) || scope === '..') throw new Error('既有证据归档含越界路径：' + file.path);
+    const bytes = Buffer.from(file.base64, 'base64');
+    if (bytes.byteLength !== file.bytes || sha256(bytes) !== file.sha256) throw new Error('既有证据归档经校验不一致：' + file.path);
+    // 本次新跑的行已经写了同名文件：以本次为准，不覆盖。
+    if (existsSync(target)) { skipped++; continue; }
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, bytes);
+    restored++;
+  }
+  return { fileCount: restored + skipped };
+}
+
 /** 只清理本次创建且标记匹配的完整临时树；调用方须先确认报告与归档落盘。 */
 export function cleanupComparisonScratch(scratch: ComparisonScratch): void {
   const directory = ownedDirectory(scratch);

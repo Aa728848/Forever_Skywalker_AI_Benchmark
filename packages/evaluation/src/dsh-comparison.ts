@@ -9,7 +9,7 @@ import { exportWorkspace } from '@fsa/tasks';
 import { createQualityProvider } from './index.ts';
 import { DshCleanupError, resolveDshWorkspacePermission, runDsh, type DshPreset, type DshRunOptions, type DshRunResult, type DshWorkspacePermission } from './dsh.ts';
 import { inspectRunSelection, summarizeRuns } from './suite.ts';
-import { archiveComparisonEvidence, cleanupComparisonScratch, createComparisonScratch } from './comparison-artifacts.ts';
+import { archiveComparisonEvidence, cleanupComparisonScratch, createComparisonScratch, restoreComparisonEvidence } from './comparison-artifacts.ts';
 
 export const comparisonPrompt = '阅读当前目录的 TASK.md，按照其中的契约完成 starter 中的代码修改。遵守修改范围，运行公开测试，完成后说明修改内容和测试结果。独立完成本次任务，不读取其它作答、评测仓库、隐藏检查或参考答案。';
 
@@ -258,6 +258,10 @@ export async function runDshComparison(options: DshComparisonOptions, services: 
   const resumed = options.resume === true ? readResumableReport(options.outputDirectory, options) : null;
   if (resumed === null) claimOutputDirectory(options.outputDirectory);
   const scratch = createComparisonScratch();
+  // 续跑：先把既有证据解回本次 scratch，run store 才能看到被复用行的作答。
+  // 少了这一步，末尾汇总会因为第一行复用行「未找到作答」而把整次续跑判 failed——
+  // 即使 9 条目标全部修好、55/55 已落定。
+  const restoredEvidence = resumed === null ? null : restoreComparisonEvidence(scratch, options.outputDirectory);
   const store = createRunStore(join(scratch.directory, 'evidence', 'runs'));
   const env = { ...(services.env ?? process.env) };
   // 包含 CLI/向导已解析的覆盖值，保证作答与评分采用同一条非模型配置链。
@@ -313,6 +317,7 @@ export async function runDshComparison(options: DshComparisonOptions, services: 
   // 只处理需要执行的行；已完成的行跳过，分数原样保留。
   const settledCount = report.rows.filter(isSettledRow).length;
   if (resumed !== null) report.issues.push('本次为续跑：复用 ' + settledCount + ' 行已完成结果，本次执行 ' + (report.rows.length - settledCount) + ' 行。');
+  if (restoredEvidence !== null && restoredEvidence.fileCount > 0) report.issues.push('本次为续跑：已解回 ' + restoredEvidence.fileCount + ' 个既有证据文件，使历史作答的分数与证据在汇总时仍可读。');
   // 进度既交给调用方展示（CLI 打印行为不变），也作为只读出口的持久化记录。
   const progress = (message: string) => {
     appendComparisonProgress(report, message);

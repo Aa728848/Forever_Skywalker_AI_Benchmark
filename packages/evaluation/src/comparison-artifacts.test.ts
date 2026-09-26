@@ -2,9 +2,9 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
-import { gunzipSync } from 'node:zlib';
+import { gzipSync, gunzipSync } from 'node:zlib';
 import { expect, it } from 'vitest';
-import { archiveComparisonEvidence, cleanupComparisonScratch, createComparisonScratch, type ComparisonEvidenceArchive } from './comparison-artifacts.ts';
+import { archiveComparisonEvidence, cleanupComparisonScratch, createComparisonScratch, restoreComparisonEvidence, type ComparisonEvidenceArchive } from './comparison-artifacts.ts';
 
 function outputArea() {
   const directory = mkdtempSync(join(tmpdir(), 'fsa-comparison-archive-test-'));
@@ -96,4 +96,84 @@ it('证据及运行时的外部目录链接均被拒绝，外部数据不被读�
     if (existsSync(runtimePointer)) unlinkSync(runtimePointer);
     cleanupComparisonScratch(scratch); external.clean();
   }
+});
+it('续跑解回既有证据后，run store 能读到历史作答（否则汇总会报「未找到作答」）', () => {
+  // 真实故障（2026-09-26 的续跑）：9 条目标全部修好、55/55 已落定，report.state 却是 failed，
+  // issues 里一条「未找到作答：run-…/attempt-…」。
+  // 原因：续跑只为新跑的行建 run 记录，复用行的 run 数据在上一次 scratch 里（已清理），
+  // 而报告末尾的汇总会拿报告里**全部**带 evaluation 的行去 summarizeRuns。
+  // 修复：续跑开始时把既有归档解回本次 scratch 的 evidence/。
+  const first = createComparisonScratch();
+  const output = outputArea();
+  try {
+    // 第一次运行的 run store：写一条真实作答记录。
+    const historyFile = join(first.directory, 'evidence', 'runs', 'run-keep', 'attempt-keep', 'attempt.json');
+    mkdirSync(dirname(historyFile), { recursive: true });
+    writeFileSync(historyFile, JSON.stringify({ runId: 'run-keep', attemptId: 'attempt-keep', taskId: 'CACHE-02' }));
+    const archived = archiveComparisonEvidence(first, output.directory);
+    expect(archived.fileCount).toBe(1);
+    cleanupComparisonScratch(first);
+
+    // 第二次运行（续跑）：全新的 scratch，本地没有任何历史。
+    const second = createComparisonScratch();
+    try {
+      const restored = restoreComparisonEvidence(second, output.directory);
+      expect(restored.fileCount).toBe(1);
+      // 关键断言：解回后本地文件真的回来了，且内容一致。
+      const restoredFile = join(second.directory, 'evidence', 'runs', 'run-keep', 'attempt-keep', 'attempt.json');
+      expect(existsSync(restoredFile)).toBe(true);
+      expect(JSON.parse(readFileSync(restoredFile, 'utf8'))).toMatchObject({ runId: 'run-keep', attemptId: 'attempt-keep' });
+    } finally { cleanupComparisonScratch(second); }
+  } finally { output.clean(); }
+});
+
+it('解回既有证据时不覆盖本次新跑的同名文件', () => {
+  const first = createComparisonScratch();
+  const output = outputArea();
+  try {
+    const path = join(first.directory, 'evidence', 'runs', 'run-x', 'note.txt');
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, '历史内容');
+    archiveComparisonEvidence(first, output.directory);
+    cleanupComparisonScratch(first);
+    const second = createComparisonScratch();
+    try {
+      // 本次新跑已经写了同名文件：必须保留本次的，不能被历史覆盖。
+      const target = join(second.directory, 'evidence', 'runs', 'run-x', 'note.txt');
+      mkdirSync(dirname(target), { recursive: true });
+      writeFileSync(target, '本次内容');
+      restoreComparisonEvidence(second, output.directory);
+      expect(readFileSync(target, 'utf8')).toBe('本次内容');
+    } finally { cleanupComparisonScratch(second); }
+  } finally { output.clean(); }
+});
+
+it('解回既有证据时拒绝越界路径与摘要不符的归档', () => {
+  const first = createComparisonScratch();
+  const output = outputArea();
+  try {
+    const path = join(first.directory, 'evidence', 'runs', 'run-x', 'note.txt');
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, '内容');
+    archiveComparisonEvidence(first, output.directory);
+    cleanupComparisonScratch(first);
+    const read = () => JSON.parse(gunzipSync(readFileSync(join(output.directory, 'evidence.json.gz'))).toString('utf8')) as ComparisonEvidenceArchive;
+    const write = (archive: ComparisonEvidenceArchive) => writeFileSync(join(output.directory, 'evidence.json.gz'), gzipSync(Buffer.from(JSON.stringify(archive))));
+    // 越界路径必须拒绝，不能悄悄写到 scratch 之外。
+    const escaped = read();
+    expect(escaped.files.length).toBeGreaterThan(0);
+    escaped.files[0]!.path = '../escape.txt';
+    write(escaped);
+    const third = createComparisonScratch();
+    try { expect(() => restoreComparisonEvidence(third, output.directory)).toThrow(/越界路径/); }
+    finally { cleanupComparisonScratch(third); }
+    // 摘要不符同样拒绝。
+    const tampered = read();
+    tampered.files[0]!.path = 'runs/run-x/note.txt';
+    tampered.files[0]!.sha256 = 'f'.repeat(64);
+    write(tampered);
+    const fourth = createComparisonScratch();
+    try { expect(() => restoreComparisonEvidence(fourth, output.directory)).toThrow(/校验不一致/); }
+    finally { cleanupComparisonScratch(fourth); }
+  } finally { output.clean(); }
 });

@@ -54,7 +54,12 @@ Status: implemented
 - 真实报告核对：对 `exp-2026-09-26T11-21-31-129Z-32e16e34`（55 行、state=failed）套用 `isSettledRow`，
   续跑复用 46 行、重跑 9 行，用户截图里需要修的 9 个题 9/9 覆盖、零遗漏。
 - 网页按钮：真实报告做夹具，e2e 断言按钮文案为「续跑未完成的 9 条」且可用。
-- `pnpm check` exit 0（368 项）；`pnpm test:e2e` 9 项通过。
+- 解回证据：`comparison-artifacts.test.ts` 断言解回后 run store 能读到历史作答、不覆盖本次同名文件、
+  拒绝越界路径与摘要不符；反向验证把解回改成空操作即失败（`expected +0 to be 1`）。
+- 真实续跑（`exp-2026-09-26T11-21-31-129Z-32e16e34`，55 题）：复用 46 行、重跑 9 行，
+  9 条问题题全部拿到数值总分——GRAPH-04 93.63、STATE-01 97.6、STATE-03 96.55、INT-HARNESS 95.11、
+  INT-SUB 93.36、INT-VERIFIER 93.23、INT-TRADING 98、INT-WEB 95.51、INT-PY 96.54；**55/55 已落定、0 待定**。
+- `pnpm check` exit 0（376 项）；`pnpm test:e2e` 9 项通过。
 - 取平均语义：`packages/judge` 58 项通过，含改写后的「两轮不同就取平均，分歧本身不再要求人工复核」。
 - **反向验证（承重的判定）**：把 `packages/evaluation/src/index.ts` 里落地评审分的条件从 `unjudgedEverywhere` 改回「`needsHumanReview` 即作废」，`evaluation.test.ts` 的「三维齐备」用例立刻失败（`expected null to be 88`）——正是 LSP-01 当时的表现。恢复后通过。
 - 端到端：`pnpm check` exit 0（364 项）；`pnpm test:e2e` 9 项通过。
