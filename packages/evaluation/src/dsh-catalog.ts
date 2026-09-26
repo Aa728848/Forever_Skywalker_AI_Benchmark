@@ -168,12 +168,28 @@ export async function discoverDshModels(options: DshCatalogOptions): Promise<Dsh
     }));
     scratch = mkdtempSync(join(tmpdir(), 'fsa-dsh-catalog-'));
     // 插件把凭据与模型设置物化在 $DSH_HOME 下：给本次查询一个临时 home，
-    // 只复制非机密的 settings.yaml（其内容同时决定哪些模型被勾选），
     // 任何写入都留在临时目录并与父进程一起回收。
+    //
+    // 只复制「决定枚举结果」的非机密状态，凭据一律不复制（.dpapi 等由凭据库加密，
+    // 查询也不读它）：
+    // - settings.yaml：DSH ≤0.1.6 承载 provider 声明，0.1.7 起只作为一次性导入来源；
+    // - storages/：订阅渠道把「用户勾选过哪些模型」存在 <provider>-models.json 里。
+    //   这些适配器的 listModels 在 enabled=false 或勾选集为空时返回空数组，
+    //   缺这一份状态会让已登录的订阅渠道全部显示 0 个模型。
     const catalogHome = join(scratch, 'home');
     mkdirSync(catalogHome, { recursive: true });
     const settingsPath = join(dshHome, 'settings.yaml');
     if (existsSync(settingsPath)) cpSync(settingsPath, join(catalogHome, 'settings.yaml'));
+    const storageSource = join(dshHome, 'storages');
+    if (existsSync(storageSource)) {
+      const storageTarget = join(catalogHome, 'storages');
+      mkdirSync(storageTarget, { recursive: true });
+      for (const entry of readdirSync(storageSource, { withFileTypes: true })) {
+        // 只取模型设置文件；凭据与账户池不在枚举所需范围内，也不应进入临时目录。
+        if (!entry.isFile() || !/-models\.json$/.test(entry.name)) continue;
+        cpSync(join(storageSource, entry.name), join(storageTarget, entry.name));
+      }
+    }
     const env: NodeJS.ProcessEnv = {};
     for (const [key, value] of Object.entries(process.env)) if (['PATH', 'PATHEXT', 'SYSTEMROOT', 'WINDIR', 'TEMP', 'TMP'].includes(key.toUpperCase())) env[key] = value;
     env.DSH_TELEMETRY_DISABLED = '1';

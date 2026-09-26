@@ -106,6 +106,17 @@ try {
   context.provide('attachments', { read: unused('attachments.read'), store: unused('attachments.store') });
   context.provide('loader', { entries: () => [], create: unused('loader.create'), await: async () => {} });
   context.provide('web', { registerSearchProvider: disposer, registerFetchProvider: disposer });
+  // 订阅渠道插件声明注入 settings。DSH 0.1.7 把 settings-file 换成了需要
+  // profileContext/configEditor 的宿主服务，本查询不启动 profile，因此提供同形状的
+  // register 接缝：插件的 settings-compat 正是为「没有 settings 服务的组合」准备的，
+  // 它只需要 register(ns, schema) 返回带 get/watch 的作用域。缺少它时插件会永远停在
+  // pending，于是订阅渠道的 provider、模型与自带预设全部不可见（而不是报错）。
+  // 关键：这里刻意不提供 register。订阅渠道的 settings-compat 用
+  // hasRegister(settings) 在两条存储路径间选择——有 register 就走「本次进程内存里的
+  // 命名空间作用域」，没有就走插件自己的文件存储（$DSH_HOME/storages/*-models.json）。
+  // 目录查询要把真实已登录状态读出来，就必须让它走文件存储；给一个内存 register 会让
+  // 它读到空状态，于是已登录的订阅渠道全部显示 0 个模型。
+  context.provide('settings', { describe: () => [] });
   const extraFailures = [];
   for (const spec of extraPlugins) {
     try {

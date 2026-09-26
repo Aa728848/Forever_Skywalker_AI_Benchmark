@@ -60,12 +60,18 @@ beforeEach(() => {
   // 且适配器是「具名导出 apply/inject 的模块」而非默认导出插件对象。
   // cordis 从 llm 包解析（worker 的 createRequire 锚点）。
   write('packages/llm/llm/node_modules/@deepseek-ai/cordis/package.json', JSON.stringify({ type: 'module', exports: './index.js' }));
+  // 夹具必须像真实 cordis 一样尊重 inject：声明注入的服务不存在时插件不应被应用。
+  // 否则「插件因缺服务而停在 pending」这一真实故障会在测试里被静默通过。
   write('packages/llm/llm/node_modules/@deepseek-ai/cordis/index.js', `export class Context {
     fiber={dispose:async()=>{}};
     services={};
     provide(name,value){this.services[name]=value;}
     get(name){return this.services[name];}
-    async plugin(plugin,config){if(typeof plugin==='function')new plugin(this,config);else await plugin.apply(this,config);}
+    async plugin(plugin,config){
+      const required = plugin?.inject ?? plugin?.default?.inject ?? [];
+      for (const name of required) if (!(name in this.services) && this[name] === undefined) throw new Error('missing service: ' + name);
+      if (typeof plugin==='function') new plugin(this,config); else await plugin.apply(this,config);
+    }
   }`);
   write('packages/llm/llm/lib/index.js', `export class LlmRuntime {
     constructor(ctx){this.ctx=ctx;ctx.llm=this;ctx.llmRuntime=this;this.registered=[];this.extra=[];}
@@ -149,6 +155,22 @@ it('插件装载失败只提示该插件并保留其它目录与手工输入', a
   expect(result.warning).not.toContain('private-test-value');
 });
 
+it('为插件提供 settings 接缝，且刻意不带 register（否则订阅渠道读不到已勾选模型）', async () => {
+  // 回归两件事：
+  // 1) worker 必须提供 settings 服务：订阅渠道插件声明 inject settings，缺它插件永远停在
+  //    pending，provider、模型与自带预设全部不可见且不报错；
+  // 2) 该接缝**不能**提供 register：插件的 hasRegister() 在有 register 时改用本次进程的
+  //    内存作用域（空），只有在没有 register 时才回落到 $DSH_HOME/storages/*-models.json。
+  // 这里直接读源码固定这两条契约——它们是跨进程行为，夹具无法替真实 cordis 断言。
+  const worker = readFileSync(new URL('./dsh-catalog-worker.mjs', import.meta.url), 'utf8');
+  expect(worker).toContain("context.provide('settings'");
+  const settingsProvide = worker.slice(worker.indexOf("context.provide('settings'"), worker.indexOf("describe: () => []"));
+  expect(settingsProvide).not.toContain('register');
+  // 模型设置必须随临时 home 一起提供给插件。
+  expect(worker).toContain("context.provide('settings'");
+  const catalog = readFileSync(new URL('./dsh-catalog.ts', import.meta.url), 'utf8');
+  expect(catalog).toContain("-models\\.json$");
+});
 it('已初始化但没有任何本地插件的 profile 仍返回原生目录', async () => {
   writeFileSync(join(dshHome, 'settings.yaml'), JSON.stringify({ providers: [
     { id: 'gateway-a', name: 'A', models: [{ id: 'plain', name: 'Plain' }] },
