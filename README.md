@@ -67,7 +67,10 @@ pnpm container:status
 pnpm container:build
 pnpm container:verify
 pnpm container:trial --all --alternatives
+pnpm dsh:doctor
 ```
+
+DSH 或插件升级后先跑 `pnpm dsh:doctor`：只读本地，逐项核对本项目对 DSH 的九个运行期资产路径、当前 profile 的 bundle 组成、预设注册表行归属与关键包解析，并汇总需要同步适配的条目。配套流程见项目 skill `.dsh/skills/dsh-upgrade-sync/SKILL.md`。
 
 `task:verify` 检查缺陷、参考和替代实现；`trial` 还要求参考获得完整 50/50 可用分。`score:rehearse` 使用脚本评审与示例性能分，只验证合成链路。真实本机结果为 local，未校准容器结果为 rehearsal，不能更换标签冒充正式成绩。
 
