@@ -211,7 +211,11 @@ export async function discoverDshModels(options: DshCatalogOptions): Promise<Dsh
     env.DSH_TELEMETRY_DISABLED = '1';
     env.DSH_HOME = catalogHome;
     const result = await new Promise<string>((resolveOutput, reject) => {
-      const child = spawn(process.execPath, [fileURLToPath(new URL('./dsh-catalog-worker.mjs', import.meta.url)), JSON.stringify({ modules, dshHome: catalogHome, extraPlugins: plugins.plugins })], {
+      // pi-ai 的 provider 档案在 profile 的补丁层里；把**路径**交给 worker 自行解析——
+      // 它本就在 DSH 的模块解析上下文里（另有 createRequire 锚点），
+      // 这样 YAML 解析只有一处实现，不引入第二套语义，也不新增项目依赖。
+      const patchPath = join(dshHome, 'profiles', profile, 'cordis.patch.yml');
+      const child = spawn(process.execPath, [fileURLToPath(new URL('./dsh-catalog-worker.mjs', import.meta.url)), JSON.stringify({ modules, dshHome: catalogHome, extraPlugins: plugins.plugins, patchPath })], {
         cwd: scratch, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
       });
       const chunks: Buffer[] = [];
@@ -528,4 +532,3 @@ export function discoverDshPresets(options: DshPresetOptions): DshPresetCatalog 
     return { presets: [], warning: presetFallback };
   }
 }
-

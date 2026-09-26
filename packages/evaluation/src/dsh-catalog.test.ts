@@ -1,11 +1,37 @@
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createServer } from 'node:http';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { discoverDshModels, discoverDshPresets, profilePluginSpecifiers } from './dsh-catalog.ts';
 
+/** 仓库根：用来读本机的 .env（测试进程不自动加载它）。 */
+const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
+
+/**
+ * 本机真实 DSH 安装：夹具从它复制 js-yaml，避免在项目内维护第二套 YAML 解析。
+ * 未配置或不存在时，依赖它的用例会**跳过**，而不是硬编码路径后假装通过。
+ */
+function repositoryDshRootFromEnv(): string {
+  const fromEnv = process.env.BENCH_DSH_ROOT?.trim();
+  if (fromEnv !== undefined && fromEnv !== '') return fromEnv;
+  try {
+    return /^BENCH_DSH_ROOT=(.*)$/m.exec(readFileSync(join(workspaceRoot, '.env'), 'utf8'))?.[1]?.trim() ?? '';
+  } catch { return ''; }
+}
+const repositoryDshRoot = (() => {
+  const candidate = repositoryDshRootFromEnv();
+  return candidate !== '' && existsSync(join(candidate, 'packages/llm/llm/lib/index.js')) ? candidate : '';
+})();
+/** 能从真实 DSH 解析出 js-yaml 时才返回目录；否则 null（用例据此跳过）。 */
+function realJsYamlDirectory(): string | null {
+  if (repositoryDshRoot === '') return null;
+  try {
+    return dirname(createRequire(pathToFileURL(join(repositoryDshRoot, 'packages/llm/llm/lib/index.js')).href).resolve('js-yaml'));
+  } catch { return null; }
+}
 let scratch: string;
 let dshRoot: string;
 let dshHome: string;
@@ -73,6 +99,11 @@ beforeEach(() => {
       if (typeof plugin==='function') new plugin(this,config); else await plugin.apply(this,config);
     }
   }`);
+  // js-yaml 由 worker 经 llm 包解析（读 profile 补丁层时用它）。真实安装里它来自
+  // DSH 的 node_modules；夹具复制**同一个实现**，避免在项目里维护第二套 YAML 语义。
+  write('packages/llm/llm/node_modules/js-yaml/package.json', JSON.stringify({ name: 'js-yaml', version: '4.0.0', main: 'index.js' }));
+  const yamlDirectory = realJsYamlDirectory();
+  if (yamlDirectory !== null) cpSync(yamlDirectory, join(dshRoot, 'packages/llm/llm/node_modules/js-yaml'), { recursive: true });
   write('packages/llm/llm/lib/index.js', `export class LlmRuntime {
     constructor(ctx){this.ctx=ctx;ctx.llm=this;ctx.llmRuntime=this;this.registered=[];this.extra=[];}
     listProviders(){return [...this.registered,...this.extra];}
@@ -99,6 +130,23 @@ beforeEach(() => {
       if(settings.action==='network')await fetch(settings.target);
       if(settings.action==='error')throw new Error(settings.secret);
       if(settings.action==='hang')await new Promise(()=>setInterval(()=>{},1000));
+    }
+  `);
+  // 真实 llm-pi-ai 是「休眠」挂载：没有 config.providers 就注册 0 条路由。
+  // 夹具必须同样尊重这一点，否则「不给档案时供应商不该出现」的断言失去意义。
+  write('packages/llm/llm-pi-ai/lib/index.js', `import {readFileSync,writeFileSync} from 'node:fs';
+    import {join} from 'node:path';
+    export const inject=['llm'];
+    export async function apply(ctx,config){
+      const settings=JSON.parse(readFileSync(join(process.env.DSH_HOME,'settings.yaml'),'utf8'));
+      if(settings.action==='read-credentials')readFileSync(settings.target,'utf8');
+      if(settings.action==='write')writeFileSync(settings.target,'changed');
+      if(settings.action==='network')await fetch(settings.target);
+      if(settings.action==='error')throw new Error(settings.secret);
+      if(settings.action==='hang')await new Promise(()=>setInterval(()=>{},1000));
+      for(const [id,profile] of Object.entries(config?.providers??{})){
+        ctx.llm.registered.push({id,name:id,models:(profile.models??[]).map(m=>({id:m.id,name:m.name,reasoningEfforts:[]}))});
+      }
     }
   `);
   writeProfile('sdk', ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-sdk-app']);
@@ -266,6 +314,42 @@ it('目录模块不结算时12秒内终止子进程并回收临时目录', async
   expect(readdirSync(tmpdir()).filter(name => name.startsWith('fsa-dsh-catalog-') && !existing.has(name))).toEqual([]);
 }, 15_000);
 
+describe('profile 补丁层里的 pi-ai provider 档案', () => {
+  // 回归（2026-09-27）：base bundle 以「休眠」方式挂载 pi-ai 适配器——
+  //   「mounted dormant: zero routes ... until a `llm-pi-ai:` settings section
+  //    supplies provider profiles」（bundle/base/cordis.patch.yml:120）
+  // 插件已加载，但没有 provider 档案就注册 0 条路由，于是 stepfun 这类 pi-ai 供应商
+  // 永远不出现在目录里——即使凭据已在 ~/.dsh/.credentials.yaml。
+  // 实测：传 config 后供应商从 7 变 8 且 stepfun 出现；不传则没有。
+  // worker 现在自己从 profile 补丁层读该档案，因此这里断言的是**探测结果**，
+  // 而不是某个中间函数——这样夹具必须真的把补丁层喂进解析路径。
+  it.skipIf(realJsYamlDirectory() === null)('补丁层声明 llm-pi-ai 的 providers 时，其供应商出现在目录里', async () => {
+    writeProfile('sdk', []);
+    // 夹具的原生适配器用 JSON.parse 读 settings.yaml（JSON 是合法 YAML），因此这里也必须写 JSON。
+    writeFileSync(join(dshHome, 'settings.yaml'), JSON.stringify({ providers: [] }));
+    const patchPath = join(dshHome, 'profiles', 'sdk', 'cordis.patch.yml');
+    // 不给档案：stepfun 不得出现。
+    writeFileSync(patchPath, ['- id: llm-pi-ai', '  config:', '    providers: {}', ''].join('\n'));
+    const without = await discoverDshModels({ dshRoot, dshHome, profile: 'sdk' });
+    expect(without.providers.some(p => p.id === 'stepfun')).toBe(false);
+    // 给出档案：stepfun 出现，且带上它的模型。
+    writeFileSync(patchPath, [
+      '- id: llm-pi-ai',
+      '  config:',
+      '    providers:',
+      '      stepfun:',
+      '        apiKeyEnv: STEPFUN_API_KEY',
+      '        models:',
+      '          - id: step-5-preview',
+      '            name: step-5-preview',
+      ''
+    ].join('\n'));
+    const with_ = await discoverDshModels({ dshRoot, dshHome, profile: 'sdk' });
+    const stepfun = with_.providers.find(p => p.id === 'stepfun');
+    expect(stepfun).toBeDefined();
+    expect(stepfun!.models.map(m => m.id)).toEqual(['step-5-preview']);
+  });
+});
 describe('本地 DSH 预设枚举', () => {
   it('按声明顺序列出补丁层里的预设，并只回传相对安装目录的来源', () => {
     writeBundleManifest(['./cordis.patch.yml', './presets/standard.patch.yml', './presets/ptc.patch.yml', './presets/minimal.patch.yml', './presets/cordis.patch.yml']);

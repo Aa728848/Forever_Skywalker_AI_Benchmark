@@ -1,5 +1,29 @@
 # 开发交接与执行手册
 
+## 2026-09-27 模型目录补齐 pi-ai 的 provider 档案（stepfun 出现）
+
+用户在「模型」列表里看不到 **stepfun**（`step-5-preview`）。根因**不是** profile 选错：
+
+DSH 的 base bundle 把 pi-ai 适配器以**休眠**方式挂载——
+「mounted dormant: zero routes (and no extra models in the picker) until a `llm-pi-ai:`
+settings section supplies provider profiles」（`bundle/base/cordis.patch.yml:120`）。
+插件已加载，但**没有 provider 档案就注册 0 条路由**。
+
+而目录探测原先只 `context.plugin(piAdapter)`、**不传 config**，于是 stepfun 在任何 profile
+下都不出现——实测 sdk 与 web 返回**完全相同**的 7 个供应商。
+
+修复：worker 读 profile 补丁层 `cordis.patch.yml`，取出 `- id: llm-pi-ai` 的 `config`，
+装载时传给 pi 适配器。**解析放在 worker 内**（它本就在 DSH 的模块解析上下文里），
+因此 YAML 解析只有一处实现，不新增项目依赖。父进程只传补丁层路径。
+
+结果：`discoverDshModels(sdk)` 供应商 7 → **8**，出现 `stepfun -> step-5-preview`；
+`GET /api/config/models` 同样能看到。反向验证：不透传 config 时新增用例立刻失败。
+
+**本机配置改动**（不属于仓库）：`~/.dsh/profiles/sdk/cordis.patch.yml` 追加了
+`- id: llm-pi-ai` 的 providers 段（原备份 `.backup-20260927-005926`）。
+
+本轮验证：`pnpm check` exit 0（**379 项**）、`pnpm test:e2e` **9 项**通过。
+
 ## 2026-09-26 测评并行：259 分钟 → 约 87 分钟（3 路）
 
 用户反馈「测试时间太久了」。实测 55 题耗时 **259 分钟**，分解：作答 120 分钟（46%），

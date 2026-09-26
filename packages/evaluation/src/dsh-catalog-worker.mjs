@@ -10,7 +10,7 @@ import { createRequire, syncBuiltinESMExports } from 'node:module';
 import path, { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-const { modules, dshHome, extraPlugins = [] } = JSON.parse(process.argv[2]);
+const { modules, dshHome, extraPlugins = [], patchPath = null } = JSON.parse(process.argv[2]);
 const blocked = () => { throw new Error('local catalog operation is unavailable'); };
 
 // 目录查询不发起任何传输、子进程或监听；订阅渠道插件需要把凭据物化到本次临时
@@ -86,9 +86,42 @@ try {
   await context.plugin(LlmRuntime);
   // 适配器现在是具名导出模块（导出 apply/inject），不是默认导出的插件对象，
   // 因此按模块命名空间交给 cordis 装载。
+  /**
+   * 从 profile 补丁层取出 `llm-pi-ai` 的 config（provider 档案）。
+   *
+   * 为什么需要：base bundle 以**休眠**方式挂载 pi-ai——
+   *   deepseek-harness/packages/bundle/base/cordis.patch.yml:120
+   *   「mounted dormant: zero routes (and no extra models in the picker) until a
+   *    `llm-pi-ai:` settings section supplies provider profiles」
+   * 插件本身已加载，但没有 provider 档案就注册 0 条路由，于是 stepfun 这类供应商
+   * 在目录里永远不出现——即使凭据已在 ~/.dsh/.credentials.yaml。
+   * 实测：传 config 后 providers 从 7 变 8 且 stepfun 出现；不传则没有。
+   *
+   * 解析放在 worker 内：这里本就有 DSH 的模块解析上下文（上方 createRequire 锚点），
+   * 因此 YAML 解析只有一处实现，不必新增项目依赖，也不会出现两套语义。
+   * 任何失败都只是「少补一个供应商」，不影响其它目录。
+   */
+  const piAiConfig = () => {
+    if (patchPath === null) return null;
+    try {
+      const yaml = require('js-yaml');
+      const document = yaml.load(fs.readFileSync(patchPath, 'utf8'));
+      if (!Array.isArray(document)) return null;
+      for (const entry of document) {
+        if (entry === null || typeof entry !== 'object' || entry.id !== 'llm-pi-ai') continue;
+        const providers = entry.config?.providers;
+        if (providers === null || typeof providers !== 'object') return null;
+        if (Object.keys(providers).length === 0) return null;
+        return entry.config;
+      }
+      return null;
+    } catch { return null; }
+  };
+  const piConfig = piAiConfig();
   for (const specifier of [modules.deepseek, modules.pi]) {
     const adapter = await import(pathToFileURL(specifier).href);
-    await context.plugin(adapter);
+    const isPi = specifier === modules.pi;
+    await context.plugin(adapter, isPi && piConfig !== null ? piConfig : {});
   }
   // 订阅渠道等额外内置插件：只读目录之外的路由由 DSH 设置的插件提供，父进程按同一
   // profile 派生出本次查询要装载的本地插件包。单个插件装载失败只记录失败，不阻断
