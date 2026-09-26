@@ -12,6 +12,8 @@ Status: implemented
 2. 目录 worker 不再无条件阻断文件写入，而是把可写范围收窄到**本次查询的临时 DSH home**；仍然禁网（fetch、http/https、net、tls、dgram 全阻断）、禁子进程、禁读 .credentials*/.env*/auth/token 文件。
 3. 父进程为每次查询复制真实 home 的 settings.yaml 到临时 home，并以 DSH_HOME=<临时 home> 启动 worker。插件把凭据与模型设置物化在 $DSH_HOME 下，于是写入只落在临时目录；用户的真实 DSH home 只读，查询结束整目录回收。
 4. worker 为插件声明注入的宿主服务提供惰性占位（webServer、tools、attachments、loader、web）：注册类调用返回可释放句柄，真正产生副作用或读取数据的调用直接抛错，不返回假数据。缺少这些服务会让插件停在 pending，路由完全不可见。
+   - 其中 **settings 必须提供，但刻意不带 register**：订阅渠道的 settings-compat 用 hasRegister(settings) 在两条存储路径间选择——有 register 就走本次进程的内存命名空间作用域（空），没有才回落到插件自己的文件存储 `$DSH_HOME/storages/<provider>-models.json`。目录查询要读出真实已登录状态，必须让它走文件存储。
+   - 父进程把真实 home 的 `storages/*-models.json` 一并复制进临时 home（只取该模式的文件，凭据与账户池一律不复制）。这些适配器的 listModels 在 enabled=false 或勾选集为空时返回空数组，缺这份状态会让已登录的订阅渠道显示 0 个模型。
 5. 插件装载失败不阻断其它目录：目录协议只回传失败插件的标识（不回传原因，避免配置或凭据片段进入日志），并在 warning 中提示这些路由请手工填写。
 6. 未初始化或未通过名称校验的 profile 直接返回手工输入提示，不再假装读取了原生目录。
 
@@ -29,6 +31,7 @@ Status: implemented
 - 只有装进**当前 profile** 的插件才可见。默认 sdk profile 不包含订阅渠道时，目录行为与改动前一致；用户可选择安装插件、改用其它 profile，或继续手工输入。
 - 查询允许在临时 DSH home 内发生写入，可写范围由 worker 的路径守卫限定为该临时目录；凭据文件仍不可读。
 - 查询仍是纯本地读取，不发起任何网络请求，也不使用模型。
+- 失败必须可诊断：worker 的 stderr 保留有界片段，父进程用分类器压成**结构性事实**（缺失的资产路径、无法解析的模块、装载失败的插件）再进 warning，并提示「DSH 可能已改名或移动该路径，需同步适配」。异常原文一律不回传——插件异常可能带凭据或本机路径；第一版直接把原文写进 warning 时被既有的不泄漏用例当场拦下。
 
 ## Verification
 

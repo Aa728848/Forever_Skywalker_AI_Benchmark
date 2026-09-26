@@ -1,5 +1,21 @@
 # 开发交接与执行手册
 
+## 2026-09-26 DSH 0.1.7 同步：预设挂载、目录发现与直达入口
+
+DSH 升级到 0.1.7-rc.2 后有三处破坏性重构，本项目已同步适配，并修掉一个被掩盖的既有缺陷。
+
+**预设挂载**：旧路径 `packages/preset/agent-presets/**` 已删除，真实作答会直接 `ENOENT`，而 `pnpm dsh:compare --check` 仍报「预检通过」（假通过）。现改为读 `packages/bundle/web-app/presets/<id>.patch.yml` 并把整份 YAML 作为第二个 launch patch 层交付（含 `!!js` 标签，JSON 层无法承载）；注册表入口改为 `packages/preset/agent-preset-registry/lib/index.js`，其 Config 只剩 `default`。两个必须显式处理的事实：预设声明行与 bridge 并发激活，直接 mount 会随机拿到空列表，故轮询 `list()` 并先查 broken；「创造」预设依赖两个宿主行，缺任一个启动即失败。`--check` 现在校验预设挂载前置条件，缺资产即 exit 1。
+
+**目录发现**：`packages/settings/settings-file` 已改为 `packages/settings/settings`（`FileSettingsProvider` 全库不存在，新服务要求注入 `profileContext`/`configEditor`）。查询**不再装载 settings 宿主插件**——适配器不需要它即可注册路由；适配器改为具名导出模块，按模块命名空间交给 cordis；DeepSeek 入口移到 `llm-deepseek-api-key`。订阅渠道插件声明注入 `settings`，缺该服务会永远停在 pending 且不报错，现提供**不带 register** 的同形状接缝（带 register 会让插件改用空的进程内作用域），并把真实 home 的 `storages/*-models.json` 复制进临时 home（凭据不复制）。本机实测 7 个供应商、26 个模型：deepseek-official、antigravity(12)、kimi-code(4)、command-code、workbuddy-subscription、codex-chatgpt(6)，含各自声明的思考等级。
+
+**预设枚举**：读 `presets/*.patch.yml` 解析 id/name/order，无需启动 DSH 运行时；探测失败时前端回退内置四项并显示原因。只枚举文件里声明的预设，不冒充运行期注册的那些。
+
+**失败可诊断**：此前探测失败一律回落成「请手工填写」，真实原因被外层 catch 吞掉，DSH 漂移与「没安装」无法区分。现在 worker 的 stderr 保留有界片段，父进程用分类器压成结构性事实（缺失资产路径 / 无法解析的模块 / 装载失败的插件）再进 warning，并提示需同步适配。异常原文不回传——插件异常可能带凭据；第一版直接被既有的不泄漏用例拦下。
+
+**`.env` 遮蔽（既有缺陷）**：API 的 dev 脚本曾带 `--env-file-if-exists`，把 `.env` 载入 `process.env`，于是每个键遮蔽自己——配置页签「保存即生效」实际失效，界面还满屏误报「被系统环境变量覆盖」。现由 ConfigProvider 自己读文件；真实 OS 变量仍优先并仍被正确标注。新增 `start-web.cmd` / `pnpm start:web` 非交互直达网页（缺 `.env` 时明确报错，不静默失败、不写文件）。
+
+本轮验证：`pnpm check` 通过（348 项测试，含新增守卫用例）、`pnpm test:e2e` 7 项通过；四个预设经真实 DSH 运行时逐个挂载成功（`observedPresets` 分别等于请求值，旧实现为 ENOENT）；缺失预设资产的 DSH root 上 `--check` exit 1（旧实现 exit 0）。仍未做真实模型调用，评分与发布校准继续待定。
+
 ## 2026-09-26 网页成为完整操作入口：报告中心、配置面板与受控发起测评
 
 网页新增三个页签（共六个：题目目录、评分预览、运行记录、报告中心、发起测评、配置）。**报告中心**只读列出报告根下一层的实验报告，展开逐条作答阶段、阶段统计、进度日志与清理状态，并可下载 `report.md`/`experiment.json`/`evidence.json.gz`；损坏报告仍列出并写明原因，不会被静默跳过。**配置面板**分「作答 / 裁判 / 目录与预算」三组写入项目 `.env`，保存分两步（先看待写清单、确认后才落盘），密钥字段永不回显，保存后本进程立即按新值工作、**无需重启 API**；`BENCH_RUN_DIR` 与 `BENCH_DSH_ROOT/HOME/PROFILE`、`BENCH_IMAGE`、`BENCH_IMAGE_DIGEST`、`BENCH_PROFILE` 只读并给出原因，写入路径也真的拒绝。**发起测评**默认「仅预检」（`check: true`，不调用模型），真实作答需二次确认并显示计划总作答次数。

@@ -15,7 +15,7 @@ discoverDshModels({ dshRoot, dshHome, profile? })
 // Promise<{ providers: { id, name, models: { id, name, reasoningEfforts: string[] }[] }[], warning: string | null }>
 ```
 
-只在短生命周期子进程加载本地公开包接口：FileSettingsProvider（watch:false）、LlmRuntime、DeepSeek与Pi-ai目录适配器；调用listProviders/listModels/resolveModelInfo。FileSettingsProvider负责读取用户settings文档，查询助手不解析或转发原始配置。不会挂载credentials、agent/session、CLI、SDK服务器或Web服务，也不调用discoverModels/stream等远程入口。
+只在短生命周期子进程加载本地公开包接口：LlmRuntime 与各目录适配器；调用 listProviders/listModels/resolveModelInfo。DSH 0.1.7 起 `settings-file` 已被 `@deepseek-ai/dsh-settings` 取代（该服务的注册接缝要求注入 `profileContext`/`configEditor`，本查询不启动 profile），因此**查询不再装载 settings 宿主插件**——适配器不需要它即可注册路由。适配器改为具名导出模块（导出 `apply`/`inject`），按模块命名空间交给 cordis 装载；DeepSeek 原生适配器的入口已从 `llm-deepseek` 移到 `llm-deepseek-api-key`。不会挂载 credentials、agent/session、CLI、SDK 服务器或 Web 服务，也不调用 discoverModels/stream 等远程入口。
 
 子进程进入DSH模块前禁止网络连接、子进程派生、写文件及凭据存储/.env文件读取，忽略模块日志与原始异常；仅输出白名单目录字段。父进程再次验证并投影白名单，模型只在所属provider内去重，没有声明等级时返回空数组，由向导追加default。供应商同名模型不会相互合并。
 
@@ -39,4 +39,12 @@ discoverDshModels({ dshRoot, dshHome, profile? })
 - `pnpm typecheck`通过。
 - 本机实际安装读取成功：3个provider、5个model，只输出计数；没有模型或供应商网络调用，没有创建持久会话或重写profile。
 
-来源接口已核对deepseek-harness的sdk/protocol/src/types.ts、apps/cli/src/profile-boot.ts、settings-file/src/index.ts、llm/src/index.ts及两个适配器的listModels/resolveModel实现。向导、启动脚本与用户文档由根任务集成。
+来源接口已核对deepseek-harness的sdk/protocol/src/types.ts、apps/cli/src/profile-boot.ts、llm/src/index.ts及两个适配器的listModels/resolveModel实现。向导、启动脚本与用户文档由根任务集成。
+
+## 预设枚举（同文件，2026-09-26 补充）
+
+网页「配置」与「发起测评」此前把 standard/ptc/minimal/cordis 写死在组件里，无法反映本机实际安装。目录发现扩出一个只读预设枚举：读 `<dshRoot>/packages/bundle/web-app/presets/*.patch.yml`，解析每个 patch 里 `@deepseek-ai/dsh-agent-preset` 声明的 id/name/order，按 order 排序返回，并带相对安装目录的来源（不回传绝对路径）。目录不存在或全部解析失败时返回空列表与原因，由前端回退到内置四项并显示原因。
+
+该目录**可直接按文件枚举**，无需启动 DSH 运行时、不联网、不调用模型，与既有目录发现边界一致。枚举只读取文件里的声明，**不验证该预设在本机能否装载**；DSH 另有一条需要在运行期注册的路径（插件把预设声明提交给活动注册表），那条路径不产生文件，本枚举看不到，因此不冒充完整列表。
+
+失败必须可诊断（避免静默变空）：worker 的 stderr 保留有界片段，父进程用分类器压成结构性事实再进 warning。

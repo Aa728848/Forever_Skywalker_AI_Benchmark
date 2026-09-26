@@ -12,6 +12,8 @@ Status: implemented
 
 DSH SDK 没有原生 agentPreset initialize 字段，使用公开 launch patches、Agent preset mount/composeFrom 以及首条消息前的 agent/created 接入原始预设。标准、PTC、极简、创造实际 ID 分别为 standard、ptc、minimal、cordis。保存请求预设、实际选择事件和源预设指纹；选择未证实不能当作完成，同一预设发生变更则停止比较。
 
+DSH 0.1.7-rc.2 重构了预设机制，本项目按新布局适配：预设资产由 `packages/preset/agent-presets/presets/<id>/agent.cordis.yml` 改为 `packages/bundle/web-app/presets/<id>.patch.yml`，整份 YAML 作为**第二个 launch patch 层**交付（它含 `!!js` 标签，JSON 层无法承载），与 DSH 自己经 `dsh.bundle.patch` 装载的方式一致；注册表入口改为 `packages/preset/agent-preset-registry/lib/index.js`，其 Config 只剩 `default`（旧的 includeShippedRoot/includeUserRoot/roots 已删除）。两个新事实必须显式处理：预设声明行与 bridge 在同一批 insert 里**并发**激活，直接 mount 会随机拿到空列表，因此 bridge 轮询 `list()` 并先查声明是否 broken；「创造」预设依赖两个宿主行（`@deepseek-ai/dsh-tool-cordis/host` 与 subagent 模型选择设置），缺任一个启动即失败。评分会话（reviewOnly）同样改为声明一个只含评分 persona 的预设层，不再写 scratch 目录。`--check` 现在也校验预设挂载前置条件——此前它会在预设资产缺失时报「预检通过」，属假通过。
+
 新增预设、单个思考等级与报告输出选项，保留既有 --modes 多思考等级接口。预设和思考等级形成独立组合，固定一个模型，保持各组合分别计分。每个实验使用独占临时根和 RunStore，DSH 会话/存储/附件/新预设输出重定向本次 scratch。最终作答、评分、裁判及分级证据打包 gzip JSON，逐文件和压缩文件回读校验，报告保存成功后才删除临时根。
 
 ## Alternatives considered
