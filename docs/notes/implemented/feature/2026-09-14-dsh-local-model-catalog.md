@@ -48,3 +48,14 @@ discoverDshModels({ dshRoot, dshHome, profile? })
 该目录**可直接按文件枚举**，无需启动 DSH 运行时、不联网、不调用模型，与既有目录发现边界一致。枚举只读取文件里的声明，**不验证该预设在本机能否装载**；DSH 另有一条需要在运行期注册的路径（插件把预设声明提交给活动注册表），那条路径不产生文件，本枚举看不到，因此不冒充完整列表。
 
 失败必须可诊断（避免静默变空）：worker 的 stderr 保留有界片段，父进程用分类器压成结构性事实再进 warning。
+
+**运行期注册的预设枚举不到**：DSH 另有两条预设来源，只有一条产生可枚举文件。bundle 声明（`presets/*.patch.yml`）是本枚举读取的那条；插件运行期注册（订阅渠道插件的 `dispatch` 即此类）把预设提交给活动注册表，**不写任何被 DSH 读取的文件**，因此本枚举看不到，也不应假装看到。
+
+实测该插件在两种 profile 组合下的行为（真实插件、`apply()` 调用、临时 home）：
+
+| 组合 | ctx.get('agentPresets') | 注册结果 | 落盘 |
+| --- | --- | --- | --- |
+| sdk（base + sdk-app + 订阅插件） | 无 | 未注册 | 写旧目录 `.agent-presets/` |
+| web（含 web-app bundle） | 有 | 走注册路径 | 同样写旧目录 |
+
+注册表行由 **web-app bundle** 提供（`base` 与 `sdk-app` 都不声明 `id: agent-preset-registry`），而 sdk 的 bundles 不含 web-app，故 sdk 组合下插件**静默降级**：它把预设写进 `$DSH_HOME/.agent-presets/`，而 DSH 0.1.7 已不读该目录（其自带的 `editing-cordis-compositions` 技能明写 “Nothing reads that directory any more”）。两点需注意：该降级**不打日志**，只靠 `apply()` 的返回值区分；且 `@deepseek-ai/dsh-agent-preset` 包虽在 sdk 下可解析（由 `profiles/node_modules` 提升提供），但仅有包不足以注册——还必须有注册表服务，故「重装插件」不能改变该结果。
