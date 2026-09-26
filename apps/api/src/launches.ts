@@ -254,6 +254,12 @@ export interface LaunchRequest {
   check?: boolean;
   /** 报告根覆盖；缺省用冻结快照的 BENCH_DSH_REPORT_DIR。 */
   outputRoot?: string;
+  /**
+   * 续跑既有实验：给出实验标识时，子进程用 `--resume <id>` 只补跑未完成/待定的行，
+   * 已落定的作答与分数原样保留。用于「跑完大部分、少数未作答或出错」的场景。
+   * 与新建互斥：给出该项时不再新建报告目录。
+   */
+  resumeExperimentId?: string;
 }
 
 export interface LaunchesOptions {
@@ -495,8 +501,9 @@ export function createLaunches(options: LaunchesOptions): Launches {
   /* ------------------------------ 参数与计划 ------------------------------ */
 
   /** 冻结快照 -> 子进程命令行。所有选择都写进 argv 数组，绝不拼命令字符串。 */
-  function childArguments(plan: LaunchPlan, experimentId: string, outputRoot: string, check: boolean): string[] {
-    const argv = ['--experiment-id', experimentId, '--output', outputRoot, '--provider', plan.provider, '--model', plan.model,
+  function childArguments(plan: LaunchPlan, experimentId: string, outputRoot: string, check: boolean, resume = false): string[] {
+    // 续跑用 --resume <既有实验标识>；新建用 --experiment-id <新标识>。两者互斥。
+    const argv = [resume ? '--resume' : '--experiment-id', experimentId, '--output', outputRoot, '--provider', plan.provider, '--model', plan.model,
       '--presets', plan.presets.join(','), '--modes', plan.modes.join(','),
       '--tasks', plan.taskIds.join(','), '--repeat', String(plan.repeats),
       '--minutes', String(plan.timeoutMinutes), '--max-tokens', String(plan.maxTokens)];
@@ -653,13 +660,27 @@ export function createLaunches(options: LaunchesOptions): Launches {
     const outputRoot = outputRootOf(request);
     const check = request.check === true;
     const launchId = (check ? 'check-' : 'exp-') + new Date(now()).toISOString().replace(/[:.]/g, '-') + '-' + randomUUID().slice(0, 8);
-    const experimentId = launchId;
+    /**
+     * 续跑：实验标识是**既有**的那个，launchId 仍是新的。
+     * 这样启动记录彼此独立（可分别审计与取消），而报告落在原实验上继续累积。
+     * 续跑目标必须已存在且含 experiment.json——不允许把续跑指向不存在的实验
+     * （那会静默变成一次没有基础的新建，分数无处可合并）。
+     */
+    const resumeId = (request.resumeExperimentId ?? '').trim();
+    const isResume = resumeId !== '';
+    if (isResume && !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(resumeId)) throw new LaunchError(400, '续跑标识不合法：只接受字母或数字开头、由字母数字下划线和连字符组成的 1–64 字符标识。');
+    if (isResume) {
+      if (check) throw new LaunchError(400, '续跑不能与预检同时使用：续跑会真实调用模型。');
+      const directory = join(outputRoot, resumeId);
+      if (!existsSync(join(directory, 'experiment.json'))) throw new LaunchError(400, '续跑目标不存在或没有 experiment.json：' + directory + '。');
+    }
+    const experimentId = isResume ? resumeId : launchId;
     const supervisorToken = randomUUID();
     mkdirSync(root, { recursive: true });
     const logPath = join(root, launchId + '.log');
     const exitPath = exitPathOf(launchId);
     const cancelPath = cancelPathOf(launchId);
-    const childArgs = childArguments(plan, experimentId, outputRoot, check);
+    const childArgs = childArguments(plan, experimentId, outputRoot, check, isResume);
     const record: LaunchRecord = {
       launchId, supervisorToken, kind: check ? 'check' : 'comparison', experimentId, outputRoot,
       startedAt: new Date(now()).toISOString(), state: 'starting', exitCode: null, logPath, plan,

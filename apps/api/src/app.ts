@@ -326,6 +326,7 @@ export function buildApp(databasePath = ':memory:', options: AppOptions = {}) {
         ...(text(raw.provider) === undefined ? {} : { provider: text(raw.provider)! }),
         ...(text(raw.model) === undefined ? {} : { model: text(raw.model)! }),
         ...(text(raw.outputRoot) === undefined || text(raw.outputRoot) === '' ? {} : { outputRoot: text(raw.outputRoot)! }),
+        ...((text(raw.resumeExperimentId) ?? '').trim() === '' ? {} : { resumeExperimentId: (text(raw.resumeExperimentId) ?? '').trim() }),
         ...(number(raw.repeats, 'repeats') === undefined ? {} : { repeats: number(raw.repeats, 'repeats')! }),
         ...(number(raw.timeoutMinutes, 'timeoutMinutes') === undefined ? {} : { timeoutMinutes: number(raw.timeoutMinutes, 'timeoutMinutes')! }),
         ...(number(raw.maxTokens, 'maxTokens') === undefined ? {} : { maxTokens: number(raw.maxTokens, 'maxTokens')! }),

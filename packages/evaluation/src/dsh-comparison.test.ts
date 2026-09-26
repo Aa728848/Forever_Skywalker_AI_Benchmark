@@ -3,7 +3,7 @@ import { gunzipSync } from 'node:zlib';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { expect, it } from 'vitest';
-import { createEnvelope } from '@fsa/runs';
+import { createEnvelope, type RunStore } from '@fsa/runs';
 import { readRunStatus, verifySubmission } from '@fsa/executor';
 import { applyReferencePatch, readManifest } from '@fsa/tasks';
 import { inspectRunSelection } from './suite.ts';
@@ -193,6 +193,84 @@ it('相同思考等级下不同 DSH 预设分别评分，指定模型透传且�
   } finally { context.clean(); }
 }, 30_000);
 
+it('续跑只补跑未完成与待定的行，已落定的分数原样保留', async () => {
+  // 回归（真实故障 exp-2026-09-26T11-21-31-129Z-32e16e34）：
+  // 55 题里 5 题从未作答、1 题因 EPERM 中断，另有 3 题的 phase 是 'done'
+  // 但 scoring.total 为 null（作答完成、评分待定）。
+  // 关键：待定行的 phase 同样是 'done'。若只按 phase 判断「已落定」，
+  // 续跑会把它们跳过，待定就永久留在报告里——这正是必须补跑的一类。
+  const context = setup();
+  // 本夹具没有裁判，所以 verifySubmission 得到的总分天然是 null。
+  // 续跑测试需要一个「这次能给出判决」的裁判——用 scoring 上的数值总分模拟，
+  // 这样「续跑后不再有待定」才是被验证的事实，而不是夹具的偶然形态。
+  const evaluateScored = async (taskId: string, workspace: string, row: { mode: string; sessionId: string }, store: RunStore) => {
+    const outcome = await verifySubmission({ store, taskId, candidateDirectory: workspace,
+      envelope: createEnvelope(taskId, workspace, { idempotencyKey: row.sessionId }), submittedBy: 'scripted-' + row.mode, profile: 'local' });
+    const { runId, attemptId } = outcome.submission.attempt;
+    const identity = inspectRunSelection(store, [{ runId, attemptId }]);
+    const status = readRunStatus(store, runId, attemptId);
+    status.scoring.quality = 45;
+    status.scoring.total = 95;
+    return { status, environmentKey: identity.environmentKey, judgeKey: identity.judgeKey };
+  };
+  try {
+    // 第一轮：正常跑完并全部落定（4 条行 = 1 题 × 2 模式 × 2 次）。
+    const first = await runDshComparison(context.options, { env: {}, async solve(o) { return solverResult(o); }, evaluate: evaluateScored });
+    expect(first.state).toBe('completed');
+    expect(first.rows).toHaveLength(4);
+    expect(first.rows.every(r => typeof r.evaluation?.status?.scoring?.total === 'number')).toBe(true);
+
+    // 把报告塑造成真实形态（exp-2026-09-26T11-21-31-129Z-32e16e34 的现场）：
+    //  · 第 0、1 条 -> 保持落定（续跑必须原样保留、绝不重跑）
+    //  · 第 2 条     -> phase='done' 但总分为 null（作答完成、评分待定）
+    //  · 第 3 条     -> 从未作答
+    const pendingRow = first.rows[2]!;
+    pendingRow.evaluation!.status.scoring.quality = null;
+    pendingRow.evaluation!.status.scoring.total = null;
+    const neverRan = first.rows[3]!;
+    neverRan.phase = 'pending'; neverRan.solver = null; neverRan.evaluation = null;
+    writeFileSync(join(context.options.outputDirectory, 'experiment.json'), JSON.stringify(first, null, 2) + '\n');
+    const settledIndexes = [0, 1];
+    const totalsBefore = first.rows.map(r => r.evaluation?.status?.scoring?.total ?? null);
+    // 第二轮：续跑。只应重跑那两条，落定行的分数一个都不许变。
+    const executed: string[] = [];
+    const second = await runDshComparison({ ...context.options, resume: true }, { env: {},
+      async solve(o) { executed.push(o.sessionId); return solverResult(o); },
+      evaluate: evaluateScored });
+    expect(second.state).toBe('completed');
+    // 只重跑了 2 条（待定 + 未作答），而不是全部 4 条。
+    expect(executed).toHaveLength(2);
+    expect(executed).not.toContain(first.rows[0]!.sessionId);
+    expect(executed).not.toContain(first.rows[1]!.sessionId);
+    // 落定行的分数原样保留。
+    for (const i of settledIndexes) {
+      expect(second.rows[i]!.sessionId).toBe(first.rows[i]!.sessionId);
+      expect(second.rows[i]!.evaluation?.status?.scoring?.total).toBe(totalsBefore[i]);
+    }
+    // 关键断言：续跑后没有「已完成却待定」的行留存。
+    expect(second.rows.filter(r => r.evaluation !== null && typeof r.evaluation.status.scoring.total !== 'number')).toEqual([]);
+    // 续跑说明写进报告，可审计。
+    expect(second.issues.join(' ')).toContain('续跑');
+  } finally { context.clean(); }
+}, 30_000);
+it('续跑拒绝与既有报告不一致的配置，避免把两套配置的分数混进一份报告', async () => {
+  const context = setup();
+  const evaluateOnce = async (taskId: string, workspace: string, row: { mode: string; sessionId: string }, store: RunStore) => {
+    const outcome = await verifySubmission({ store, taskId, candidateDirectory: workspace,
+      envelope: createEnvelope(taskId, workspace, { idempotencyKey: row.sessionId }), submittedBy: 'scripted-' + row.mode, profile: 'local' });
+    const { runId, attemptId } = outcome.submission.attempt;
+    const identity = inspectRunSelection(store, [{ runId, attemptId }]);
+    return { status: readRunStatus(store, runId, attemptId), environmentKey: identity.environmentKey, judgeKey: identity.judgeKey };
+  };
+  try {
+    await runDshComparison(context.options, { env: {}, async solve(o) { return solverResult(o); }, evaluate: evaluateOnce });
+    await expect(runDshComparison({ ...context.options, resume: true, model: 'another-model' }, { env: {}, async solve(o) { return solverResult(o); } }))
+      .rejects.toThrow(/续跑配置与既有报告不一致（model）/);
+    // 目标不存在时也要明确拒绝。
+    await expect(runDshComparison({ ...context.options, resume: true, outputDirectory: join(context.scratch, 'nope') }, { env: {} }))
+      .rejects.toThrow(/续跑要求报告目录里已有 experiment.json/);
+  } finally { context.clean(); }
+}, 30_000);
 it('错误、超时和取消保留为未评分，取消后不启动剩余作答', async () => {
   const context = setup();
   const controller = new AbortController();

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { copyFileSync, existsSync, mkdirSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { requireTask } from '@fsa/catalog';
 import type { RunStatus } from '@fsa/contracts';
@@ -30,6 +30,15 @@ export interface DshComparisonOptions {
   image: string;
   imageDigest: string;
   measurePerformance: boolean;
+  /**
+   * 续跑：在既有报告上只补跑**未完成**的行（phase 为 pending / error / solver-stopped），
+   * 已完成的行连同分数原样保留。用于「55 题跑完 50 题、5 题未作答」的场景，
+   * 避免为少数失败重付整轮模型额度。
+   *
+   * 开启时 `outputDirectory` 必须已有合格的 experiment.json；配置（供应商/模型/预设/
+   * 等级/重复次数）必须与既有报告一致，否则拒绝——不同配置的分数不可合并。
+   */
+  resume?: boolean;
 }
 
 export interface ComparisonEvaluation {
@@ -168,6 +177,27 @@ export function renderComparison(report: DshComparisonReport): string {
 }
 
 /**
+ * 改名并重试：Windows 上刚写完的文件仍可能被杀毒/索引程序短暂持有，
+ * 此时 rename 会以 EPERM/EACCES/EBUSY 失败。这不是缺陷，重试即可通过。
+ * 与 @fsa/runs 的 renameWithRetry 同策略——报告每次状态变更都落盘，一次瞬时占用
+ * 就abort 整次实验的代价过大：实测 INT-HARNESS 因此把整轮 55 题判成 failed。
+ */
+function renameWithRetry(from: string, to: string): void {
+  const delays = [0, 20, 50, 100, 200, 400];
+  let lastError: unknown = null;
+  for (const delay of delays) {
+    if (delay > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delay);
+    try { renameSync(from, to); return; }
+    catch (error) {
+      const code = (error as { code?: string }).code ?? '';
+      if (!['EPERM', 'EACCES', 'EBUSY', 'ENOTEMPTY'].includes(code)) throw error;
+      lastError = error;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('重命名报告文件失败。');
+}
+
+/**
  * 认领报告目录，保持「绝不覆盖既有实验」的语义。
  *
  * 调用方 `--experiment-id` 分支已经用 mkdirSync(recursive:false) 原子认领过该目录，
@@ -182,10 +212,51 @@ function claimOutputDirectory(directory: string): void {
   if (readdirSync(directory).length > 0) throw new Error(`报告目录已存在且非空，拒绝覆盖：${directory}`);
 }
 
+/** 续跑时与既有报告比对配置：这些字段不同就不能合并分数。 */
+const resumableSettings = ['provider', 'model', 'presets', 'modes', 'taskIds', 'repeats'] as const;
+
+/**
+ * 一条行是否**真正落定**：续跑时原样保留，绝不重跑也不改分。
+ *
+ * 判据必须包含「拿到数值总分」，不能只看 phase === 'done'。
+ * 实测证据（exp-2026-09-26T11-21-31-129Z-32e16e34）：GRAPH-04、STATE-01、STATE-03
+ * 三条行的 phase 都是 'done'、evaluation 也不为 null，但 scoring.total 是 null
+ * ——它们是「作答完成、评分待定」。只看 phase 会把它们当成已完成跳过，
+ * 于是续跑永远修不好它们，待定就永久留在报告里。
+ */
+function isSettledRow(row: ComparisonRow): boolean {
+  if (row.phase !== 'done') return false;
+  const total = row.evaluation?.status?.scoring?.total;
+  return typeof total === 'number' && Number.isFinite(total);
+}
+
+/**
+ * 读取既有报告用于续跑，并核对配置一致。
+ * 任何不一致都直接拒绝：把两套配置的分数混进一份报告，比不续跑更糟。
+ */
+function readResumableReport(directory: string, options: DshComparisonOptions): DshComparisonReport {
+  const path = join(directory, 'experiment.json');
+  if (!existsSync(path)) throw new Error('续跑要求报告目录里已有 experiment.json：' + directory);
+  let parsed: unknown;
+  try { parsed = JSON.parse(readFileSync(path, 'utf8')); }
+  catch (error) { throw new Error('既有 experiment.json 不是有效 JSON：' + (error instanceof Error ? error.message : String(error))); }
+  const report = parsed as DshComparisonReport;
+  if (report.schemaVersion !== '0.3.0' || !Array.isArray(report.rows)) throw new Error('既有 experiment.json 不是可续跑的 0.3.0 报告。');
+  const previous = report.settings;
+  for (const key of resumableSettings) {
+    const before = JSON.stringify(previous?.[key]);
+    const after = JSON.stringify(options[key]);
+    if (before !== after) throw new Error('续跑配置与既有报告不一致（' + key + '）：报告是 ' + before + '，本次是 ' + after + '。请改用 --experiment-id 新建实验。');
+  }
+  return report;
+}
+
 /** 串行完成独立作答、冻结和验证；报告每次状态变更落盘，中断后不自动重做收费作答。 */
 export async function runDshComparison(options: DshComparisonOptions, services: ComparisonServices = {}): Promise<DshComparisonReport> {
   validateComparison(options);
-  claimOutputDirectory(options.outputDirectory);
+  // 续跑：复用既有报告的已完成行，只补跑未完成的那些。
+  const resumed = options.resume === true ? readResumableReport(options.outputDirectory, options) : null;
+  if (resumed === null) claimOutputDirectory(options.outputDirectory);
   const scratch = createComparisonScratch();
   const store = createRunStore(join(scratch.directory, 'evidence', 'runs'));
   const env = { ...(services.env ?? process.env) };
@@ -195,9 +266,20 @@ export async function runDshComparison(options: DshComparisonOptions, services: 
   let judgeCleanupError: DshCleanupError | undefined;
   const qualityProvider = createQualityProvider({ env, measurePerformance: options.measurePerformance,
     onJudgeCleanupError(error) { judgeCleanupError = error; } });
-  const report: DshComparisonReport = { schemaVersion: '0.3.0', id: randomUUID(), startedAt: new Date().toISOString(), finishedAt: null,
-    state: 'running', settings: { ...options }, prompt: comparisonPrompt, rows: [], issues: [], progress: [], evidence: null,
-    cleanup: { state: 'pending', directory: scratch.directory, reason: null } };
+  /**
+   * 续跑时继承既有报告：保留 id、开始时间、已完成的行与全部进度，
+   * 只把「未完成」的行重置为 pending 让它们重新排队。
+   * 增量沿用同一份报告，因此历史行与分数一个字都不会变。
+   */
+  const report: DshComparisonReport = resumed === null
+    ? { schemaVersion: '0.3.0', id: randomUUID(), startedAt: new Date().toISOString(), finishedAt: null,
+        state: 'running', settings: { ...options }, prompt: comparisonPrompt, rows: [], issues: [], progress: [], evidence: null,
+        cleanup: { state: 'pending', directory: scratch.directory, reason: null } }
+    // rows 必须清空：下面会按本次配置重新生成全部行，再由 isSettledRow 把落定行替换回原对象。
+    // 若沿用 resumed.rows，重新生成的行会追加到既有行之后，行数翻倍。
+    : { ...resumed, rows: [], finishedAt: null, state: 'running', issues: [], evidence: null,
+        settings: { ...resumed.settings, ...options },
+        cleanup: { state: 'pending', directory: scratch.directory, reason: resumed.cleanup?.reason ?? null } };
   let cleanupAllowed = true;
   let retentionReason = '';
   // 按题配对，并在下一轮交换等级顺序，减少所有 A 都先于 B 的顺序影响。
@@ -209,6 +291,28 @@ export async function runDshComparison(options: DshComparisonOptions, services: 
         sessionId: `bench-${randomUUID()}`, phase: 'pending', solver: null, evaluation: null, error: null });
     }
   }
+  if (resumed !== null) {
+    // 用既有报告里**已完成**的行覆盖刚生成的新行：按 (题目, 预设, 等级, 次数) 配对，
+    // 已完成的保留原分数与 sessionId，未完成/出错的用新行重新排队。
+    const settled = new Map<string, ComparisonRow>();
+    for (const row of resumed.rows) if (isSettledRow(row)) {
+      settled.set([row.taskId, row.preset, row.mode, row.repetition].join('|'), row);
+    }
+    const kept: ComparisonRow[] = [];
+    const requeued: string[] = [];
+    for (const fresh of report.rows) {
+      const key = [fresh.taskId, fresh.preset, fresh.mode, fresh.repetition].join('|');
+      const done = settled.get(key);
+      if (done === undefined) { requeued.push(key); kept.push(fresh); continue; }
+      kept.push(done);
+    }
+    report.rows.length = 0;
+    report.rows.push(...kept);
+    report.issues.push('本次为续跑：复用 ' + settled.size + ' 条已完成作答，重新执行 ' + requeued.length + ' 条未完成作答。');
+  }
+  // 只处理需要执行的行；已完成的行跳过，分数原样保留。
+  const settledCount = report.rows.filter(isSettledRow).length;
+  if (resumed !== null) report.issues.push('本次为续跑：复用 ' + settledCount + ' 行已完成结果，本次执行 ' + (report.rows.length - settledCount) + ' 行。');
   // 进度既交给调用方展示（CLI 打印行为不变），也作为只读出口的持久化记录。
   const progress = (message: string) => {
     appendComparisonProgress(report, message);
@@ -217,10 +321,10 @@ export async function runDshComparison(options: DshComparisonOptions, services: 
   };
   const persist = () => {
     writeFileSync(join(options.outputDirectory, 'experiment.json.tmp'), JSON.stringify(report, null, 2) + '\n');
-    renameSync(join(options.outputDirectory, 'experiment.json.tmp'), join(options.outputDirectory, 'experiment.json'));
+    renameWithRetry(join(options.outputDirectory, 'experiment.json.tmp'), join(options.outputDirectory, 'experiment.json'));
     // 与 experiment.json 相同的先写临时文件再改名：读者不会看到写了一半的 Markdown。
     writeFileSync(join(options.outputDirectory, 'report.md.tmp'), renderComparison(report));
-    renameSync(join(options.outputDirectory, 'report.md.tmp'), join(options.outputDirectory, 'report.md'));
+    renameWithRetry(join(options.outputDirectory, 'report.md.tmp'), join(options.outputDirectory, 'report.md'));
   };
   const solve = services.solve ?? runDsh;
   const evaluate = services.evaluate ?? (async (taskId, workspace, row) => {
@@ -237,6 +341,8 @@ export async function runDshComparison(options: DshComparisonOptions, services: 
     persist();
     for (const row of report.rows) {
       if (services.signal?.aborted) { report.state = 'cancelled'; break; }
+      // 续跑复用下来的已完成行：跳过，不重新作答，分数原样保留。
+      if (resumed !== null && isSettledRow(row)) continue;
       const runtimeDirectory = join(scratch.directory, 'runtime', row.sessionId);
       const workspace = join(scratch.directory, 'workspaces', row.sessionId);
       try {
@@ -305,7 +411,7 @@ export async function runDshComparison(options: DshComparisonOptions, services: 
   } finally {
     report.finishedAt = new Date().toISOString();
     try {
-      report.evidence = archiveComparisonEvidence(scratch, options.outputDirectory);
+      report.evidence = archiveComparisonEvidence(scratch, options.outputDirectory, { merge: resumed !== null });
       persist();
       if (!cleanupAllowed) throw new Error(retentionReason || '运行数据尚不能安全清理，保留临时目录。');
       cleanupComparisonScratch(scratch);

@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { gzipSync, gunzipSync } from 'node:zlib';
@@ -56,8 +56,15 @@ export function createComparisonScratch(): ComparisonScratch {
   return { directory, token };
 }
 
-/** 仅归档调用方显式放入 evidence/ 的材料，绝不收集 DSH home 或运行时配置。 */
-export function archiveComparisonEvidence(scratch: ComparisonScratch, outputDirectory: string): {
+/**
+ * 仅归档调用方显式放入 evidence/ 的材料，绝不收集 DSH home 或运行时配置。
+ *
+ * `merge` 供**续跑**使用：目标目录里已有一份本实验的归档时，把旧文件合并进来而不是覆盖。
+ * 为什么不能直接覆盖：落定行的 evidenceRefs 指向旧 scratch 的 `runs/<uuid>/…`，
+ * 覆盖会让这些引用悬空——报告引用不存在的证据。合并后两侧都在，历史不丢。
+ * 非续跑路径仍用独占创建（wx），保证既有报告绝不被新实验覆盖。
+ */
+export function archiveComparisonEvidence(scratch: ComparisonScratch, outputDirectory: string, options: { merge?: boolean } = {}): {
   filename: 'evidence.json.gz'; sha256: string; fileCount: number;
 } {
   const directory = ownedDirectory(scratch);
@@ -67,15 +74,24 @@ export function archiveComparisonEvidence(scratch: ComparisonScratch, outputDire
   if (!lstatSync(outputDirectory).isDirectory() || lstatSync(outputDirectory).isSymbolicLink()) throw new Error('报告输出路径必须是普通目录。');
   const evidence = join(directory, 'evidence');
   if (!lstatSync(evidence).isDirectory()) throw new Error('缺少实验 evidence 目录。');
-  const archive: ComparisonEvidenceArchive = { schemaVersion: '0.1.0', files: regularFiles(evidence).map(path => {
+  const collected: ComparisonEvidenceArchive['files'] = regularFiles(evidence).map(path => {
     const bytes = readFileSync(path);
     return { path: relative(evidence, path).split(sep).join('/'), base64: bytes.toString('base64'), sha256: sha256(bytes), bytes: bytes.byteLength };
-  }) };
-  const compressed = gzipSync(Buffer.from(JSON.stringify(archive)));
+  });
   const filename = 'evidence.json.gz';
   const destination = join(output, filename);
-  // wx 独占创建：既有报告无论是否有效都不能被本次覆盖。
-  writeFileSync(destination, compressed, { flag: 'wx', mode: 0o600 });
+  // 续跑：读回既有归档，把本次新文件并进去。同路径以本次为准（本轮重新采集过）。
+  const merged: ComparisonEvidenceArchive['files'] = [...collected];
+  if (options.merge === true && existsSync(destination)) {
+    const previous = JSON.parse(gunzipSync(readFileSync(destination)).toString('utf8')) as ComparisonEvidenceArchive;
+    const fresh = new Set(collected.map(file => file.path));
+    for (const file of previous.files) if (!fresh.has(file.path)) merged.push(file);
+  }
+  const archive: ComparisonEvidenceArchive = { schemaVersion: '0.1.0', files: merged };
+  const compressed = gzipSync(Buffer.from(JSON.stringify(archive)));
+  if (options.merge === true) writeFileSync(destination, compressed, { mode: 0o600 });
+  // wx 独占创建：非续跑时既有报告无论是否有效都不能被本次覆盖。
+  else writeFileSync(destination, compressed, { flag: 'wx', mode: 0o600 });
   const recorded = readFileSync(destination);
   if (sha256(recorded) !== sha256(compressed)) throw new Error('报告证据写入后摘要不匹配；保留实验临时目录。');
   const restored = JSON.parse(gunzipSync(recorded).toString('utf8')) as ComparisonEvidenceArchive;

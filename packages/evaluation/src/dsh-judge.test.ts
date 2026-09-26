@@ -81,6 +81,66 @@ it('tells the judge that an unjudgeable dimension is declared with null', async 
   // 模板必须给出 note 实例，否则模型无从得知该用字符串还是六字段对象。
   expect(prompts[0]).toContain('dimension=simplicity');
 });
+it('retries a round whose response is unparseable, then keeps the valid verdict', async () => {
+  // 现场证据（2026-09-26 的 55 题实验）：3 轮因模型在中文文本里写裸 ASCII 引号而截断 JSON，
+  // 例如 impact=任务只要求"丢失确认后必须重读事实"，成功路径...
+  // 旧实现任一轮失败即 calls=2 耗尽预算，整题永久作废；现在重试该轮一次。
+  const { env } = fixture();
+  let attempt = 0;
+  const callsPerRound = new Map<string, number>();
+  const valid = JSON.stringify(sampleVerdict(request, { simplicity: 80, maintainability: 80, decoupling: 80 }, ['candidate-1'], env.BENCH_JUDGE_DSH_MODEL, request.promptVersion));
+  const run: DshJudgeDependencies['run'] = vi.fn(async (options: DshRunOptions): Promise<DshRunResult> => {
+    attempt += 1;
+    // 第一次：模拟被裸引号截断的响应。
+    const body = attempt === 1 ? '{"schemaVersion":"0.1.0","notes":["impact=任务只要求"丢失确认后必须重读事实"，成功路径..."]}' : valid;
+    return { finishReason: 'completed', finalResponse: body, usage: null,
+      requestedModel: { provider: options.provider, model: options.model, reasoningEffort: options.reasoningEffort ?? null, maxTokens: options.maxTokens },
+      requestedPreset: 'minimal', observedPresets: ['minimal'], presetFingerprint: 'f'.repeat(64),
+      observedRoutes: [{ provider: options.provider, model: options.model }], responseModels: [], dshVersion: '1.2.3',
+      runtimeClosed: true, cleanupScope: 'sdk-runtime', durationMs: 1 } as DshRunResult;
+  });
+  const result = await createDshJudgeFromEnvironment(env, { run }).review(request);
+  expect(attempt).toBe(2);
+  expect(result.verdict.dimensions.simplicity.score).toBe(80);
+  expect(result.normalizations?.join('；')).toContain('第 1 轮第 1 次响应无效');
+
+  // 完整两轮闭环：第 1 轮有效、第 2 轮先坏一次再成功。
+  // 这正是 STATE-01 / STATE-03 的现场形态——当时第 2 轮彻底失败，整题被作废。
+  // 注意：sessionId 每次尝试都是新 uuid，不能按它计数——要按**轮次**计数。
+  // 轮次由 promptFor 写进 prompt（"roundId":…），这里从提示词里取。
+  const roundTwoBadFirst = vi.fn(async (options: DshRunOptions): Promise<DshRunResult> => {
+    const round = /"roundId":"([^"]+)"/.exec(options.prompt)?.[1] ?? '?';
+    callsPerRound.set(round, (callsPerRound.get(round) ?? 0) + 1);
+    const seen = callsPerRound.get(round)!;
+    const body = seen === 1
+      ? '{"schemaVersion":"0.1.0","notes":["impact=任务只要求"丢失确认后必须重读事实"，成功路径..."]}'
+      : JSON.stringify(sampleVerdict({ ...request, roundId: '2' } as ReviewRequest, { simplicity: 78, maintainability: 80, decoupling: 80 }, ['candidate-1'], env.BENCH_JUDGE_DSH_MODEL, request.promptVersion));
+    return { finishReason: 'completed', finalResponse: body, usage: null,
+      requestedModel: { provider: options.provider, model: options.model, reasoningEffort: options.reasoningEffort ?? null, maxTokens: options.maxTokens },
+      requestedPreset: 'minimal', observedPresets: ['minimal'], presetFingerprint: 'f'.repeat(64),
+      observedRoutes: [{ provider: options.provider, model: options.model }], responseModels: [], dshVersion: '1.2.3',
+      runtimeClosed: true, cleanupScope: 'sdk-runtime', durationMs: 1 } as DshRunResult;
+  });
+  const second = await createDshJudgeFromEnvironment(env, { run: roundTwoBadFirst }).review({ ...request, roundId: '2' });
+  expect(second.verdict.dimensions.simplicity.score).toBe(78);
+  expect(second.normalizations?.join('；')).toContain('第 2 轮第 1 次响应无效');
+});
+
+it('gives up after the per-round retry limit and does not silently accept a bad verdict', async () => {
+  const { env } = fixture();
+  let attempt = 0;
+  const run: DshJudgeDependencies['run'] = vi.fn(async (options: DshRunOptions): Promise<DshRunResult> => {
+    attempt += 1;
+    return { finishReason: 'completed', finalResponse: '{"schemaVersion":"0.1.0","notes":["oops', usage: null,
+      requestedModel: { provider: options.provider, model: options.model, reasoningEffort: options.reasoningEffort ?? null, maxTokens: options.maxTokens },
+      requestedPreset: 'minimal', observedPresets: ['minimal'], presetFingerprint: 'f'.repeat(64),
+      observedRoutes: [{ provider: options.provider, model: options.model }], responseModels: [], dshVersion: '1.2.3',
+      runtimeClosed: true, cleanupScope: 'sdk-runtime', durationMs: 1 } as DshRunResult;
+  });
+  await expect(createDshJudgeFromEnvironment(env, { run }).review(request)).rejects.toThrow(/不是合法 JSON/);
+  // 每轮最多两次会话：不会无限重试烧额度。
+  expect(attempt).toBe(2);
+});
 it('accepts fenced JSON but rejects identity or evidence mismatches', async () => {
   const { env } = fixture();
   const run: DshJudgeDependencies['run'] = vi.fn(async (options: DshRunOptions): Promise<DshRunResult> => ({ finishReason: 'completed', finalResponse: '```json\n' + JSON.stringify(sampleVerdict(request, { simplicity: 1, maintainability: 1, decoupling: 1 }, ['candidate-1'], env.BENCH_JUDGE_DSH_MODEL, request.promptVersion)) + '\n```', usage: null,

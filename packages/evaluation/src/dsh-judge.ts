@@ -220,7 +220,22 @@ export function createDshJudgeFromEnvironment(env: NodeJS.ProcessEnv = process.e
       if (calls >= 2) throw new JudgeUnavailableError('DSH 评分每次作答仅允许两轮独立会话；重评请创建新的评分修订。');
       const prompt = promptFor(frozen, options);
       if (Buffer.byteLength(prompt) > 1024 * 1024) throw new JudgeUnavailableError('DSH 评分材料超过 1 MiB，未启动会话。');
-      calls++;
+      /**
+       * 同一轮最多发起 sessionAttemptsPerRound 次会话。
+       *
+       * 为什么需要重试：模型偶尔会返回无法解析的 JSON——实测（2026-09-26 的 55 题实验）
+       * 3 轮因**中文文本里出现裸 ASCII 引号**而截断字符串，例如：
+       *   impact=任务只要求"丢失确认后必须重读事实"，成功路径...
+       * 这类失败是**无效响应**，不是评审立场分歧，重问一次即可取得有效判决；
+       * 而旧的 `calls = 2` 在任一轮失败时立刻耗尽两轮预算，使整题永久作废。
+       *
+       * 预算仍然守住：calls 只统计**成功**的判决，因此仍是每题最多两轮有效判决；
+       * 失败的尝试不计入，但每轮有上限，不会无限重试烧额度。
+       */
+      const sessionAttemptsPerRound = 2;
+      let retryNotes: string[] = [];
+      let lastError: unknown = null;
+      for (let attempt = 1; attempt <= sessionAttemptsPerRound; attempt += 1) {
       const workspace = mkdtempSync(join(tmpdir(), 'fsa-dsh-judge-workspace-'));
       const sessionId = `judge-${randomUUID()}`;
       let closed = true;
@@ -239,23 +254,31 @@ export function createDshJudgeFromEnvironment(env: NodeJS.ProcessEnv = process.e
           throw new JudgeUnavailableError('DSH 评分实际版本或模型路由与冻结配置不一致。');
         }
         const { verdict, normalizations } = verifyVerdict(parseResponse(result.finalResponse, roundId), frozen, options, { roundId, rawResponse: result.finalResponse });
+        // 成功：calls 只在这里自增，因此两轮预算统计的是**有效判决**而非会话次数。
+        calls++;
         const outcome: ReviewOutcome = { verdict: { ...verdict },
           calls, inputTokens: null, outputTokens: null, source: 'model', configuration: structuredClone(config),
-          ...(normalizations.length === 0 ? {} : { normalizations }),
+          ...([...retryNotes, ...normalizations].length === 0 ? {} : { normalizations: [...retryNotes, ...normalizations] }),
           dshSession: { id: sessionId, version: result.dshVersion, presetFingerprint: result.presetFingerprint,
             durationMs: result.durationMs, observedRoutes: result.observedRoutes } };
         cache.set(key, structuredClone(outcome));
         return outcome;
       } catch (error) {
-        calls = 2;
         if (error instanceof DshCleanupError) { closed = false; throw new DshCleanupError([error], workspace); }
-        throw error;
+        lastError = error;
+        // 只重试「响应无效」（解析失败/协议不符/会话未完成）；路由或版本不一致属配置问题，重试无意义。
+        const retryable = error instanceof JudgeProtocolError;
+        if (!retryable || attempt === sessionAttemptsPerRound) { calls = 2; throw error; }
+        retryNotes = [...retryNotes, '第 ' + roundId + ' 轮第 ' + attempt + ' 次响应无效（' + (error instanceof Error ? error.message.slice(0, 120) : String(error)) + '），已重试。'];
       } finally {
         if (closed) {
           if (realpathSync(dirname(workspace)) !== realpathSync(tmpdir()) || !basename(workspace).startsWith('fsa-dsh-judge-workspace-') || lstatSync(workspace).isSymbolicLink()) throw new Error('DSH 评分临时工作区越界。');
           rmSync(workspace, { recursive: true, force: true });
         }
       }
+      }
+      // 循环只在每次尝试都 continue/throw 时才走完；成功路径已在 try 内 return。
+      throw lastError instanceof Error ? lastError : new Error('DSH 评分会话未取得有效判决。');
       });
       queue = pending.catch(() => undefined);
       return pending;

@@ -32,6 +32,9 @@ pnpm dsh:compare --model <模型 ID> --check
 --check 只核对本地文件、容器和裁判参数；不启动 DSH、不调用模型。
 --minutes / --max-tokens 调整作答预算；--no-measure 跳过性能采样（完整质量分保持待定）。
 --experiment-id <id> 用固定标识认领报告目录（<报告根>/<id>），已存在即拒绝，绝不覆盖已有实验；省略时沿用时间戳+随机后缀。
+--resume <id> 续跑既有实验：只补跑未完成/出错的行，已完成的作答与分数原样保留。
+  用于「55 题跑完大部分、少数未作答或出错」的场景，避免为少数失败重付整轮模型额度。
+  配置（供应商/模型/预设/等级/重复次数）必须与既有报告一致，否则拒绝。
 --supervisor-token <令牌> 受控启动：只由 scripts/experiment-supervisor.ts 传入，配合 BENCH_LAUNCH_RECORD 复核启动记录；
 令牌或租约不符时在作答前拒绝执行。手工运行时不需要该参数。
 输出目录只保留报告及压缩证据；其余本次临时数据在报告确认保存后清理。
@@ -54,6 +57,18 @@ function claimExperimentDirectory(root: string, id: string): string {
     if (existsSync(directory)) throw new Error(`实验目录已存在，拒绝覆盖：${directory}`);
     throw error;
   }
+  return directory;
+}
+
+/**
+ * 续跑目标：目录必须已存在并含 experiment.json。
+ * 与 claimExperimentDirectory 相反——那里拒绝已存在的目录，这里要求它已存在。
+ */
+function existingExperimentDirectory(root: string, id: string): string {
+  if (!experimentIdPattern.test(id)) throw new Error('实验标识不合法：只接受字母或数字开头、由字母数字下划线和连字符组成的 1–64 字符标识。');
+  const directory = join(root, id);
+  if (!existsSync(directory)) throw new Error('续跑目标不存在：' + directory + '。请确认 --resume 的标识与报告根。');
+  if (!existsSync(join(directory, 'experiment.json'))) throw new Error('续跑目标里没有 experiment.json：' + directory + '。');
   return directory;
 }
 
@@ -94,6 +109,7 @@ try {
     repeat: { type: 'string', default: '1' }, minutes: { type: 'string', default: '20' },
     'max-tokens': { type: 'string', default: '16384' }, 'no-measure': { type: 'boolean' },
     'experiment-id': { type: 'string' }, 'supervisor-token': { type: 'string' }, 'launch-record': { type: 'string' },
+    resume: { type: 'string' },
   } });
   if (values.help) console.log(usage);
   else {
@@ -105,6 +121,9 @@ try {
     if (values.preset !== undefined && values.presets !== undefined) throw new Error('--preset 与 --presets 请选择一种。');
     if (values.reasoning !== undefined && values.modes !== undefined) throw new Error('--reasoning 与 --modes 请选择一种。');
     if (values.all && values.tasks !== undefined) throw new Error('--all 与 --tasks 请选择一种。');
+    if (values.resume !== undefined && values['experiment-id'] !== undefined) throw new Error('--resume 与 --experiment-id 请选择一种。');
+    if (values.resume !== undefined && values.check) throw new Error('--resume 不能与 --check 同时使用：续跑会真实调用模型。');
+    if (values.resume !== undefined && !experimentIdPattern.test(values.resume)) throw new Error('--resume 的实验标识不合法：只接受字母或数字开头、由字母数字下划线和连字符组成的 1–64 字符标识。');
     if (values.reasoning !== undefined && /[,\s]/.test(values.reasoning.trim())) throw new Error('--reasoning 只接受一个等级；比较多个等级请用 --modes。');
     const outputRoot = resolve(values.output || process.env.BENCH_DSH_REPORT_DIR || join(repositoryRoot, 'data', 'experiments'));
     const options: DshComparisonOptions = {
@@ -118,10 +137,13 @@ try {
       taskIds: values.all ? tasks.filter(task => task.status !== 'designed').map(task => task.id) : (values.tasks ?? 'CACHE-02').split(/[,\s]+/).filter(Boolean),
       modes: (values.modes || values.reasoning || process.env.BENCH_DSH_REASONING_EFFORT || 'off,high').split(/[,\s]+/).filter(Boolean),
       repeats: Number(values.repeat), maxTokens: Number(values['max-tokens']), timeoutMs: Number(values.minutes) * 60_000,
-      outputDirectory: values['experiment-id'] === undefined || values['experiment-id'] === ''
-        ? join(outputRoot, new Date().toISOString().replace(/[:.]/g, '-') + '-' + randomUUID().slice(0, 8))
-        : values.check ? inspectExperimentDirectory(outputRoot, values['experiment-id']) : claimExperimentDirectory(outputRoot, values['experiment-id']),
+      outputDirectory: values.resume !== undefined
+        ? existingExperimentDirectory(outputRoot, values.resume)
+        : values['experiment-id'] === undefined || values['experiment-id'] === ''
+          ? join(outputRoot, new Date().toISOString().replace(/[:.]/g, '-') + '-' + randomUUID().slice(0, 8))
+          : values.check ? inspectExperimentDirectory(outputRoot, values['experiment-id']) : claimExperimentDirectory(outputRoot, values['experiment-id']),
       image: process.env.BENCH_IMAGE || '', imageDigest: process.env.BENCH_IMAGE_DIGEST || '', measurePerformance: !values['no-measure'],
+      ...(values.resume === undefined ? {} : { resume: true }),
     };
     validateComparison(options);
     const installation = checkDshInstallation(options.dshRoot);

@@ -125,7 +125,35 @@ export function ReportCenter({ onCount }: { onCount?: (count: number) => void })
   const [pendingCleanup, setPendingCleanup] = useState<string | null>(null);
   const [cleanupBusy, setCleanupBusy] = useState(false);
   const [cleanupResult, setCleanupResult] = useState<{ reportId: string; message: string; ok: boolean } | null>(null);
+  // 续跑（重试）：与清理同样是写操作，因此也要令牌，也走「先确认再执行」。
+  const [pendingRetry, setPendingRetry] = useState<string | null>(null);
+  const [retryBusy, setRetryBusy] = useState(false);
+  const [retryResult, setRetryResult] = useState<{ reportId: string; message: string; ok: boolean } | null>(null);
   const { token, setToken, authHeaders } = useBenchToken();
+
+  /**
+   * 续跑一份报告：只补跑未完成/未作答/待定的作答，已落定的分数原样保留。
+   * 这是「不应该有待定」的修复入口——待定行的 phase 也是 done，只有续跑能重做它们。
+   */
+  async function retryReport(reportId: string) {
+    setRetryBusy(true);
+    try {
+      const response = await fetch('/api/experiments', { method: 'POST',
+        headers: { ...authHeaders(), 'content-type': 'application/json' },
+        body: JSON.stringify({ resumeExperimentId: reportId }) });
+      const value: unknown = await response.json().catch(() => null);
+      const detail = typeof value === 'object' && value !== null && 'error' in value ? String((value as { error: unknown }).error) : '';
+      if (!response.ok) {
+        setRetryResult({ reportId, ok: false, message: response.status === 401 ? '令牌无效或已失效：' + (detail || '请检查运行令牌。') : '续跑失败（' + response.status + '）：' + (detail || '服务端未给出原因。') });
+        return;
+      }
+      const launch = typeof value === 'object' && value !== null && 'launch' in value ? (value as { launch?: { launchId?: string } }).launch : undefined;
+      setRetryResult({ reportId, ok: true, message: '已发起续跑（启动记录 ' + (launch?.launchId ?? '未登记') + '）：只重跑未完成与待定的作答，已完成的分数不变。进度见「启动记录」，完成后本页刷新即可看到新分数。' });
+      setPendingRetry(null);
+    } catch (cause) {
+      setRetryResult({ reportId, ok: false, message: '续跑失败：' + (cause instanceof Error ? cause.message : '网络错误。') });
+    } finally { setRetryBusy(false); }
+  }
 
   /**
    * 清理一份报告：移到报告根的 .trash 下，可手动恢复。
@@ -232,6 +260,8 @@ export function ReportCenter({ onCount }: { onCount?: (count: number) => void })
     {/* 清理结论必须放在列表之外：被清理的报告会立刻从列表消失，明细区随之换成空状态，
         若把结论渲染在明细区里，用户永远看不到自己刚做的事成功了没有。 */}
     {cleanupResult !== null && <div className={cleanupResult.ok ? 'ok-note' : 'error'} role="status">{cleanupResult.message}</div>}
+    {/* 续跑结论同样放在页面级：明细面板会随刷新重绘，放在里面会一闪而过。 */}
+    {retryResult !== null && <div className={retryResult.ok ? 'ok-note' : 'error'} role="status">{retryResult.message}</div>}
     {loading ? <div className="empty" role="status">正在加载实验报告…</div>
       : experiments.length === 0 ? <div className="empty"><h3>还没有实验报告</h3><p>运行 pnpm dsh:compare 产出实验目录后，报告会出现在这里。</p></div>
       : <div className="report-layout">
@@ -310,6 +340,35 @@ export function ReportCenter({ onCount }: { onCount?: (count: number) => void })
                   <a href={'/api/reports/' + encodeURIComponent(shown.reportId) + '/artifacts/' + id} download>{artifactLabels[id]} ↗</a>
                   <p>{id === 'evidence' ? shown.evidence === null ? '证据未归档（experiment.json 未登记 evidence）。' : shown.evidence.filename + ' · SHA-256 ' + shown.evidence.sha256.slice(0, 16) + '… · ' + shown.evidence.fileCount + ' 个文件' : artifactNotes[id]}</p>
                 </div>)}</div>
+                <h3>续跑未完成的作答</h3>
+                {(() => {
+                  // 「需要续跑」与评分汇总同一判据：必须拿到数值总分才算落定。
+                  // 待定行的 phase 也是 done，只按 phase 判断会漏掉它们——那正是修不好待定的原因。
+                  const needsRerun = shown.rows.filter(row => row.phase !== 'done' || typeof row.total !== 'number');
+                  return <div className="cleanup-block">
+                    <p>
+                      续跑只重做未完成、未作答与分数待定的作答，已落定的分数原样保留。
+                      {needsRerun.length === 0
+                        ? ' 当前这份报告没有需要续跑的作答。'
+                        : ' 当前有 ' + needsRerun.length + ' 条需要续跑：' + needsRerun.slice(0, 8).map(row => row.taskId).join('、') + (needsRerun.length > 8 ? ' 等' : '') + '。'}
+                    </p>
+                    {pendingRetry === shown.reportId
+                      ? <div className="warn broken" role="alert">
+                        <b>确认续跑「{shown.id ?? shown.directoryName}」？</b>
+                        <p>会真实调用模型重跑那 {needsRerun.length} 条作答；已完成的 {shown.rows.length - needsRerun.length} 条不会重跑，分数也不会变。续跑在同一份报告上累积，产生一次新的「启动记录」。</p>
+                        <div className="report-actions">
+                          <button className="primary" disabled={retryBusy} aria-busy={retryBusy} onClick={() => void retryReport(shown.reportId)}>{retryBusy ? '正在发起…' : '确认续跑'}</button>
+                          <button className="secondary" disabled={retryBusy} onClick={() => setPendingRetry(null)}>取消</button>
+                        </div>
+                      </div>
+                      : <div className="report-actions">
+                        <button className="secondary" disabled={retryBusy || needsRerun.length === 0}
+                          title={needsRerun.length === 0 ? '这份报告没有未完成或待定的作答。' : '只重跑 ' + needsRerun.length + ' 条未完成/待定的作答。'}
+                          onClick={() => { setRetryResult(null); setPendingRetry(shown.reportId); }}>续跑未完成的 {needsRerun.length} 条…</button>
+                        <span>不会改动已完成的分数。</span>
+                      </div>}
+                  </div>;
+                })()}
                 <h3>清理这份报告</h3>
                 <div className="cleanup-block">
                   <p>清理会把报告目录移进报告根下的 <code>.trash</code>，列表立即不再显示它；文件不会删除，随时可以手动移回。清理后本页需要刷新才能看到变化。</p>
