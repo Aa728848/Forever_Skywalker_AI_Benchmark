@@ -19,13 +19,17 @@ function solver(finishReason: string | null, durationMs: number | null) {
   return { finishReason, durationMs, finalResponse: 'E2E 夹具作答', usage: null, dshVersion: 'e2e-fixture', cleanupScope: 'sdk-runtime' };
 }
 
-function evaluation(classification: string | null, runId: string | null, attemptId: string | null, total: number | null) {
-  return { environmentKey: 'e2e-environment-key', judgeKey: null, status: { classification, runId, attemptId, evidenceRefs: [], scoring: { functional: null, quality: null, total } } };
+function evaluation(classification: string | null, runId: string | null, attemptId: string | null, total: number | null, reason?: string) {
+  return { environmentKey: 'e2e-environment-key', judgeKey: null, status: { classification, runId, attemptId, evidenceRefs: [],
+    scoring: { functional: null, quality: null, total, ...reason === undefined ? {} : { reason } } } };
 }
 
 const rows = [
   { taskId: 'CACHE-02', taskVersion: '0.3.0', preset: 'standard', mode: 'off', repetition: 1, sessionId: 'e2e-session-1', phase: 'done', solver: solver('completed', 12340), evaluation: evaluation('passed', 'run-e2e-1', 'attempt-e2e-1', 100), error: null },
-  { taskId: 'CACHE-02', taskVersion: '0.3.0', preset: 'standard', mode: 'high', repetition: 1, sessionId: 'e2e-session-2', phase: 'done', solver: solver('completed', 22100), evaluation: evaluation(null, 'run-e2e-2', 'attempt-e2e-2', null), error: null },
+  // 第 2 条：作答已完成（phase=done、验证结论 passed）但总分待定——它不是「未完成」，
+  // 只是独立评审没通过协议校验（与 exp-2026-09-27T05-09-39-576Z-0c9ca2df 里的 LSP-02 同形）。
+  { taskId: 'CACHE-02', taskVersion: '0.3.0', preset: 'standard', mode: 'high', repetition: 1, sessionId: 'e2e-session-2', phase: 'done', solver: solver('completed', 22100),
+    evaluation: evaluation('passed', 'run-e2e-2', 'attempt-e2e-2', null, '独立评审未通过协议校验，质量分与总分待定。'), error: null },
   { taskId: 'CACHE-02', taskVersion: '0.3.0', preset: 'ptc', mode: 'off', repetition: 1, sessionId: 'e2e-session-3', phase: 'grading', solver: solver('completed', 5000), evaluation: null, error: null },
   { taskId: 'CACHE-02', taskVersion: '0.3.0', preset: 'ptc', mode: 'high', repetition: 1, sessionId: 'e2e-session-4', phase: 'solver-stopped', solver: solver('timeout', 900000), evaluation: null, error: null },
   { taskId: 'CACHE-02', taskVersion: '0.3.0', preset: 'minimal', mode: 'off', repetition: 1, sessionId: 'e2e-session-5', phase: 'pending', solver: null, evaluation: null, error: null },
@@ -131,6 +135,50 @@ test('报告中心列出实验、展开行级阶段与进度，下载四个产�
   await expect(page.locator('.rows-table tbody tr').first()).toContainText('12.3');
   await expect(page.locator('.phase-summary')).toContainText('已完成 2');
 
+  /**
+   * 行级状态必须把「跑完了」与「分数待定」分开说。
+   * 夹具第 2 条是 phase=done 且 total=null：它已经跑完，只是质量分待定。
+   * 若把它与真的没跑完的行合并成一句「未完成」，一份 state=completed 的报告就会
+   * 看起来还有没跑完的行——这正是要修的问题。
+   */
+  const rowStates = page.locator('.rows-table tbody tr td:nth-child(6)');
+  await expect(rowStates).toHaveCount(5);
+  await expect(rowStates.nth(0)).toHaveText('作答完成 · 分数已出');
+  await expect(rowStates.nth(1)).toHaveText('作答完成 · 质量分待定');
+  await expect(rowStates.nth(2)).toHaveText('还没跑完（验证评分中）');
+  await expect(rowStates.nth(3)).toHaveText('还没跑完（作答中止）');
+  await expect(rowStates.nth(4)).toHaveText('还没跑完（待作答）');
+  // 待定原因必须仍然可见（不为了好看而隐藏），且与「没跑完」那几行区分开。
+  // 待定原因必须仍然可见，并且指向真正的原因所在（本页问题区 + 证据包），不隐藏、不编造。
+  const pendingRow = page.locator('.rows-table tbody tr').nth(1);
+  await expect(pendingRow).toContainText('待定');
+  await expect(pendingRow).toContainText('作答已完成（验证结论 passed），却没有数值总分');
+  await expect(pendingRow).toContainText('质量证据不完整');
+  await expect(pendingRow).toContainText('evidence.json.gz');
+  await expect(page.locator('.rows-table tbody')).not.toContainText('未完成');
+
+  // 报告级摘要：三个数各自有标签，不能混成一个「完成度」。
+  const summaryGrid = page.locator('.summary-grid');
+  await expect(summaryGrid).toContainText('已评分');
+  await expect(summaryGrid).toContainText('作答已完成 / 计划');
+  await expect(summaryGrid).toContainText('分数待定');
+  await expect(summaryGrid).toContainText('还没跑完');
+  const tile = (label: string) => summaryGrid.locator('div', { hasText: label }).first().locator('b');
+  await expect(tile('已评分')).toHaveText('1 条');
+  await expect(tile('作答已完成 / 计划')).toHaveText('2 / 5');
+  await expect(tile('分数待定')).toHaveText('1 条');
+  await expect(tile('还没跑完')).toHaveText('3 条');
+  await expect(page.locator('.field-hint')).toContainText('把待定当成 0 分会把「还不知道」误报成「很差」');
+
+  // 续跑区块：计数与文案分两类，且只对真的没跑完用「未完成」。
+  const retry = page.locator('.cleanup-block').filter({ hasText: '续跑只重做两类作答' });
+  await expect(retry.locator('li').nth(0)).toContainText('没跑完：3 条');
+  await expect(retry.locator('li').nth(1)).toContainText('作答已完成但分数待定：1 条');
+  // 按钮文案必须与计数口径一致：两类都要重做时把两个数都写出来，不得用「未完成」指代待定。
+  const retryButton = retry.getByRole('button', { name: '续跑 4 条（未完成 3 + 待定 1）…' });
+  await expect(retryButton).toHaveText('续跑 4 条（未完成 3 + 待定 1）…');
+  await expect(retryButton).toBeEnabled();
+
   await expect(page.locator('.timeline li')).toHaveCount(3);
   await expect(page.locator('.timeline')).toContainText('Linux 验证与评分中');
   await expect(page.locator('.report-detail .warn')).toContainText('E2E 夹具问题');
@@ -214,4 +262,125 @@ test('报告中心列出实验、展开行级阶段与进度，下载四个产�
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('report-center-mobile.png'), fullPage: true });
+});
+
+/**
+ * 「报告已完成，却仍说有未完成的行」的回归。
+ *
+ * 现场：exp-2026-09-27T05-09-39-576Z-0c9ca2df 的 phaseCounts 是 done=55、planned=55、
+ * 其余阶段全 0、state=completed；但 LSP-02 的 phase=done 且 total=null（独立评审未通过
+ * 协议校验）。旧的 needsRerun = (phase !== 'done' || total === null) 把它与真的没跑完的行
+ * 合成一类，于是页面说「续跑未完成的 1 条」并列出一个早已跑完的题。
+ *
+ * 本用例用一份「2/2 全部跑完且都有分数」的最小报告断言：没有任何「未完成」，
+ * 行级状态与续跑文案都不得用「未完成」指代任何东西。
+ */
+const allDoneName = '2026-09-11T00-00-00-000Z-e2e00005';
+const allDoneDocument = {
+  ...experimentDocument,
+  id: 'e2e-alldone-experiment',
+  issues: [],
+  rows: [
+    { taskId: 'CACHE-02', taskVersion: '0.3.0', preset: 'standard', mode: 'off', repetition: 1, sessionId: 'e2e-done-1', phase: 'done', solver: solver('completed', 11100), evaluation: evaluation('passed', 'run-e2e-d1', 'attempt-e2e-d1', 100), error: null },
+    { taskId: 'GRAPH-04', taskVersion: '0.3.0', preset: 'standard', mode: 'off', repetition: 1, sessionId: 'e2e-done-2', phase: 'done', solver: solver('completed', 12300), evaluation: evaluation('passed', 'run-e2e-d2', 'attempt-e2e-d2', 84), error: null },
+  ],
+};
+
+/**
+ * 报告已经跑完、只有个别行分数待定的场景（= 现场 LSP-02 的形状）：
+ * 行都 done，其中一条 total=null。此时「未完成」必须为 0，续跑按钮只能说「待定」。
+ */
+const pendingOnlyName = '2026-09-10T00-00-00-000Z-e2e00006';
+const pendingOnlyDocument = {
+  ...experimentDocument,
+  id: 'e2e-pending-only-experiment',
+  issues: [],
+  rows: [
+    { taskId: 'CACHE-02', taskVersion: '0.3.0', preset: 'standard', mode: 'off', repetition: 1, sessionId: 'e2e-po-1', phase: 'done', solver: solver('completed', 11100), evaluation: evaluation('passed', 'run-e2e-po1', 'attempt-e2e-po1', 100), error: null },
+    // 评审未通过协议校验：验证结论仍是 passed，只是没有数值总分。
+    { taskId: 'CACHE-02', taskVersion: '0.3.0', preset: 'standard', mode: 'high', repetition: 1, sessionId: 'e2e-po-2', phase: 'done', solver: solver('completed', 22100), evaluation: evaluation('passed', 'run-e2e-po2', 'attempt-e2e-po2', null, '独立评审未通过协议校验，质量分与总分待定。'), error: null },
+    // 连验证结论都没登记的行：它是「跑完了但结论缺失」，不是「没跑」——该列不得写成「未评分」。
+    { taskId: 'CACHE-02', taskVersion: '0.3.0', preset: 'ptc', mode: 'off', repetition: 1, sessionId: 'e2e-po-3', phase: 'done', solver: solver('completed', 3100), evaluation: null, error: null },
+  ],
+};
+
+test('行全部跑完、只有分数待定的报告：续跑按钮只说「待定」，不把待定叫成「未完成」', async ({ page }) => {
+  mkdirSync(join(reportRoot, pendingOnlyName), { recursive: true });
+  writeFileSync(join(reportRoot, pendingOnlyName, 'experiment.json'), JSON.stringify(pendingOnlyDocument, null, 2) + '\n');
+  writeFileSync(join(reportRoot, pendingOnlyName, 'report.md'), '# DSH 模式对比\n\n一条待定\n');
+
+  await page.goto('/');
+  await page.getByRole('button', { name: /报告中心/ }).click();
+  await page.locator('.experiment-item').filter({ hasText: 'e2e-pending-only-experiment' }).click();
+  await expect(page.getByRole('heading', { name: 'e2e-pending-only-experiment' })).toBeVisible();
+
+  const rowStates = page.locator('.rows-table tbody tr td:nth-child(6)');
+  await expect(rowStates).toHaveCount(3);
+  await expect(rowStates.nth(0)).toHaveText('作答完成 · 分数已出');
+  await expect(rowStates.nth(1)).toHaveText('作答完成 · 质量分待定');
+  await expect(rowStates.nth(2)).toHaveText('作答完成 · 质量分待定');
+
+  // 「验证结论」列只在真的没结论时写「尚无结论」，跑完的行写「结论未登记」——不得读成「没跑」。
+  const classifications = page.locator('.rows-table tbody tr td:nth-child(10)');
+  await expect(classifications.nth(0)).toHaveText('passed');
+  await expect(classifications.nth(1)).toHaveText('passed');
+  await expect(classifications.nth(2)).toHaveText('结论未登记');
+
+  const summaryGrid = page.locator('.summary-grid');
+  const tile = (label: string) => summaryGrid.locator('div', { hasText: label }).first().locator('b');
+  await expect(tile('已评分')).toHaveText('1 条');
+  await expect(tile('作答已完成 / 计划')).toHaveText('3 / 3');
+  await expect(tile('分数待定')).toHaveText('2 条');
+  // 关键：这里「还没跑完」必须是 0，待定不能被算进未完成。
+  await expect(tile('还没跑完')).toHaveText('0 条');
+  await expect(page.locator('.field-hint')).toContainText('「已经跑完、但总分待定」');
+  await expect(page.locator('.field-hint')).toContainText('计划中的作答都已跑完');
+
+  // 待定行的平均分不被当成 0：平均分只由那 1 条已评分作答决定。
+  await expect(tile('平均总分')).toHaveText('100.00 /100');
+
+  const retry = page.locator('.cleanup-block').filter({ hasText: '续跑只重做两类作答' });
+  await expect(retry.locator('li').nth(0)).toContainText('没跑完：0 条');
+  await expect(retry.locator('li').nth(1)).toContainText('作答已完成但分数待定：2 条');
+  // 按钮文案必须与计数口径一致：只有待定时说「重跑 … 条待定」，不得出现「未完成」。
+  const retryButton = retry.getByRole('button', { name: '重跑 2 条待定…' });
+  await expect(retryButton).toBeEnabled();
+  await expect(page.locator('.report-detail')).not.toContainText('未完成');
+});
+
+test('state=completed 且行全部跑完的报告不得再出现「未完成」或续跑提示', async ({ page }) => {
+  mkdirSync(join(reportRoot, allDoneName), { recursive: true });
+  writeFileSync(join(reportRoot, allDoneName, 'experiment.json'), JSON.stringify(allDoneDocument, null, 2) + '\n');
+  writeFileSync(join(reportRoot, allDoneName, 'report.md'), '# DSH 模式对比\n\n全部跑完\n');
+
+  await page.goto('/');
+  await page.getByRole('button', { name: /报告中心/ }).click();
+  await page.locator('.experiment-item').filter({ hasText: 'e2e-alldone-experiment' }).click();
+  await expect(page.getByRole('heading', { name: 'e2e-alldone-experiment' })).toBeVisible();
+
+  // 每条作答都已完成且有分数：行级状态只说这一件事。
+  const rowStates = page.locator('.rows-table tbody tr td:nth-child(6)');
+  await expect(rowStates).toHaveCount(2);
+  await expect(rowStates.nth(0)).toHaveText('作答完成 · 分数已出');
+  await expect(rowStates.nth(1)).toHaveText('作答完成 · 分数已出');
+
+  const summaryGrid = page.locator('.summary-grid');
+  const tile = (label: string) => summaryGrid.locator('div', { hasText: label }).first().locator('b');
+  await expect(tile('已评分')).toHaveText('2 条');
+  await expect(tile('作答已完成 / 计划')).toHaveText('2 / 2');
+  await expect(tile('分数待定')).toHaveText('0 条');
+  await expect(tile('还没跑完')).toHaveText('0 条');
+  await expect(page.locator('.field-hint')).toContainText('计划中的作答都已跑完');
+  await expect(page.locator('.field-hint')).toContainText('三个不同的数');
+
+  // 核心断言：整份报告明细里不再出现「未完成」，续跑按钮也明确说没有需要重做的。
+  await expect(page.locator('.report-detail')).not.toContainText('未完成');
+  const retry = page.locator('.cleanup-block').filter({ hasText: '续跑只重做两类作答' });
+  await expect(retry.locator('li').nth(0)).toContainText('没跑完：0 条');
+  await expect(retry.locator('li').nth(1)).toContainText('作答已完成但分数待定：0 条');
+  await expect(retry).toContainText('没有需要重做的');
+  const retryButton = retry.getByRole('button', { name: /^续跑/ });
+  await expect(retryButton).toHaveText('续跑（没有需要重做的作答）…');
+  await expect(retryButton).toBeDisabled();
+  await expect(page.locator('.rows-table tbody')).not.toContainText('未完成');
 });

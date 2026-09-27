@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
-import { lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const dshPresetLabels = { standard: '标准', ptc: 'PTC', minimal: '极简', cordis: '创造' } as const;
 export type DshPreset = keyof typeof dshPresetLabels;
@@ -45,6 +45,276 @@ export function resolveDshPreset(value: string): DshPreset {
   throw new Error('DSH 模式必须是 standard/标准、ptc/PTC、minimal/极简、cordis/创造。');
 }
 
+/* ── 项目自己的 pi-ai 供应商档案 ─────────────────────────────────────────────
+ * 供应商档案是**本项目拥有**的文件 data/provider-profiles.json。它既不改写用户的
+ * DSH home，也不碰 profiles/<name>/cordis.patch.yml：那份补丁层带注释、由 DSH 自己的
+ * 设置界面维护，覆盖式写入会连注释一起毁掉，改坏它 DSH 本身都可能起不来。
+ *
+ * 档案只存**凭据引用名**（apiKeyEnv），密钥值永不入库、永不回显。读取与校验在父进程
+ * 完成：这里读的是 JSON，不需要第二套 YAML 语义。作答与裁判会话通过一个额外的
+ * launch patch 层拿到这些路由，见 providerPatchRows。
+ */
+
+/** 可探测、也可写进档案的 pi-ai 协议；与 DSH 的 supportedProtocols 一致。 */
+export const providerProfileApis = ['openai-completions', 'openai-responses', 'anthropic-messages'] as const;
+/** 可用 compat.thinkingFormat 命名的推理方言（镜像 DSH 的 SUPPORTED_THINKING_FORMATS）。 */
+export const providerThinkingFormats = ['openai', 'deepseek', 'openrouter', 'together', 'baseten', 'zai', 'qwen', 'chat-template', 'qwen-chat-template', 'string-thinking', 'ant-ling'] as const;
+/** 可声明的思考等级（镜像 DSH 的 THINKING_LEVELS，按升级顺序）。 */
+export const providerThinkingLevels = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
+/** 可声明的输入模态（镜像 DSH 的 MODALITIES）。 */
+export const providerInputModalities = ['text', 'image'] as const;
+
+/** 一个模型档案：只有 id 必填，其余留给 DSH 的目录默认值。 */
+export interface ProviderModelProfile {
+  id: string;
+  name?: string;
+  contextWindow?: number;
+  maxTokens?: number;
+  input?: string[];
+  /**
+   * 等级名 → 发给端点的拼写；off 允许留空（null）表示「支持但不发参数」。
+   * false 表示该模型不支持推理。省略则沿用 DSH 目录里该模型的能力。
+   */
+  reasoningEfforts?: Record<string, string | null> | false;
+}
+
+/** 一个供应商档案；providers 字典的键就是 DSH 的路由 ID，id 只是同值的自述字段。 */
+export interface ProviderProfile {
+  id: string;
+  displayName?: string;
+  api: (typeof providerProfileApis)[number];
+  baseURL: string;
+  apiKeyEnv?: string;
+  compat?: { thinkingFormat?: string };
+  models: ProviderModelProfile[];
+}
+
+export interface ProjectProviderStore {
+  version: 1;
+  providers: Record<string, ProviderProfile>;
+}
+
+export interface ProviderFieldError { field: string; message: string }
+
+/**
+ * 档案里的一个 provider 投影成 DSH 补丁层字典的值：路由键由外层字典给出，不重复写 id。
+ * 字段顺序与 DSH 自己文档里的示例一致，导出的 YAML 片段因此可读。
+ */
+export function providerProfileValue(profile: ProviderProfile): Record<string, unknown> {
+  return {
+    ...(profile.displayName === undefined ? {} : { displayName: profile.displayName }),
+    api: profile.api,
+    baseURL: profile.baseURL,
+    ...(profile.apiKeyEnv === undefined ? {} : { apiKeyEnv: profile.apiKeyEnv }),
+    ...(profile.compat === undefined ? {} : { compat: profile.compat }),
+    models: profile.models.map(model => ({
+      id: model.id,
+      ...(model.name === undefined ? {} : { name: model.name }),
+      ...(model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow }),
+      ...(model.maxTokens === undefined ? {} : { maxTokens: model.maxTokens }),
+      ...(model.input === undefined ? {} : { input: [...model.input] }),
+      ...(model.reasoningEfforts === undefined ? {} : { reasoningEfforts: model.reasoningEfforts }),
+    })),
+  };
+}
+
+/** 档案默认位置：packages/evaluation/src/dsh.ts 上溯三层即仓库根，与 data/experiments 同一基准。 */
+export const projectProviderStorePath = fileURLToPath(new URL('../../../data/provider-profiles.json', import.meta.url));
+
+/** 注入层与导出共用的一行：固定 id，保证同一路由不会被注册两次。 */
+export const projectProviderRowId = 'fsa-pi-ai-providers';
+const projectProviderPluginName = '@deepseek-ai/dsh-llm-pi-ai';
+const providerIdPattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+const credentialRefPattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const maxProviders = 64;
+const maxModelsPerProvider = 256;
+/** contextWindow / maxTokens 的上界：再大就不是模型容量而是手误。 */
+const maxCapacity = 100_000_000;
+
+/** 可见文本且不超长；控制字符会被 YAML 或 HTTP 头拒绝，这里先挡住。 */
+function visible(value: string, maximum: number): boolean {
+  if (value.length < 1 || value.length > maximum) return false;
+  for (const character of value) {
+    const code = character.codePointAt(0) ?? 0;
+    if (code < 32 || code === 127) return false;
+  }
+  return true;
+}
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const positiveInteger = (value: unknown, maximum: number): number | null =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value > 0 && value <= maximum ? value : null;
+
+function validateModel(raw: unknown, index: number, errors: ProviderFieldError[]): ProviderModelProfile | null {
+  const at = 'models[' + String(index) + ']';
+  if (!isPlainObject(raw)) { errors.push({ field: at, message: '每个模型必须是一个对象。' }); return null; }
+  const id = typeof raw.id === 'string' ? raw.id.trim() : '';
+  if (!visible(id, 200)) { errors.push({ field: at + '.id', message: '模型 ID 必须是 1–200 个可见字符。' }); return null; }
+  const model: ProviderModelProfile = { id };
+  if (raw.name !== undefined) {
+    if (typeof raw.name !== 'string' || !visible(raw.name.trim(), 200)) { errors.push({ field: at + '.name', message: '显示名必须是 1–200 个可见字符。' }); return null; }
+    model.name = raw.name.trim();
+  }
+  for (const field of ['contextWindow', 'maxTokens'] as const) {
+    if (raw[field] === undefined) continue;
+    const value = positiveInteger(raw[field], maxCapacity);
+    if (value === null) { errors.push({ field: at + '.' + field, message: field + ' 必须是正整数（不超过 ' + String(maxCapacity) + '）。' }); return null; }
+    model[field] = value;
+  }
+  if (raw.input !== undefined) {
+    if (!Array.isArray(raw.input)) { errors.push({ field: at + '.input', message: '输入模态必须是数组。' }); return null; }
+    const input: string[] = [];
+    for (const modality of raw.input) {
+      if (typeof modality !== 'string' || !(providerInputModalities as readonly string[]).includes(modality)) {
+        errors.push({ field: at + '.input', message: '输入模态只能是 text 或 image。' }); return null;
+      }
+      if (!input.includes(modality)) input.push(modality);
+    }
+    model.input = input;
+  }
+  if (raw.reasoningEfforts !== undefined) {
+    if (raw.reasoningEfforts === false) model.reasoningEfforts = false;
+    else if (!isPlainObject(raw.reasoningEfforts)) {
+      errors.push({ field: at + '.reasoningEfforts', message: '思考等级表必须是「等级名: 拼写」对象，或 false 表示不支持推理。' }); return null;
+    } else {
+      const table: Record<string, string | null> = {};
+      let declared = 0;
+      for (const [level, wire] of Object.entries(raw.reasoningEfforts)) {
+        if (!(providerThinkingLevels as readonly string[]).includes(level)) {
+          errors.push({ field: at + '.reasoningEfforts.' + level, message: '未知思考等级；可用：' + providerThinkingLevels.join('、') + '。' }); return null;
+        }
+        if (wire === null || wire === '') {
+          // DSH 只允许 off 留空（支持但不发参数）；其它等级留空会让整条路由在启动时不可用。
+          if (level !== 'off') { errors.push({ field: at + '.reasoningEfforts.' + level, message: '只有 off 可以留空（表示不发参数）；其它等级必须写明发给端点的拼写。' }); return null; }
+          table[level] = null;
+        } else if (typeof wire === 'string' && visible(wire, 64)) {
+          table[level] = wire;
+          if (level !== 'off') declared += 1;
+        } else {
+          errors.push({ field: at + '.reasoningEfforts.' + level, message: '拼写必须是 1–64 个可见字符的字符串。' }); return null;
+        }
+      }
+      // DSH 拒绝「只有 off」的思考等级表：那既不表示继承也不表示禁用，只会在启动时报错。
+      if (declared === 0) { errors.push({ field: at + '.reasoningEfforts', message: '思考等级表至少要有一个 off 以外的等级；不支持推理请填 false，或整项留空沿用目录能力。' }); return null; }
+      model.reasoningEfforts = table;
+    }
+  }
+  return model;
+}
+
+/**
+ * 字段级校验：只接受已知字段并归一化，返回值可直接写盘、也可直接注入 DSH。
+ * 未知顶层字段被忽略而不是报错——它可能是更新版本写的，旧版本读它不该整体失败。
+ */
+export function validateProviderProfile(id: string, raw: unknown): { profile: ProviderProfile | null; errors: ProviderFieldError[] } {
+  const errors: ProviderFieldError[] = [];
+  if (!isPlainObject(raw)) return { profile: null, errors: [{ field: 'id', message: '供应商档案必须是一个对象。' }] };
+  if (!providerIdPattern.test(id)) return { profile: null, errors: [{ field: 'id', message: '供应商 ID 必须是 1–64 位字母、数字、点、下划线或连字符，且以字母或数字开头。' }] };
+  const profile: ProviderProfile = { id, api: 'openai-completions', baseURL: '', models: [] };
+  if (raw.displayName !== undefined) {
+    if (typeof raw.displayName !== 'string' || !visible(raw.displayName.trim(), 120)) { errors.push({ field: 'displayName', message: '显示名必须是 1–120 个可见字符。' }); return { profile: null, errors }; }
+    profile.displayName = raw.displayName.trim();
+  }
+  if (typeof raw.api !== 'string' || !(providerProfileApis as readonly string[]).includes(raw.api)) {
+    errors.push({ field: 'api', message: '协议必须是 ' + providerProfileApis.join(' / ') + ' 之一。' }); return { profile: null, errors };
+  }
+  profile.api = raw.api as ProviderProfile['api'];
+  if (typeof raw.baseURL !== 'string' || !visible(raw.baseURL.trim(), 2000)) {
+    errors.push({ field: 'baseURL', message: '端点必须是 1–2000 个可见字符的 http(s) 地址。' }); return { profile: null, errors };
+  }
+  const baseURL = raw.baseURL.trim();
+  let parsed: URL;
+  try { parsed = new URL(baseURL); } catch { errors.push({ field: 'baseURL', message: '端点不是合法的 URL。' }); return { profile: null, errors }; }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') { errors.push({ field: 'baseURL', message: '端点必须是 http 或 https。' }); return { profile: null, errors }; }
+  // 用户名/口令形式的端点会把密钥写进档案：档案永不存密钥，这里直接拒绝。
+  if (parsed.username !== '' || parsed.password !== '') { errors.push({ field: 'baseURL', message: '端点不能带用户名或口令；请改用凭据引用名。' }); return { profile: null, errors }; }
+  profile.baseURL = baseURL;
+  if (raw.apiKeyEnv !== undefined) {
+    if (typeof raw.apiKeyEnv !== 'string' || !credentialRefPattern.test(raw.apiKeyEnv.trim())) {
+      errors.push({ field: 'apiKeyEnv', message: '凭据引用名只能是环境变量样式（字母或下划线开头，仅字母数字下划线），例如 STEPFUN_API_KEY。' }); return { profile: null, errors };
+    }
+    profile.apiKeyEnv = raw.apiKeyEnv.trim();
+  }
+  if (raw.compat !== undefined) {
+    if (!isPlainObject(raw.compat)) { errors.push({ field: 'compat', message: 'compat 必须是对象。' }); return { profile: null, errors }; }
+    const unknown = Object.keys(raw.compat).filter(key => key !== 'thinkingFormat');
+    if (unknown.length > 0) { errors.push({ field: 'compat.' + String(unknown[0]), message: '本项目只代理 compat.thinkingFormat；其余 compat 开关请在 DSH 自己的设置里配置。' }); return { profile: null, errors }; }
+    if (raw.compat.thinkingFormat !== undefined) {
+      if (typeof raw.compat.thinkingFormat !== 'string' || !(providerThinkingFormats as readonly string[]).includes(raw.compat.thinkingFormat)) {
+        errors.push({ field: 'compat.thinkingFormat', message: '思考方言必须是 ' + providerThinkingFormats.join(' / ') + ' 之一。' }); return { profile: null, errors };
+      }
+      profile.compat = { thinkingFormat: raw.compat.thinkingFormat };
+    }
+  }
+  if (!Array.isArray(raw.models) || raw.models.length === 0) { errors.push({ field: 'models', message: '至少要声明一个模型。' }); return { profile: null, errors }; }
+  if (raw.models.length > maxModelsPerProvider) { errors.push({ field: 'models', message: '一个供应商最多声明 ' + String(maxModelsPerProvider) + ' 个模型。' }); return { profile: null, errors }; }
+  const models: ProviderModelProfile[] = [];
+  const seen = new Set<string>();
+  for (const [index, entry] of raw.models.entries()) {
+    const model = validateModel(entry, index, errors);
+    if (model === null) return { profile: null, errors };
+    if (seen.has(model.id)) { errors.push({ field: 'models[' + String(index) + '].id', message: '模型 ID 重复：' + model.id }); return { profile: null, errors }; }
+    seen.add(model.id);
+    models.push(model);
+  }
+  profile.models = models;
+  return { profile, errors };
+}
+
+export const emptyProviderStore = (): ProjectProviderStore => ({ version: 1, providers: {} });
+
+/**
+ * 读取并**投影**档案：只保留已知字段与已通过校验的条目，任何手改错误都降级为 issues，
+ * 绝不抛出——一份写坏的档案不能让作答会话或目录接口整体失败。
+ */
+export function readProjectProviderStore(path: string): { store: ProjectProviderStore; issues: string[] } {
+  const store = emptyProviderStore();
+  const issues: string[] = [];
+  if (!existsSync(path)) return { store, issues };
+  let parsed: unknown;
+  try { parsed = JSON.parse(readFileSync(path, 'utf8')); }
+  catch { return { store, issues: ['档案不是合法 JSON，已按空档案处理（档案内容不回显）。'] }; }
+  if (!isPlainObject(parsed) || parsed.version !== 1) return { store, issues: ['档案 version 不是 1；本版本不认识的档案不参与作答。'] };
+  if (!isPlainObject(parsed.providers)) return { store, issues: ['档案缺少 providers 字典。'] };
+  const entries = Object.entries(parsed.providers);
+  if (entries.length > maxProviders) issues.push('档案声明了超过 ' + String(maxProviders) + ' 个供应商，多余的已忽略。');
+  for (const [id, raw] of entries.slice(0, maxProviders)) {
+    const { profile, errors } = validateProviderProfile(id, raw);
+    if (profile === null) { issues.push('供应商 ' + id + ' 未通过校验：' + errors.map(issue => issue.field + ' ' + issue.message).join('；')); continue; }
+    store.providers[id] = profile;
+  }
+  return { store, issues };
+}
+
+/** 原子写入（同目录 .tmp + rename）：半截文件不会被下一次读取当成有效档案。 */
+export function writeProjectProviderStore(path: string, store: ProjectProviderStore): void {
+  const absolute = resolve(path);
+  const directory = dirname(absolute);
+  mkdirSync(directory, { recursive: true });
+  const temporary = join(directory, basename(absolute) + '.tmp-' + String(process.pid));
+  writeFileSync(temporary, JSON.stringify({ version: 1, providers: store.providers }, null, 2) + String.fromCharCode(10), 'utf8');
+  renameSync(temporary, absolute);
+}
+
+/**
+ * 注入层的内容：**新增**一个 pi-ai 插件行来承载项目档案，而不是改写 profile 补丁层里
+ * 那条既有的 llm-pi-ai——补丁层的 config 是整块替换的，改写它会连用户手工声明的
+ * 供应商（stepfun、mimo 等）一起抹掉。
+ *
+ * 同一层里先 insert 再按 id 配置，语义是「没有就插入、已存在（例如之前导出过）就覆盖」：
+ * 无论 profile 补丁层里有没有这一行，会话里都恰好只挂载一条属于本项目的 pi-ai 路由集，
+ * 而 profile 补丁层那条既有行保持原样、继续服务它自己声明的供应商。
+ * 档案为空时返回 null，不产生任何层——未配置项目供应商的会话与改动前逐字节相同。
+ */
+export function providerPatchRows(store: ProjectProviderStore): unknown[] | null {
+  const providers = Object.fromEntries(Object.entries(store.providers).map(([id, profile]) => [id, providerProfileValue(profile)]));
+  if (Object.keys(providers).length === 0) return null;
+  const row = { id: projectProviderRowId, name: projectProviderPluginName, config: { providers } };
+  return [{ insert: [row] }, { id: projectProviderRowId, name: projectProviderPluginName, config: { providers } }];
+}
+
 export interface DshRunOptions {
   dshRoot: string;
   dshHome: string;
@@ -60,6 +330,11 @@ export interface DshRunOptions {
   reviewOnly?: boolean;
   /** 本次作答的运行资料目录；调用方只能在 SDK close 确认后清理。 */
   scratchDirectory?: string;
+  /**
+   * 项目供应商档案。省略时读取项目自己的 data/provider-profiles.json；
+   * 测试注入以覆盖「档案声明了新供应商」与「档案为空」两条路径。
+   */
+  providerStore?: ProjectProviderStore;
   /** DSH 的每次模型请求输出上限，不是整题 Token 预算。 */
   maxTokens: number;
   sessionId: string;
@@ -231,7 +506,10 @@ function reviewPresetPatch(preset: DshPreset): string {
 }
 
 /** SDK 公开支持 launch patches；其 initialize 没有 agentPreset 参数。 */
-function preparePreset(installation: DshInstallation, preset: DshPreset, scratch: string, reviewOnly = false): { patch: string; presets: string[]; fingerprint: string } {
+function preparePreset(
+  installation: DshInstallation, preset: DshPreset, scratch: string, reviewOnly = false,
+  providerStore: ProjectProviderStore = emptyProviderStore(),
+): { patch: string; presets: string[]; fingerprint: string } {
   // 资产必须在安装目录内：越界或缺失一律拒绝，不用未校验的路径继续启动。
   const readAsset = (path: string): string => {
     const absolute = realpathSync(join(installation.dshRoot, path));
@@ -300,8 +578,23 @@ export async function apply(ctx) {
       { id: 'fsa-preset-bridge', name: pathToFileURL(bridge).href },
     ] },
   ], null, 2), { encoding: 'utf8', flag: 'wx' });
-  // 指纹反映本次实际挂载内容：预设声明文本 + 迁移平面，两次运行内容不同即不同。
-  return { patch, presets: [presetPatch], fingerprint: createHash('sha256').update(presetText).update(plane!).digest('hex') };
+  // 项目自己的 pi-ai 供应商档案作为**额外的 launch patch 层**注入：它与预设层并列，
+  // 排在 --patch 顺序的最后，因此项目档案与 profile 补丁层冲突时以项目档案为准。
+  // 档案为空时这一层根本不存在，会话挂载内容与改动前完全相同。
+  const providerRows = providerPatchRows(providerStore);
+  const providerPatch = providerRows === null ? undefined : (() => {
+    const file = join(scratch, 'project-providers.patch.json');
+    writeFileSync(file, JSON.stringify(providerRows, null, 2), { encoding: 'utf8', flag: 'wx' });
+    return file;
+  })();
+  // 指纹代表本次实际挂载内容：预设声明文本 + 迁移平面 + 项目供应商层。
+  // 少了最后一项，改供应商档案不会改变指纹，两次配置不可比的作答会被当成同一条件。
+  const digest = createHash('sha256').update(presetText).update(plane!);
+  if (providerRows !== null) digest.update(JSON.stringify(providerRows));
+  return {
+    patch, presets: [presetPatch, ...(providerPatch === undefined ? [] : [providerPatch])],
+    fingerprint: digest.digest('hex'),
+  };
 }
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -333,8 +626,11 @@ export async function runDsh(options: DshRunOptions, dependencies: DshDependenci
   const workspacePermission = resolveDshWorkspacePermission(options.workspacePermission ?? options.env?.BENCH_DSH_WORKSPACE_PERMISSION ?? options.env?.DSH_PERMISSION_MODE ?? 'workspace-write');
   const ownScratch = options.scratchDirectory === undefined;
   const scratch = options.scratchDirectory === undefined ? mkdtempSync(join(tmpdir(), 'fsa-dsh-runtime-')) : resolve(options.scratchDirectory);
+  // 项目供应商档案：作答与裁判会话都从这里拿到项目声明的 pi-ai 路由。档案读不出
+  // 内容时只降级为不带该层（并留下 issue），绝不因为一个手改错误就拒绝启动会话。
+  const providerStore = options.providerStore ?? readProjectProviderStore(projectProviderStorePath).store;
   let prepared: ReturnType<typeof preparePreset>;
-  try { prepared = preparePreset(installation, preset, scratch, options.reviewOnly); }
+  try { prepared = preparePreset(installation, preset, scratch, options.reviewOnly, providerStore); }
   catch (error) { if (ownScratch) cleanupOwnedScratch(scratch); throw error; }
   const launch: DshLaunchOptions = {
     dshBin: installation.cliPath, dshHome, processCwd: workspace, cwd: workspace,

@@ -11,7 +11,9 @@
  * - 进程归属判定：绝不只看 pid，必须同时校验 pidStartedAt（取不到启动时间时如实降级为「无法确认归属」）；
  * - 纯函数 mergeState：唯一决定展示语义的地方（进程判定与清理判定永不互相冒充）；
  * - 对账 sweeper：读 exit.json 落定 exited/cancelled，租约过期判 unknown，取消标记 + 进程判定消失判 aborted；
- * - 取消：先写取消标记由 supervisor 代理执行；supervisor 已死时只终止能证明归属的存活进程，并如实报告残留三态。
+ * - 取消：先写取消标记由 supervisor 代理执行；supervisor 已死时只终止能证明归属的存活进程，并如实报告残留三态；
+ * - 残留三态：运行中的子进程树是正常状态（不报残留）；已落定以 supervisor 的终止后核对（exit.json 的
+ *   descendantsVerified）为准，没有该核对证据就保持 unknown，绝不靠跨进程猜测换一个「干净」的结论。
  *
  * GET /api/experiments 只调用 list()/describe()，它们不写任何文件。
  */
@@ -23,7 +25,7 @@ import { join, resolve } from 'node:path';
 import { tasks } from '@fsa/catalog';
 import { validateComparison, type DshComparisonOptions } from '../../../packages/evaluation/src/dsh-comparison.ts';
 import {
-  childrenOf, defaultHeartbeatMs, defaultLeaseTtlMs, descendantsGone, isAlive, probeOwnership,
+  childrenOf, defaultHeartbeatMs, defaultLeaseTtlMs, isAlive, probeOwnership,
   readJsonObject, terminateTree, updateRecord, writeJsonAtomic, type ExitFact, type Ownership,
 } from '../../../scripts/experiment-supervisor.ts';
 import { apiRepositoryRoot, type ConfigProvider } from './config.ts';
@@ -40,6 +42,29 @@ export type ExperimentState = 'running' | 'completed' | 'cancelled' | 'failed' |
 export type CleanupState = 'pending' | 'complete' | 'retained' | null;
 export type LaunchKind = 'comparison' | 'check';
 
+/**
+ * 进程判定分类：启动、对账、取消与残留判定共用这一处定义。
+ * live 是还在跑（子进程树在场属正常状态），settled 是已经落定（结论以退出事实为准）。
+ */
+const liveRecordStates: readonly RecordState[] = ['starting', 'registered', 'running'];
+const settledRecordStates: readonly RecordState[] = ['exited', 'cancelled', 'aborted'];
+
+/**
+ * experiment.json 逐行验证结论的行数统计。只有 rows 真的是数组时才是数字；
+ * 读不到时整块为 null——不把「读不到」写成「0 行未通过」，那等于凭空宣布全部通过。
+ */
+export interface ExperimentReportFacts {
+  rows: number;
+  passed: number;
+  unpassed: number;
+}
+
+/**
+ * 实验自身的结论：由 experiment.json 的 state 与逐行 classification 决定，与进程退出码无关。
+ * completed-with-failures = 实验跑完了（state=completed），但有行没有通过可用验证。
+ */
+export type ReportOutcome = 'running' | 'completed' | 'completed-with-failures' | 'cancelled' | 'failed';
+
 /* ================================================================== *
  * 状态归并：三个独立事实，永不互相冒充
  * ================================================================== */
@@ -48,8 +73,13 @@ export interface MergedState {
   /** 进程判定。aborted 属于进程判定，永远不与 cleanup 合并。 */
   process: 'live' | 'exited' | 'cancelled' | 'aborted' | 'unknown';
   /** 展示结论。 */
-  verdict: 'starting' | 'running' | 'completed' | 'failed' | 'cancelled' | 'aborted' | 'unknown';
+  verdict: 'starting' | 'running' | 'completed' | 'completed-with-failures' | 'failed' | 'cancelled' | 'aborted' | 'unknown';
   text: string;
+  /**
+   * 实验自身的结论（来自 experiment.json）；没有 experiment.json 或它的 state 不可识别时为 null。
+   * 它是实验的结论，不是进程结论——两者永不互相冒充。
+   */
+  reportOutcome: ReportOutcome | null;
   /** 清理判定，独立于进程判定。 */
   cleanup: 'complete' | 'retained' | 'unknown';
   cleanupText: string;
@@ -78,43 +108,82 @@ function cleanupVerdict(cleanupState: CleanupState): Pick<MergedState, 'cleanup'
   return { cleanup: 'unknown', cleanupText: cleanupState === 'pending' ? '清理未知，可能残留（experiment.json 仍为 pending）' : '清理未知，可能残留（没有 experiment.json 清理记录）', cleanupUncertain: true };
 }
 
+/** 退出事实的人话：有退出码就说退出码，没有就说被哪个信号终止。 */
+function exitText(exitFact: ExitFact): string {
+  if (exitFact.code !== null) return '进程退出码 ' + String(exitFact.code);
+  return exitFact.signal === null ? '进程退出方式未知' : '进程被信号 ' + exitFact.signal + ' 终止';
+}
+
 /**
- * 唯一决定展示语义的纯函数。四个事实各自独立：
+ * 实验自身的结论。归档为准，退出码只作兜底：
+ * - experimentState 不是 completed 时原样带出（running/cancelled/failed）；
+ * - completed 时看逐行验证：experiment.json 有行数统计就只看统计，否则用
+ *   「completed + 非零退出码」这一 CI 语义兜底——dsh-compare 只在有行未通过时才这样退出。
+ */
+function reportOutcomeOf(experimentState: ExperimentState, exitFact: ExitFact | null, reportFacts: ExperimentReportFacts | null, cancelled: boolean): ReportOutcome | null {
+  if (experimentState === null) return null;
+  if (experimentState !== 'completed') return experimentState;
+  const unpassed = reportFacts !== null
+    ? reportFacts.unpassed > 0
+    : exitFact !== null && exitFact.code !== null && exitFact.code !== 0 && !cancelled;
+  return unpassed ? 'completed-with-failures' : 'completed';
+}
+
+/**
+ * 唯一决定展示语义的纯函数。五个事实各自独立：
  * - experimentState 由 dsh-compare 子进程写入 experiment.json（running/completed/cancelled/failed）；
  * - recordState 是启动记录的进程判定（starting/registered/running/exited/cancelled/aborted/unknown）；
  * - exitFact 是 supervisor 写下的退出事实（code/signal/at/descendantsVerified）；
  * - cleanupState 是 dsh-compare 子进程写下的清理真相（pending/complete/retained）。
  *
  * 真值表要点：
- * - 有 exit.json：按退出码落定 completed（码 0 且 experiment completed 或不存在）或 failed；取消类信号落定为 cancelled。
- * - 无 exit.json：跟随启动记录的进程判定，unknown 就是 unknown，绝不推断成 launch-failed。
+ * - 有 exit.json：先看 experiment.json 自己的结论。state=completed 但逐行有未通过
+ *   （读不到逐行统计时以「非零退出码」这一 CI 语义兜底）→ completed-with-failures：
+ *   实验跑完了，只是有题没做对，不得显示成「失败」。state=failed，或 completed 之外
+ *   的非取消非零退出 → failed，那才是进程真的异常退出。
+ * - 无 exit.json：跟随启动记录的进程判定，unknown 就是 unknown，绝不推断成 launch-failed；
+ *   reportOutcome 仍如实带出归档自己的结论，但 verdict 不因此被拔高成 completed。
  * - 清理只认 experiment.json 的明写值；pending 或不登记一律「未知，可能残留」。
  * - 码 0 且没有 experiment.json 的情况（仅预检）如实说成「没有实验记录」，不谎报失败。
  */
-export function mergeState(experimentState: ExperimentState, recordState: RecordState, exitFact: ExitFact | null, cleanupState: CleanupState): MergedState {
+export function mergeState(experimentState: ExperimentState, recordState: RecordState, exitFact: ExitFact | null, cleanupState: CleanupState, reportFacts: ExperimentReportFacts | null = null): MergedState {
   const cleanup = cleanupVerdict(cleanupState);
   const cancelled = isCancellation(recordState, exitFact);
+  const reportOutcome = reportOutcomeOf(experimentState, exitFact, reportFacts, cancelled);
+  const counts = reportFacts === null ? '' : '，逐行验证 ' + String(reportFacts.unpassed) + ' 行未通过（共 ' + String(reportFacts.rows) + ' 行）';
   if (exitFact !== null) {
     const succeeded = exitFact.code === 0 && (experimentState === 'completed' || experimentState === null);
     if (!succeeded && cancelled) {
-      return { process: 'cancelled', verdict: 'cancelled', text: '已取消：进程已退出且终止事实已落盘。', ...cleanup, exitOk: false };
+      return { process: 'cancelled', verdict: 'cancelled', text: '已取消：进程已退出且终止事实已落盘。', ...cleanup, exitOk: false, reportOutcome };
+    }
+    if (reportOutcome === 'cancelled') {
+      return { process: 'cancelled', verdict: 'cancelled', text: '已取消：experiment.json 记录 cancelled。', ...cleanup, exitOk: false, reportOutcome };
+    }
+    if (reportOutcome === 'failed') {
+      return { process: 'exited', verdict: 'failed', text: '失败：' + exitText(exitFact) + '，experiment.json 记录 failed。', ...cleanup, exitOk: false, reportOutcome };
+    }
+    if (reportOutcome === 'completed-with-failures') {
+      return { process: 'exited', verdict: 'completed-with-failures', exitOk: exitFact.code === 0, ...cleanup, reportOutcome,
+        text: '已完成但有未通过行：experiment.json 记录 completed' + counts + '；' + exitText(exitFact) + ' 是 CI 语义（有行未通过），不是进程异常退出。' };
+    }
+    if (reportOutcome === 'completed') {
+      // 归档说「跑完且逐行全通过」就以它为准；退出码与它不一致时如实并置，不静默丢掉异常退出码。
+      const discrepancy = exitFact.code === 0 ? '' : '；但 ' + exitText(exitFact) + ' 与归档不一致，请核查该退出码的来源。';
+      return { process: 'exited', verdict: 'completed', exitOk: exitFact.code === 0, ...cleanup, reportOutcome,
+        text: '已完成：experiment.json 记录 completed，逐行验证全部通过' + discrepancy };
     }
     if (succeeded) {
-      return experimentState === 'completed'
-        ? { process: 'exited', verdict: 'completed', text: '已完成：进程退出码 0，experiment.json 记录 completed。', ...cleanup, exitOk: true }
-        : { process: 'exited', verdict: 'completed', text: '进程退出码 0；该实验没有 experiment.json（仅预检，或报告未落盘）。', ...cleanup, exitOk: true };
+      return { process: 'exited', verdict: 'completed', text: '进程退出码 0；该实验没有 experiment.json（仅预检，或报告未落盘）。', ...cleanup, exitOk: true, reportOutcome };
     }
-    return experimentState === 'cancelled'
-      ? { process: 'cancelled', verdict: 'cancelled', text: '已取消：experiment.json 记录 cancelled。', ...cleanup, exitOk: false }
-      : { process: 'exited', verdict: 'failed', text: '失败：进程退出码 ' + String(exitFact.code) + '，experiment.json 为 ' + String(experimentState ?? '未登记') + '。', ...cleanup, exitOk: false };
+    return { process: 'exited', verdict: 'failed', text: '失败：' + exitText(exitFact) + '，experiment.json 为 ' + String(experimentState ?? '未登记') + '。', ...cleanup, exitOk: false, reportOutcome };
   }
-  if (recordState === 'aborted') return { process: 'aborted', verdict: 'aborted', text: '已中止：进程判定为已消失，但没有退出事实；不声称已确认终止。', ...cleanup, exitOk: null };
-  if (recordState === 'cancelled') return { process: 'cancelled', verdict: 'cancelled', text: '取消已请求：尚未取得退出事实，执行状态未知。', ...cleanup, exitOk: null };
+  if (recordState === 'aborted') return { process: 'aborted', verdict: 'aborted', text: '已中止：进程判定为已消失，但没有退出事实；不声称已确认终止。', ...cleanup, exitOk: null, reportOutcome };
+  if (recordState === 'cancelled') return { process: 'cancelled', verdict: 'cancelled', text: '取消已请求：尚未取得退出事实，执行状态未知。', ...cleanup, exitOk: null, reportOutcome };
   if (recordState === 'unknown' || recordState === 'exited') {
-    return { process: 'unknown', verdict: 'unknown', text: '执行状态未知，可能仍在运行：没有退出事实，也不推断为启动失败。', ...cleanup, exitOk: null };
+    return { process: 'unknown', verdict: 'unknown', text: '执行状态未知，可能仍在运行：没有退出事实，也不推断为启动失败。', ...cleanup, exitOk: null, reportOutcome };
   }
-  if (recordState === 'starting') return { process: 'live', verdict: 'starting', text: '正在启动：supervisor 尚未完成自登记握手。', ...cleanup, exitOk: null };
-  return { process: 'live', verdict: 'running', text: recordState === 'registered' ? 'supervisor 已登记，准备启动作答子进程。' : '运行中。', ...cleanup, exitOk: null };
+  if (recordState === 'starting') return { process: 'live', verdict: 'starting', text: '正在启动：supervisor 尚未完成自登记握手。', ...cleanup, exitOk: null, reportOutcome };
+  return { process: 'live', verdict: 'running', text: recordState === 'registered' ? 'supervisor 已登记，准备启动作答子进程。' : '运行中。', ...cleanup, exitOk: null, reportOutcome };
 }
 
 /* ================================================================== *
@@ -180,7 +249,10 @@ export interface LaunchRecord {
  * ================================================================== */
 
 export interface ResidueView {
-  /** none 只在能证明归属时给出；扫描无结果默认 unknown。 */
+  /**
+   * none 只在有证据时给出：supervisor 的终止后核对（exit.json 的 descendantsVerified）确认整棵后代已退出。
+   * 运行中的记录、没有退出事实或核对未确认的记录一律不是 none。
+   */
   status: 'none' | 'unknown' | 'present';
   detail: string;
   /** 扫描发现的、能证明归属的存活 pid。 */
@@ -331,18 +403,34 @@ function readExitFact(path: string): ExitFact | null {
   };
 }
 
-/** 读 experiment.json 的两个事实：状态与清理真相。只读，不写。 */
-function readExperimentFacts(directory: string): { exists: boolean; state: ExperimentState; cleanup: CleanupState } {
+/**
+ * 逐行验证的行数统计。rows 不是数组时整块为 null：
+ * 「读不到」与「0 行未通过」是两件事，不能互相冒充。
+ */
+function reportFactsOf(raw: Record<string, unknown>): ExperimentReportFacts | null {
+  if (!Array.isArray(raw.rows)) return null;
+  const rows = raw.rows as unknown[];
+  const passed = rows.filter(row => {
+    const evaluation = typeof row === 'object' && row !== null ? (row as Record<string, unknown>).evaluation : null;
+    const status = typeof evaluation === 'object' && evaluation !== null ? (evaluation as Record<string, unknown>).status : null;
+    return typeof status === 'object' && status !== null && (status as Record<string, unknown>).classification === 'passed';
+  }).length;
+  return { rows: rows.length, passed, unpassed: rows.length - passed };
+}
+
+/** 读 experiment.json 的三个事实：状态、清理真相与逐行验证统计。只读，不写。 */
+function readExperimentFacts(directory: string): { exists: boolean; state: ExperimentState; cleanup: CleanupState; report: ExperimentReportFacts | null } {
   const path = join(directory, 'experiment.json');
-  if (!existsSync(path)) return { exists: false, state: null, cleanup: null };
+  if (!existsSync(path)) return { exists: false, state: null, cleanup: null, report: null };
   const raw = readJsonObject(path);
-  if (raw === null) return { exists: true, state: null, cleanup: null };
+  if (raw === null) return { exists: true, state: null, cleanup: null, report: null };
   const cleanupRaw = raw.cleanup;
   const cleanupState = typeof cleanupRaw === 'object' && cleanupRaw !== null && !Array.isArray(cleanupRaw) ? (cleanupRaw as Record<string, unknown>).state : null;
   return {
     exists: true,
     state: raw.state === 'running' || raw.state === 'completed' || raw.state === 'cancelled' || raw.state === 'failed' ? raw.state : null,
     cleanup: cleanupState === 'pending' || cleanupState === 'complete' || cleanupState === 'retained' ? cleanupState : null,
+    report: reportFactsOf(raw),
   };
 }
 
@@ -365,11 +453,10 @@ function supervisorRunning(record: LaunchRecord, ttl: number, now: () => number)
   return Number.isFinite(age) && age <= ttl;
 }
 
-/** POSIX 下判断进程组是否仍存在；非 POSIX 恒为 false。 */
-function groupAlive(pgid: number): boolean {
-  if (process.platform === 'win32') return false;
-  try { process.kill(-pgid, 0); return true; }
-  catch (error) { return (error as NodeJS.ErrnoException).code === 'EPERM'; }
+/** 按记录自己的租约 TTL（没有则用缺省值）判断 supervisor 是否可证存活。 */
+function recordSupervisorRunning(record: LaunchRecord, fallbackTtl: number, now: () => number): boolean {
+  const ttl = typeof record.leaseTtlMs === 'number' && Number.isFinite(record.leaseTtlMs) ? record.leaseTtlMs : fallbackTtl;
+  return supervisorRunning(record, ttl, now);
 }
 
 /** 子进程列表（含一层后代）：只在能证明归属时推进，任何不确定都返回 null。 */
@@ -382,10 +469,16 @@ function liveAttributable(pid: number | null, startedAt: string | null): { alive
 }
 
 /**
- * 残留扫描三态。默认口径是「残留未知」：扫描无结果不等于无残留，
- * 主动脱离进程组的后代本来就扫不到，归属无法证明时更不能声称干净。
+ * 残留三态，次序即优先级：
+ * 1. 运行中的记录（进程判定说它还在跑，且 supervisor 可证存活）不报残留：子进程树在场是这次实验
+ *    正在做的工作，只给中性描述；「仍有残留」只留给终止之后还能证明归属的存活进程。
+ * 2. 能证明归属的存活进程一律 present（保留既有路径）：记录里的后代与直接子进程逐个用 pid 加启动时间核对。
+ * 3. 已落定（exited/cancelled/aborted）且退出事实写明 descendantsVerified=true：说 none，依据是 supervisor
+ *    在写 exit.json 前的终止后核对——它是这些进程真正的父进程。
+ * 4. 其余一律 unknown：没有退出事实、核对为 false，或存在拿不到启动时间的存活 pid。宁可 unknown，
+ *    也不靠扫全盘同名进程把「不知道」换成「干净」。
  */
-function scanResidue(record: LaunchRecord, childOwnership: Ownership): ResidueView {
+function scanResidue(record: LaunchRecord, childOwnership: Ownership, supervisorAlive: boolean, exitFact: ExitFact | null): ResidueView {
   const childPid = numberOrNull(record.childPid);
   const childStartedAt = textOf(record.childStartedAt);
   const entries = Array.isArray(record.descendants) ? record.descendants : [];
@@ -407,23 +500,32 @@ function scanResidue(record: LaunchRecord, childOwnership: Ownership): ResidueVi
     const children = childrenOf(candidate.pid);
     if (children === null) uncertain = true; else for (const child of children) if (!seen.has(child)) live.push(child);
   }
-  if (live.length > 0) {
-    const unique = [...new Set(live)];
-    return { status: 'present', detail: '仍有残留：扫描发现能证明归属的存活进程 ' + unique.join('、') + '。', pids: unique };
+  const uniqueLive = [...new Set(live)];
+  const settled = settledRecordStates.includes(record.state);
+  // 1. 运行中（进程判定说它还在跑，且 supervisor 可证存活）：进程在场是正常状态，不是残留告警。
+  //    supervisor 已不可证的「running」记录不走这里——那正是需要如实说未知的情形。
+  if (liveRecordStates.includes(record.state) && supervisorAlive) {
+    const detail = uniqueLive.length > 0
+      ? '运行中，子进程树 ' + uniqueLive.length + ' 个存活进程（' + uniqueLive.join('、') + '）；进程在场属正常状态，不视为残留。'
+      : '运行中，当前没有探测到存活的子进程。';
+    return { status: 'unknown', detail, pids: uniqueLive };
   }
+  // 2. 终止之后仍能证明归属的存活进程：这才是「仍有残留」。
+  if (uniqueLive.length > 0) {
+    return { status: 'present', detail: '仍有残留：扫描发现能证明归属的存活进程 ' + uniqueLive.join('、') + '。', pids: uniqueLive };
+  }
+  // 3. 已落定且 supervisor 已核对过后代：唯一的「干净」证据。
+  if (settled && exitFact !== null && exitFact.descendantsVerified) {
+    return { status: 'none', detail: '已确认无残留：supervisor 在写退出事实（exit.json）前核对过后代进程树，整棵树都已退出。', pids: [] };
+  }
+  // 4. 其余如实说未知，不声称干净。
   if (uncertain || childOwnership === 'unconfirmed') {
     return { status: 'unknown', detail: '残留未知：存在无法确认归属的存活 pid，或后代扫描不可用。', pids: [] };
   }
-  // 记录的 pid 都已不存活。能否说「已确认无残留」取决于归属是否可证。
-  const attributable = childPid !== null && childStartedAt !== null && childOwnership === 'dead';
-  if (!attributable) return { status: 'unknown', detail: '残留未知：没有可证明归属的存活进程，也没有可核对的后代证据。', pids: [] };
-  if (process.platform === 'win32') {
-    // Windows 上子进程已退出即意味着 taskkill /t 的父子链不存在，但仍可能有脱离进程组的后代。
-    return { status: 'unknown', detail: '残留未知：记录中的进程都已退出，但无法排除已脱离进程组的后代。', pids: [] };
+  if (exitFact !== null && !exitFact.descendantsVerified) {
+    return { status: 'unknown', detail: '残留未知：退出事实写明后代未核对通过（descendantsVerified=false），不声称无残留。', pids: [] };
   }
-  return groupAlive(childPid) || !descendantsGone(childPid)
-    ? { status: 'present', detail: '仍有残留：以独立进程组启动的作答进程组仍存在。', pids: [childPid] }
-    : { status: 'none', detail: '已确认无残留：以独立进程组启动的作答进程组已退出，归属可证。', pids: [] };
+  return { status: 'unknown', detail: '残留未知：没有可证明归属的存活进程，也没有可核对的后代证据。', pids: [] };
 }
 
 /* ================================================================== *
@@ -441,7 +543,8 @@ export interface Launches {
   cancel(launchId: string): Promise<CancelOutcome>;
   /**
    * 把一条启动记录（账本 json、exit.json、日志与取消标记）移进回收目录。
-   * 进程仍在运行时拒绝：账本是对账所依赖的事实来源，移走它会让 sweeper 失去依据。
+   * 只拒绝「真的还在跑」：进程判定仍为 starting/registered/running，或残留扫描发现能证明归属的
+   * 存活进程。已落定的三种判定与 unknown 一律允许归档，理由见实现处的注释。
    */
   clean(launchId: string): { trashPath: string; moved: string[] };
   /** 对账并原子写回；由进程内定时器调用，GET 路由绝不调用它。 */
@@ -637,7 +740,7 @@ export function createLaunches(options: LaunchesOptions): Launches {
     const ttl = typeof record.leaseTtlMs === 'number' && Number.isFinite(record.leaseTtlMs) ? record.leaseTtlMs : leaseTtlMs;
     const runningish = record.state === 'running' || record.state === 'registered' || record.state === 'starting';
     const leaseExpired = runningish && (heartbeatAt === null || !(now() - Date.parse(heartbeatAt) <= ttl));
-    const merged = mergeState(facts.state, record.state ?? 'unknown', exit, facts.cleanup);
+    const merged = mergeState(facts.state, record.state ?? 'unknown', exit, facts.cleanup, facts.report);
     const descendants: DescendantView[] = (Array.isArray(record.descendants) ? record.descendants : []).map(item => ({
       pid: item.pid, startedAt: item.startedAt ?? null, role: item.role ?? 'descendant',
       ownership: probeOwnership(item.pid, item.startedAt ?? null),
@@ -648,7 +751,7 @@ export function createLaunches(options: LaunchesOptions): Launches {
       logPath: textOf(record.logPath) ?? '', plan: record.plan ?? emptyPlan, args: textArrayOf(record.args),
       pid, pidStartedAt, ownership, childPid, childOwnership, heartbeatAt, leaseExpired,
       note: typeof record.note === 'string' ? record.note : null, readable: true, error: null, exit, merged,
-      residue: scanResidue(record, childOwnership), descendants,
+      residue: scanResidue(record, childOwnership, recordSupervisorRunning(record, leaseTtlMs, now), exit), descendants,
       experiment: { directory: join(outputRoot === '' ? root : outputRoot, experimentId), exists: facts.exists, state: facts.state, cleanup: facts.cleanup },
       cancelRequested: existsSync(textOf(record.cancelPath) ?? cancelPathOf(launchId)),
     };
@@ -666,7 +769,10 @@ export function createLaunches(options: LaunchesOptions): Launches {
 
   /* ------------------------------ 对账 ------------------------------ */
 
-  const settled: readonly RecordState[] = ['exited', 'cancelled', 'aborted'];
+  /** 已落定的进程判定：sweeper 不再改写它们。 */
+  const settled = settledRecordStates;
+  /** 「还在跑」的进程判定：clean() 据此拒绝归档。unknown 不在其中，理由见 clean() 的注释。 */
+  const liveStates = liveRecordStates;
 
   function reconcile(launchId: string): void {
     const record = readRecord(launchId);
@@ -799,7 +905,8 @@ export function createLaunches(options: LaunchesOptions): Launches {
       return {
         launchId, action: confirmed ? 'delegated' : 'delegated-unconfirmed', confirmedExit: confirmed,
         text: confirmed ? '取消已由 supervisor 代理执行，退出事实已落盘。' : '已请求取消，但未在等待时限内取得退出事实；不声称已终止。',
-        residue: scanResidue(current, probeOwnership(numberOrNull(current.childPid), textOf(current.childStartedAt))), targets: [],
+        residue: scanResidue(current, probeOwnership(numberOrNull(current.childPid), textOf(current.childStartedAt)),
+          recordSupervisorRunning(current, leaseTtlMs, now), readExitFact(exitPath)), targets: [],
       };
     }
     // 2. supervisor 已死或无法确认归属：只终止能证明归属的存活进程树。
@@ -814,7 +921,7 @@ export function createLaunches(options: LaunchesOptions): Launches {
       if (isAlive(pid) && probeOwnership(pid, startedAt) === 'alive') targets.push(pid);
     }
     if (targets.length === 0) {
-      const residue = scanResidue(record, probeOwnership(childPid, childStartedAt));
+      const residue = scanResidue(record, probeOwnership(childPid, childStartedAt), supervisorAlive, readExitFact(exitPath));
       if (!supervisorAlive && (supervisorOwnership === 'unconfirmed' || residue.status === 'unknown')) {
         // 归属无法证明：不改写进程判定，让租约到期后的 sweeper 如实落定 unknown。
         return { launchId, action: 'unknown', confirmedExit: false,
@@ -835,7 +942,8 @@ export function createLaunches(options: LaunchesOptions): Launches {
     const gone = await waitForTargetsGone(targets, confirmMs);
     const current = readRecord(launchId) ?? record;
     const childOwnership = probeOwnership(numberOrNull(current.childPid), textOf(current.childStartedAt));
-    const residue = scanResidue(current, childOwnership);
+    // 走到这里 supervisor 已不可证存活：运行中的中性描述绝不套用到刚被终止的进程上。
+    const residue = scanResidue(current, childOwnership, supervisorAlive, readExitFact(exitPath));
     const terminated = gone && residue.status !== 'present';
     if (terminated) {
       updateRecord(recordPath(launchId), { state: 'aborted', settledAt: new Date(now()).toISOString(),
@@ -889,10 +997,26 @@ export function createLaunches(options: LaunchesOptions): Launches {
       if (!launchIdPattern.test(launchId)) throw new LaunchError(400, '启动标识不合法。');
       const record = readRecord(launchId);
       if (record === null) throw new LaunchError(404, '未找到该启动记录：' + launchId + '。');
-      // 只有已落定的记录才可清：运行中的账本是 sweeper 对账的依据，移走它会让进程失管。
+      // 闸门只拦「真的还在跑」，两条证据互相独立，命中任一即拒绝：
+      //   证据一：进程判定仍说它在跑；
+      //   证据二：残留扫描报 present，即存在能证明归属的存活进程。
       const state = textOf(record.state);
-      if (!settled.includes(state as RecordState)) {
-        throw new LaunchError(409, '该测评仍在进行或状态未知，请先取消并等待落定，再清理记录。');
+      if (state !== null && liveStates.includes(state as RecordState)) {
+        throw new LaunchError(409, '该测评仍在运行（进程判定：' + state + '），请先取消并等待落定，再归档记录。');
+      }
+      const residue = scanResidue(record, probeOwnership(numberOrNull(record.childPid), textOf(record.childStartedAt)),
+        recordSupervisorRunning(record, leaseTtlMs, now), readExitFact(textOf(record.exitPath) ?? exitPathOf(launchId)));
+      if (residue.status === 'present') {
+        throw new LaunchError(409, '发现可证明归属的存活进程，拒绝归档：' + residue.detail + '请先终止它，再归档记录。');
+      }
+      // unknown 允许归档的理由：reconcile() 只在「supervisor 租约已过期且检不出可证明归属的存活进程」
+      // 时才把进程判定落定为 unknown，因此 unknown 的前提正是上面刚复核过的「没有活着的、归它管的
+      // 进程」。此时账本不再是 sweeper 的对账依据——它不会再给这条记录写下新结论，留在列表里只是把
+      // 一条不会再变的记录卡在界面上。操作者显式归档即接受其代价：若仍有已脱离进程组的后代在跑，
+      // 将失去它的账本。归档只用 moveToTrash 移动四个同级文件，一个字节都不删，可手动移回。
+      const archivableStates: readonly RecordState[] = ['exited', 'cancelled', 'aborted', 'unknown'];
+      if (state === null || !archivableStates.includes(state as RecordState)) {
+        throw new LaunchError(409, '启动记录的进程判定无法识别（' + String(record.state ?? '缺失') + '），无法确认它已不在运行，拒绝归档。');
       }
       // 一次测评涉及四个同级文件；全部移走，否则列表里会留下孤立的 exit.json 或取消标记。
       const targets = [launchId + '.json', launchId + '.exit.json', launchId + '.log']

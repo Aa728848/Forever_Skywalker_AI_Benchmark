@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { buildApp } from './app.ts';
 import { createConfigProvider } from './config.ts';
 import { LaunchError, createLaunches, mergeState, type LaunchView } from './launches.ts';
+import { processStartTime } from '../../../scripts/experiment-supervisor.ts';
 
 /**
  * 自动测评启动层的测试。
@@ -295,6 +296,52 @@ describe('自动测评状态归并（mergeState 真值表）', () => {
     expect(merged.cleanupText).toContain('可能残留');
   });
 
+  it('completed 但归档里有未通过行、退出码 1 → completed-with-failures，不再判成失败', () => {
+    // 真实复现形状：55 行全部跑完、48 行通过 / 7 行未通过；退出码 1 是 dsh-compare 的
+    // CI 语义（有行未通过），不是进程异常退出。
+    const merged = mergeState('completed', 'exited', exit(1), 'complete', { rows: 55, passed: 48, unpassed: 7 });
+    expect(merged).toMatchObject({ process: 'exited', verdict: 'completed-with-failures', reportOutcome: 'completed-with-failures', exitOk: false, cleanup: 'complete' });
+    expect(merged.text).toContain('7 行未通过（共 55 行）');
+    expect(merged.text).toContain('不是进程异常退出');
+  });
+
+  it('completed 且逐行统计全部通过 → 已完成（归档的结论不被退出码改写）', () => {
+    expect(mergeState('completed', 'exited', exit(0), 'complete', { rows: 55, passed: 55, unpassed: 0 }))
+      .toMatchObject({ verdict: 'completed', reportOutcome: 'completed', exitOk: true });
+    // 归档说「跑完且逐行全通过」就以它为准，但退出码与它不一致要如实并置，不静默吞掉。
+    const conflicted = mergeState('completed', 'exited', exit(1), 'complete', { rows: 3, passed: 3, unpassed: 0 });
+    expect(conflicted).toMatchObject({ verdict: 'completed', reportOutcome: 'completed', exitOk: false });
+    expect(conflicted.text).toContain('与归档不一致');
+  });
+
+  it('completed 但没有逐行统计时，用非零退出码兜底识别「有未通过行」', () => {
+    expect(mergeState('completed', 'exited', exit(1), 'complete'))
+      .toMatchObject({ verdict: 'completed-with-failures', reportOutcome: 'completed-with-failures' });
+    expect(mergeState('completed', 'exited', exit(0), 'complete')).toMatchObject({ verdict: 'completed', reportOutcome: 'completed' });
+    // 有统计且 0 行未通过，不因缺统计才有的兜底而翻案。
+    expect(mergeState('completed', 'exited', exit(0), 'complete', { rows: 0, passed: 0, unpassed: 0 }).verdict).toBe('completed');
+  });
+
+  it('state=failed 仍是失败；没有 experiment.json 时退出码语义不变', () => {
+    expect(mergeState('failed', 'exited', exit(1), 'complete', { rows: 55, passed: 0, unpassed: 55 }))
+      .toMatchObject({ verdict: 'failed', reportOutcome: 'failed', exitOk: false });
+    expect(mergeState('failed', 'exited', exit(0), 'complete')).toMatchObject({ verdict: 'failed', reportOutcome: 'failed' });
+    // 只有 exit.json（例如 --check 预检或报告未落盘）：维持「非零即失败」的原语义。
+    expect(mergeState(null, 'exited', exit(1), 'pending')).toMatchObject({ verdict: 'failed', reportOutcome: null });
+  });
+
+  it('取消优先于 completed-with-failures，不被退出码抢走结论', () => {
+    expect(mergeState(null, 'cancelled', exit(1, null, true), 'pending', { rows: 2, passed: 1, unpassed: 1 }))
+      .toMatchObject({ verdict: 'cancelled', reportOutcome: null });
+    expect(mergeState('cancelled', 'exited', exit(1), 'pending')).toMatchObject({ verdict: 'cancelled', reportOutcome: 'cancelled' });
+  });
+
+  it('没有 exit.json 时不拔高结论，但 reportOutcome 仍如实带出归档自己的结论', () => {
+    const merged = mergeState('completed', 'unknown', null, 'complete', { rows: 2, passed: 1, unpassed: 1 });
+    expect(merged).toMatchObject({ process: 'unknown', verdict: 'unknown', exitOk: null, reportOutcome: 'completed-with-failures' });
+    expect(merged.text).toContain('执行状态未知');
+  });
+
   it('只有 experiment.json 明写 complete/retained 才给出确定的清理结论', () => {
     expect(mergeState('completed', 'exited', exit(0), 'complete').cleanup).toBe('complete');
     expect(mergeState('failed', 'exited', exit(1), 'retained')).toMatchObject({ cleanup: 'retained', cleanupUncertain: false });
@@ -315,6 +362,48 @@ describe('自动测评状态归并（mergeState 真值表）', () => {
     expect(mergeState(null, 'cancelled', exit(1, null, true), 'pending')).toMatchObject({ verdict: 'cancelled' });
     expect(mergeState(null, 'running', exit(1, null, false), 'pending')).toMatchObject({ verdict: 'failed' });
   });
+});
+
+describe('启动记录显示实验自身的结论（读 experiment.json）', () => {
+  const archive = (state: string, classifications: string[]) => ({
+    schemaVersion: '0.3.0', id: 'exp', state, rows: classifications.map(classification => ({ evaluation: { status: { classification } } })),
+    cleanup: { state: 'complete', directory: null, reason: null },
+  });
+
+  /** 启动一条记录，把退出事实改写成给定退出码，并写入归档；返回 describe() 的视图。 */
+  async function settledWithArchive(h: Harness, code: number, report: Record<string, unknown>) {
+    const view = await h.launches.launch(launchRequest(h));
+    const exitPath = join(h.launchesRoot, view.launchId + '.exit.json');
+    await until(() => { try { readFileSync(exitPath, 'utf8'); return true; } catch { return false; } }, 30_000, '退出事实');
+    writeFileSync(exitPath, JSON.stringify({ ...(readJson(exitPath) ?? {}), code }));
+    h.launches.sweep();
+    const directory = join(h.outputRoot, view.launchId);
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(join(directory, 'experiment.json'), JSON.stringify(report));
+    return h.launches.describe(view.launchId);
+  }
+
+  it('归档 completed + 48 通过 / 7 未通过 + 退出码 1 → 已完成但有未通过行（真实复现形状）', async () => {
+    const h = harness({ sleepMs: 300 });
+    try {
+      const described = await settledWithArchive(h, 1, archive('completed', [...Array(48).fill('passed'), ...Array(7).fill('check-failed')]));
+      expect(described.state).toBe('exited');
+      expect(described.exit?.code).toBe(1);
+      expect(described.experiment.state).toBe('completed');
+      expect(described.merged.verdict).toBe('completed-with-failures');
+      expect(described.merged.reportOutcome).toBe('completed-with-failures');
+      expect(described.merged.text).toContain('7 行未通过（共 55 行）');
+    } finally { h.launches.close(); }
+  }, 60_000);
+
+  it('归档 state=failed → 仍然是失败（不把真失败说成「有未通过行」）', async () => {
+    const h = harness({ sleepMs: 300 });
+    try {
+      const described = await settledWithArchive(h, 1, archive('failed', [...Array(53).fill('passed'), ...Array(2).fill('check-failed')]));
+      expect(described.experiment.state).toBe('failed');
+      expect(described.merged).toMatchObject({ verdict: 'failed', reportOutcome: 'failed' });
+    } finally { h.launches.close(); }
+  }, 60_000);
 });
 
 describe('受控启动（假脚本，不调用任何模型）', () => {
@@ -625,9 +714,35 @@ describe('路由：发起、纯读、取消、外部提交', () => {
       expect(cancelled.statusCode).toBe(200);
       const outcome = cancelled.json() as { action: string; confirmedExit: boolean; residue: { status: string; detail: string } };
       expect(['delegated', 'delegated-unconfirmed']).toContain(outcome.action);
-      // 残留三态：确认终止的路径也不会谎报成「已确认无残留」。
+      // 残留三态：给 none 必须有证据——写明是 supervisor 的终止后核对，而不是「扫不到就当干净」。
       expect(['none', 'unknown', 'present']).toContain(outcome.residue.status);
-      if (outcome.residue.status === 'none') expect(outcome.residue.detail).toContain('归属可证');
+      if (outcome.residue.status === 'none') expect(outcome.residue.detail).toContain('supervisor');
+    } finally { await app.close(); h.launches.close(); }
+  }, 120_000);
+
+  it('取消路由容忍「带 JSON content-type 却无请求体」：不再被 400 挡在业务逻辑之前', async () => {
+    const { h, app } = appHarness();
+    try {
+      const created = await app.inject({ method: 'POST', url: '/api/experiments', headers: { 'x-bench-token': token }, payload: launchRequest(h) });
+      const launchId = (created.json() as { launch: LaunchView }).launch.launchId;
+      const cancelUrl = '/api/experiments/' + launchId + '/cancel';
+      // 容忍空体只影响解析器，不放松授权：无令牌仍然先被拒。
+      expect((await app.inject({ method: 'POST', url: cancelUrl, headers: { 'content-type': 'application/json' } })).statusCode).toBe(401);
+      // 回归形状：网页「取消这次测评」曾经发出「带 application/json 且没有请求体」的请求，
+      // Fastify 以 400 FST_ERR_CTP_EMPTY_JSON_BODY 拒绝，请求根本到不了 launches.cancel()。
+      const emptyJson = await app.inject({ method: 'POST', url: cancelUrl, headers: { 'x-bench-token': token, 'content-type': 'application/json' } });
+      expect(emptyJson.statusCode).toBe(200);
+      const outcome = emptyJson.json() as { launchId: string; action: string };
+      // 走的是真实的取消分支（结果取决于此刻 supervisor 是否还活着），但请求确实到达了业务逻辑：
+      // 取消标记与账本字段都已落盘，而不是被解析器挡回。
+      expect(outcome.launchId).toBe(launchId);
+      expect(typeof outcome.action).toBe('string');
+      expect(readJson(join(h.launchesRoot, launchId + '.json'))?.cancelRequestedAt).toBeTruthy();
+      expect(existsSync(join(h.launchesRoot, launchId + '.cancel-requested'))).toBe(true);
+      // 容忍的边界只到「真的没有请求体」：带畸形 JSON 的请求照旧 400，参数校验没有被放宽。
+      const malformed = await app.inject({ method: 'POST', url: cancelUrl, headers: { 'x-bench-token': token, 'content-type': 'application/json' }, payload: '{oops' });
+      expect(malformed.statusCode).toBe(400);
+      expect(JSON.parse(malformed.body).code).toBe('FST_ERR_CTP_INVALID_JSON_BODY');
     } finally { await app.close(); h.launches.close(); }
   }, 120_000);
 
@@ -742,3 +857,176 @@ describe('与真实 dsh-compare 的受控接线（--check，不调用模型、�
     } finally { launches.close(); }
   }, 120_000);
 });
+
+describe('归档启动记录（clean）的闸门只拦「真的还在跑」', () => {
+  /** 捕获 LaunchError 以便断言状态码；不是 LaunchError 一律算未抛。 */
+  const attempt = (fn: () => unknown): LaunchError | null => {
+    try { fn(); return null; } catch (error) { return error instanceof LaunchError ? error : null; }
+  };
+
+  /**
+   * 纯夹具：直接写启动记录，不经过 launch()，因此没有真实 supervisor。
+   * childScript 指向仓库内真实脚本（reconcile 只改写这种记录），心跳、pid 与后代由各用例安排，
+   * 用来精确制造目标进程判定。写出的字段与 LaunchRecord 同形，缺省值可被 record 覆盖。
+   */
+  function fixture(h: Harness, launchId: string, record: Record<string, unknown>): void {
+    writeFileSync(join(h.launchesRoot, launchId + '.json'), JSON.stringify({
+      launchId, supervisorToken: 'fixture-token', kind: 'comparison', experimentId: launchId, outputRoot: h.outputRoot,
+      startedAt: '2026-09-26T17:22:46.133Z', state: 'unknown', exitCode: null, logPath: join(h.launchesRoot, launchId + '.log'),
+      plan: { taskIds: ['CACHE-02'], presets: ['standard'], modes: ['off'], repeats: 1, timeoutMinutes: 20, maxTokens: 16384,
+        measurePerformance: false, provider: 'fake-provider', model: 'fake-model', answers: 1, concurrency: 1 },
+      args: [], childScript: supervisorScript, childArgs: [], exitPath: join(h.launchesRoot, launchId + '.exit.json'),
+      cancelPath: join(h.launchesRoot, launchId + '.cancel-requested'), pid: null, pidStartedAt: null,
+      childPid: null, childStartedAt: null, heartbeatAt: null,
+      leaseTtlMs: 30_000, heartbeatMs: 5_000, descendants: [], cancelRequestedAt: null, settledAt: null, note: null,
+      ...record,
+    }) + '\n');
+    writeFileSync(join(h.launchesRoot, launchId + '.log'), 'fixture log\n');
+  }
+
+  it('unknown 且没有可证明归属的存活进程 → clean 成功，且列表不再显示', () => {
+    const h = harness();
+    try {
+      // 强杀场景的复现：supervisor 与子进程的 pid 都早已不存在（没有退出事实），后代无法核对。
+      fixture(h, 'exp-killed-supervisor', {
+        state: 'unknown', pid: 62140, pidStartedAt: '2026-09-26T17:22:40.000Z',
+        childPid: 62141, childStartedAt: '2026-09-26T17:22:41.000Z', heartbeatAt: '2026-09-26T17:22:46.133Z',
+        note: 'supervisor 租约已过期且没有退出事实：执行状态未知，可能仍在运行。',
+      });
+      const before = h.launches.describe('exp-killed-supervisor');
+      expect(before.state).toBe('unknown');
+      expect(before.merged.verdict).toBe('unknown');
+      // 闸门的第二条证据必须不成立，否则这条用例测的就不是「放开 unknown」。
+      expect(before.residue.status).not.toBe('present');
+      const outcome = h.launches.clean('exp-killed-supervisor');
+      expect(outcome.moved).toContain('exp-killed-supervisor.json');
+      expect(outcome.moved).toContain('exp-killed-supervisor.log');
+      expect(h.launches.list().some(item => item.launchId === 'exp-killed-supervisor')).toBe(false);
+      // 移动而不是删除：账本原样躺在回收目录里，可手动移回。
+      expect(readFileSync(join(outcome.trashPath, 'exp-killed-supervisor.json'), 'utf8')).toContain('exp-killed-supervisor');
+    } finally { h.launches.close(); }
+  }, 30_000);
+
+  it('进程判定仍在运行（starting/registered/running）→ 409，账本原样不动', () => {
+    const h = harness();
+    try {
+      for (const state of ['starting', 'registered', 'running'] as const) {
+        fixture(h, 'exp-' + state, { state, pid: 62150, heartbeatAt: new Date().toISOString() });
+        const error = attempt(() => h.launches.clean('exp-' + state));
+        expect(error?.status).toBe(409);
+        expect(String(error?.message)).toContain('仍在运行');
+        expect(existsSync(join(h.launchesRoot, 'exp-' + state + '.json'))).toBe(true);
+      }
+    } finally { h.launches.close(); }
+  }, 30_000);
+
+  it('残留扫描报 present（有可证明归属的存活子进程）→ 409，文案指明是可证明归属的存活进程', () => {
+    const h = harness();
+    let sleeper: number | null = null;
+    try {
+      sleeper = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], { stdio: 'ignore', windowsHide: true }).pid ?? null;
+      expect(sleeper).not.toBeNull();
+      const startedAt = processStartTime(sleeper as number, { cache: false });
+      // 归属可证需要进程启动时间；本平台取不到时前提不成立，如实跳过而不是伪造结论。
+      if (startedAt === null) return;
+      fixture(h, 'exp-live-child', {
+        state: 'unknown', pid: 62160, pidStartedAt: '2026-09-26T17:22:40.000Z', heartbeatAt: '2026-09-26T17:22:46.133Z',
+        childPid: sleeper, childStartedAt: startedAt,
+      });
+      expect(h.launches.describe('exp-live-child').residue.status).toBe('present');
+      const error = attempt(() => h.launches.clean('exp-live-child'));
+      expect(error?.status).toBe(409);
+      expect(String(error?.message)).toContain('可证明归属的存活进程');
+      expect(existsSync(join(h.launchesRoot, 'exp-live-child.json'))).toBe(true);
+    } finally {
+      if (sleeper !== null && isAlive(sleeper)) { try { process.kill(sleeper, 'SIGKILL'); } catch { /* 已退出 */ } }
+      h.launches.close();
+    }
+  }, 30_000);
+});
+/** 与 T2 的 clean 闸门共用同一个夹具形状：直接写启动记录，不经过 launch()。 */
+function residueFixture(h: Harness, launchId: string, record: Record<string, unknown>): void {
+  writeFileSync(join(h.launchesRoot, launchId + '.json'), JSON.stringify({
+    launchId, supervisorToken: 'fixture-token', kind: 'comparison', experimentId: launchId, outputRoot: h.outputRoot,
+    startedAt: '2026-09-27T03:14:26.894Z', state: 'unknown', exitCode: null, logPath: join(h.launchesRoot, launchId + '.log'),
+    plan: { taskIds: ['CACHE-02'], presets: ['standard'], modes: ['off'], repeats: 1, timeoutMinutes: 20, maxTokens: 16384,
+      measurePerformance: false, provider: 'fake-provider', model: 'fake-model', answers: 1, concurrency: 1 },
+    args: [], childScript: supervisorScript, childArgs: [], exitPath: join(h.launchesRoot, launchId + '.exit.json'),
+    cancelPath: join(h.launchesRoot, launchId + '.cancel-requested'), pid: null, pidStartedAt: null,
+    childPid: null, childStartedAt: null, heartbeatAt: null,
+    leaseTtlMs: 30_000, heartbeatMs: 5_000, descendants: [], cancelRequestedAt: null, settledAt: null, note: null,
+    ...record,
+  }) + '\n');
+  writeFileSync(join(h.launchesRoot, launchId + '.log'), 'fixture log\n');
+}
+
+/** 退出事实文件：descendantsVerified 是 supervisor 的终止后核对结论。 */
+function writeExitFixture(h: Harness, launchId: string, descendantsVerified: boolean): void {
+  writeFileSync(join(h.launchesRoot, launchId + '.exit.json'), JSON.stringify({
+    code: 0, signal: null, at: '2026-09-27T04:30:00.000Z', descendantsVerified, note: null, cancelled: false,
+  }, null, 2) + '\n');
+}
+
+describe('残留口径：运行中不报警、落定以 supervisor 的后代核对为准', () => {
+  it('运行中（子进程树仍在场）不以「仍有残留」告警，只给中性描述', () => {
+    const h = harness();
+    let sleeper: number | null = null;
+    try {
+      sleeper = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], { stdio: 'ignore', windowsHide: true }).pid ?? null;
+      expect(sleeper).not.toBeNull();
+      const startedAt = processStartTime(sleeper as number, { cache: false });
+      // 归属可证需要进程启动时间；本平台取不到时前提不成立，如实跳过而不是伪造结论。
+      if (startedAt === null) return;
+      // 现象 A 的复现形状：正在跑的实验，子进程树里的进程被旧口径当成「残留」。
+      residueFixture(h, 'exp-running', {
+        state: 'running', pid: process.pid, pidStartedAt: processStartTime(process.pid, { cache: false }),
+        heartbeatAt: new Date().toISOString(), childPid: sleeper, childStartedAt: startedAt,
+      });
+      const view = h.launches.describe('exp-running');
+      expect(view.residue.status).not.toBe('present');
+      expect(view.residue.detail).toContain('运行中');
+      expect(view.residue.detail).not.toContain('仍有残留');
+      // 中性描述仍如实报出在场进程的数量与 pid，不隐藏事实。
+      expect(view.residue.pids).toContain(sleeper);
+      expect(view.residue.detail).toMatch(/子进程树 \d+ 个存活进程/);
+    } finally {
+      if (sleeper !== null && isAlive(sleeper)) { try { process.kill(sleeper, 'SIGKILL'); } catch { /* 已退出 */ } }
+      h.launches.close();
+    }
+  }, 30_000);
+
+  it('已落定且 exit.json 核对 descendantsVerified=true → none，文案写明依据是 supervisor 的终止后核对', () => {
+    const h = harness();
+    try {
+      // 现象 B 的复现形状：进程都已退出，退出事实已确认整棵后代树退出。
+      residueFixture(h, 'exp-settled-clean', {
+        state: 'exited', pid: 62170, pidStartedAt: '2026-09-26T15:40:30.000Z',
+        childPid: 62171, childStartedAt: '2026-09-26T15:40:34.000Z', heartbeatAt: '2026-09-26T15:41:00.000Z',
+      });
+      writeExitFixture(h, 'exp-settled-clean', true);
+      const view = h.launches.describe('exp-settled-clean');
+      expect(view.exit?.descendantsVerified).toBe(true);
+      expect(view.residue.status).toBe('none');
+      expect(view.residue.detail).toContain('supervisor');
+      expect(view.residue.detail).toContain('后代');
+      expect(view.residue.pids).toEqual([]);
+    } finally { h.launches.close(); }
+  }, 30_000);
+
+  it('没有退出事实、归属不可证 → unknown（绝不因为「扫不到」就说干净）', () => {
+    const h = harness();
+    try {
+      // 强杀场景：supervisor 与子进程的 pid 都早已不存在，后代核对无从谈起。
+      residueFixture(h, 'exp-unknown', {
+        state: 'unknown', pid: 62180, pidStartedAt: '2026-09-26T17:22:40.000Z',
+        childPid: 62181, childStartedAt: '2026-09-26T17:22:41.000Z', heartbeatAt: '2026-09-26T17:22:46.133Z',
+        note: 'supervisor 租约已过期且没有退出事实：执行状态未知，可能仍在运行。',
+      });
+      const view = h.launches.describe('exp-unknown');
+      expect(view.residue.status).toBe('unknown');
+      expect(view.residue.detail).toContain('残留未知');
+      expect(view.residue.detail).not.toContain('已确认无残留');
+    } finally { h.launches.close(); }
+  }, 30_000);
+});
+

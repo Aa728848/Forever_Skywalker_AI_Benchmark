@@ -1,9 +1,131 @@
 # 开发交接与执行手册
 
+## 2026-09-27 网页「供应商」页签：项目自己的 pi-ai 供应商档案，作答会话真的用得上
+
+此前供应商只能手工写进 `~/.dsh/profiles/<profile>/cordis.patch.yml` 的 `- id: llm-pi-ai`
+`config.providers`。本轮把它搬进本项目：网页新增第七个页签**供应商**，档案落在
+`data/provider-profiles.json`（`data/` 已忽略），并且**作答与裁判会话真的会用到它**。
+
+关键接缝（不是新造一套）：`preparePreset()` 原本已经把「启动补丁 + 预设补丁」作为 `--patch`
+交给 DSH。本轮把档案写成第三层 `project-providers.patch.json`，放在**最后**——同名时以项目档案
+为准。补丁行先 `insert` 再按固定 id `fsa-pi-ai-providers` 配置，因此 profile 补丁层有没有这一行，
+会话里都只多挂一条项目路由集；`fingerprint` 只在档案非空时把该层内容一并摘要，所以改档案会换指纹。
+档案为空时**一层都不产生**，挂载内容与指纹与改动前逐字节相同。
+
+其余边界：密钥永不入库、永不回显（只存 `apiKeyEnv` 引用名，界面只显示「已配置 / 未配置」，值只在
+探测出网时进请求头）；目录 `mergeProjectProviders()` 把项目 provider 并入并标 `source`，同名项目胜出；
+`POST /api/providers/probe` 是唯一出网路由，逐条对齐 DSH 的 `llm-pi-ai/src/discovery.ts`（15 秒超时、
+4 MiB 上限拒绝而非截断、不可探测的协议如实说「无法探测」）；只有显式带令牌且 `confirm: true` 的
+`export-dsh` 才写 `~/.dsh`，且先备份为同目录 `.backup-<时间戳>`。
+
+本轮验证：`pnpm check` exit 0（**423 项测试、29 个文件**，含 `tsc --noEmit`、`catalog:check` 与生产构建）。
+反向验证：把注入层换成恒为 `null`，新增的 launch 层用例立刻失败（1 failed / 54 passed），恢复后全过。
+按约束未跑 `pnpm test:e2e`、未重启任何服务、未动 `data/**`。owning Note
+[pi-ai provider 档案](notes/implemented/feature/2026-09-27-pi-ai-provider-profiles.md) 已就地更新。
+## 2026-09-27 网页「发起测评」显示实验自身的结论，并放开状态未知记录的归档
+
+前端此前只按 `merged.verdict` 贴标签，而漏了上一轮新增的取值：`verdictText` 没有
+`completed-with-failures`，`verdictKind` 对未知键回落 `idle`，于是「跑完但有行未通过」
+在列表里显示成灰色的「已完成」、在详情里显示成裸词。本轮补齐前端契约，并让归档按钮
+不再对自己写死的 `unknown` 关门。
+
+改动（`apps/web/src/LaunchPanel.tsx`，只改这一处 UI）：
+1. `MergedState` 补 `reportOutcome`；详情新增「实验结论」与「进程结论」两行并列——实验结论
+   取自归档（`completed` / `completed-with-failures` / `failed` / `cancelled` / `running`，
+   没有 `experiment.json` 时为 null，如实显示「未登记」），进程结论取 `verdict` 与 `exitOk`
+   （退出码 0 / 非 0 / 没有退出事实不判成败）。两者互不顶替；行数由服务端 `merged.text` 给出，
+   前端不再自行计算。
+2. `verdictText` 补 `'completed-with-failures': '已完成（有未通过行）'`，`verdictKind` 给它
+   `warn` 一档；列表项在有实验结论时追加一行「实验结论：…」。
+3. 残留徽标改为按 `merged.process` 分流：运行中的 `unknown` 显示「运行中（不判残留）」（`idle`，
+   不是告警），只有已落定仍是 `unknown` 才显示「残留未知」；`none` / `present` 文案不变。
+4. 归档按钮的禁用条件对齐服务端 `clean()` 的两条拒绝证据：`merged.process === 'live'`
+   或 `residue.status === 'present'`；`unknown` 不再置灰。按钮旁新增
+   `cleanupDisabledReason()` 说明，与取消按钮的 `cancelDisabledReason()` 同级，不靠光标猜。
+
+本轮验证：`pnpm check` exit 0（**394 项测试、28 个文件**，含 `tsc --noEmit`、`catalog:check`
+与 `vite build` 生产构建）。按约束**未跑 `pnpm test:e2e`**、未重启任何服务、未动 `data/**`。
+新结论与新按钮要等网页重新加载（生产部署需重新 `pnpm build`）后才在界面上生效。
+
+## 2026-09-27 启动记录不再恒显「仍有残留」：残留判定以 supervisor 的后代核对为准
+
+现象：并行度 1 的**运行中**实验报「仍有残留」，点名 dsh-compare 当下正在跑的 DSH 会话/容器进程（子进程树在场被当成了残留）；而另一条已 exit 0、`exit.json` 写着 `descendantsVerified=true` 的实验仍报「残留未知」。
+
+根因：`apps/api/src/launches.ts` 的 `scanResidue()` 把「子进程树里活着的进程」等同于残留，不区分运行中与终止后的真残留；Windows 分支又硬编码 `unknown`，`descendantsVerified` 从未被读取——而这个字段正是真正父进程 supervisor 在写退出事实前做的终止后核对。
+
+改动（`scanResidue` 次序即优先级）：
+1. 运行中（`state ∈ {starting,registered,running}` 且 supervisor 可证存活）不报残留，只给中性描述「运行中，子进程树 N 个存活进程（pid…）」；`pids` 如实带出，但绝不用 present/「仍有残留」的语义。
+2. 终止之后仍能证明归属的存活进程照旧报 `present`（保留既有 `childrenOf` 路径）。
+3. 已落定（`exited`/`cancelled`/`aborted`）且 `exit.json` 的 `descendantsVerified=true` → `none`，文案写明依据是 supervisor 的终止后核对；不再按平台分叉。
+4. 其余（没有 `exit.json`、核对为 `false`、或存在拿不到启动时间的存活 pid）保持 `unknown`。不新增 `wmic`/`tasklist` 全盘扫描，宁可 unknown 也不误报。
+
+`scripts/experiment-supervisor.ts` 未改（它本来就写 `descendantsVerified`）。新增三条单测覆盖上述三个情形；`launches.test.ts` 一条既有断言由校验「归属可证」改为校验新的证据文案。
+
+本轮验证：`pnpm check` exit 0（**394 项测试、28 个文件**，含 `apps/api/src/launches.test.ts` 的 47 项与其中新增的三条残留用例）。未重启任何服务、未动 `data/**`——用户当时有真实测评在跑，改动要等 API 重启后才生效。
+
+## 2026-09-27 启动记录显示实验自身的结论：跑完但有未通过行不再算「失败」
+
+用户实测 `exp-2026-09-26T18-21-48-261Z-2b36df82`（stepfun/step-5-preview，并行度 3）：
+`experiment.json` 为 `completed`、55 行全部跑完（48 通过 / 7 未通过）、`cleanup=complete`，
+`exit.json` 为 `code=1`，而启动记录显示「失败」。
+
+根因是退出码被当成了实验结论。`scripts/dsh-compare.ts` 在「实验没跑完或任一行未通过」时
+置 `process.exitCode = 1`——这是 CI 语义，模型答错题同样得到退出码 1；而
+`apps/api/src/launches.ts` 的 `mergeState` 只看 `exitFact.code`，于是把「有未通过行」
+显示成「进程异常退出」。退出码语义未改动（CI 仍需要它）。
+
+改动：`mergeState` 增加第五个输入 `reportFacts: { rows, passed, unpassed } | null`
+（由 `readExperimentFacts` 数 `rows[].evaluation.status.classification === 'passed'` 得出，
+`rows` 不是数组时整块为 null），`MergedState` 增加 `reportOutcome`。真值表变为：
+
+| 归档（experiment.json） | 退出码 | verdict |
+| --- | --- | --- |
+| `completed`，有行未通过 | 1（CI 语义） | `completed-with-failures` |
+| `completed`，逐行全通过 | 0 | `completed` |
+| `completed`，逐行全通过 | 非 0 | `completed`，文案并置「与归档不一致，请核查该退出码的来源」 |
+| `failed` | 任意 | `failed` |
+| `cancelled` / 取消类信号 | 任意 | `cancelled`（优先于 `completed-with-failures`） |
+| 无 `experiment.json`（仅预检） | 0 / 非 0 | `completed` / `failed`（原语义不变） |
+| 无 `exit.json` | — | 跟随进程判定，`unknown` 仍是 `unknown`；`reportOutcome` 仍如实带出归档结论 |
+
+文案直接用行数：「N 行未通过（共 M 行）」。逐行统计读不到时用「`completed` + 非零退出码」
+这一 CI 语义兜底识别有未通过行，此时只说「有未通过行」不报行数——不把兜底说成归档的明写事实。
+
+验证：`pnpm typecheck` 通过；`apps/api/src/launches.test.ts` **44 项全通过**，新增真值表 6 项
+与两条经真实启动链路的用例（复用真实 supervisor，把退出事实改写成 `code=1` 再写入归档，
+覆盖「48 通过 / 7 未通过 → 已完成但有未通过行」与「`state=failed` → 仍为失败」）。
+**未重启任何服务**：执行中的实验已装载旧代码，新结论需重启 API 后才生效。
+
+前端契约（交给 web-launch，task-4）：`merged.reportOutcome` 取值为
+`'running' | 'completed' | 'completed-with-failures' | 'cancelled' | 'failed' | null`，
+与 `merged.verdict` 并列；`verdict` 新增取值 `completed-with-failures`，
+`verdictText` 需补这一项。本次未改 `apps/web/**`。
+
+## 2026-09-27 sdk profile 补齐 mimo（与网页可选项对齐）
+
+用户在 `~/.dsh/profiles/web/cordis.patch.yml` 的 `llm-pi-ai` providers 里加了 mimo
+（`apiKeyEnv: MIMO_API_KEY`，模型 `mimo-v2.6-flash` / `mimo-v2.6-pro`）。网页能选到，
+但本项目自动作答用的是 `BENCH_DSH_PROFILE=sdk`，而 sdk 的补丁层只有 stepfun——
+同一台机器上「网页」与「自动作答」的可选模型因此差一个供应商。
+
+改动（**本机 DSH 配置，不属于仓库**）：`~/.dsh/profiles/sdk/cordis.patch.yml` 的
+`- id: llm-pi-ai` providers 段追加与 web 完全相同的 mimo 声明（同 apiKeyEnv / api /
+baseURL / 模型 / 思考等级）。凭据仍在 `~/.dsh/.credentials.yaml` 的 refs 里，补丁层只补
+声明、不复制密钥。改动前备份：同目录 `.backup-20260927-105825`。
+
+实测（未调用模型、未联网）：`discoverDshModels` 在 `sdk` 与 `web` 下都返回 **9** 个
+供应商且同名同模型，`sdk -> mimo -> [mimo-v2.6-flash, mimo-v2.6-pro]`。仓库内文档同步：
+`docs/quick-start.md`「把订阅渠道装进 sdk profile」第二步补上 pi-ai provider 档案这一半，
+owning Note [pi-ai provider 档案](notes/implemented/feature/2026-09-27-pi-ai-provider-profiles.md)
+就地更新，写明两个 profile 的 pi-ai 声明必须同名同模型。
+
+未做：没有改本项目代码（worker 本就动态读补丁层），没有把 `.env` 的作答模型切到 mimo，
+也没有调用任何真实模型或裁判。
+
 ## 2026-09-27 单题失败不再中止整轮；超时与 check 不通过判 0
 
 一次 55 题实验（stepfun + 并行度 3）只跑完 **4 题**就 failed，其余 51 题停在 pending。
-报告里唯一的问题是 `initialize timed out after 10000ms waiting for dsh profile "sdk"`。
+报告里唯一的问题是 `initialize timed out after 10000ms waiting for dsh profile \"sdk\"`。
 
 三个缺陷叠加：
 1. **DSH 的 initialize 超时默认 10 秒**，是按单进程估的；并行同时拉起多个 DSH 进程时不够。
@@ -324,9 +446,9 @@ DSH目录读取调用已安装DeepSeek/Pi-ai适配器的本地接口，返回pro
 | --- | --- | --- |
 | 核心题库 | 48 道完整题包；五组证据、Windows与固定Linux三种实现验收通过 | 难度与规则校准 |
 | 来源集成 | 7/7 固定提交模块集成；来源许可/哈希、Windows与Linux三种实现验收通过 | 发布校准 |
-| 完成/执行 | CLI/API 完成、冻结、执行、评分、回收与修订；Linux真实边界5项通过 | 真实模型作答与独立裁判验收 |
+| 完成/执行 | CLI/API 完成、冻结、执行、评分、回收与修订；Linux真实边界5项通过；作答会话按 `data/provider-profiles.json` 注入供应商层 | 真实模型作答与独立裁判验收 |
 | 质量评分 | TS/Python/F# 静态事实；真实性能配对；两轮独立 DSH 评分 Agent、预算、证据、人工复核 | 用户配置 BENCH_JUDGE_DSH_*；真实评分 Agent 和静态/性能阈值校准 |
-| 中文面板 | 六个页签：目录、评分预览、run/attempt 检查与时间线、报告中心（实验列表/明细/四产物下载）、配置面板（.env 掩码读写、保存即时生效）、发起测评（仅预检默认 + supervisor 托管 + 取消） | 随改动运行端到端测试；真实模型端的取消尚未验证 |
+| 中文面板 | 七个页签：目录、评分预览、run/attempt 检查与时间线、报告中心（实验列表/明细/四产物下载）、配置面板（.env 掩码读写、保存即时生效）、发起测评（仅预检默认 + supervisor 托管 + 取消）、供应商（项目档案 CRUD + 端点探测 + 可选导出到 DSH 补丁层） | 随改动运行端到端测试；真实模型端的取消尚未验证；供应商探测只在本机假端点上验证过，未对真实网关跑过 |
 | Linux | Engine29.7.2/Linux、固定镜像四运行时、5项边界、55题三种实现及性能链均通过 | 固定环境上的发布校准 |
 
 fixture-ready 不等于 ready。缺客观或评审证据时总分保持 null；本机为 local，未满足发布门槛的容器结果为 rehearsal；脚本演练不是模型成绩。
@@ -344,7 +466,7 @@ fixture-ready 不等于 ready。缺客观或评审证据时总分保持 null；�
 ## 验收与继续执行
 
 ```powershell
-Set-Location -LiteralPath 'C:\Users\A\Documents\ChatGPT\Forever_Skywalker_AI_Benchmark'
+Set-Location -LiteralPath 'C:\\Users\\A\\Documents\\ChatGPT\\Forever_Skywalker_AI_Benchmark'
 git status --short --branch
 pnpm install --frozen-lockfile
 pnpm check

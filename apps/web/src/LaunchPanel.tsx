@@ -32,7 +32,7 @@ interface LaunchPlan {
   taskIds: string[]; presets: string[]; modes: string[]; repeats: number; timeoutMinutes: number; maxTokens: number;
   measurePerformance: boolean; provider: string; model: string; answers: number;
 }
-interface MergedState { process: string; verdict: string; text: string; cleanup: string; cleanupText: string; cleanupUncertain: boolean; exitOk: boolean | null }
+interface MergedState { process: string; verdict: string; text: string; reportOutcome: string | null; cleanup: string; cleanupText: string; cleanupUncertain: boolean; exitOk: boolean | null }
 interface ResidueView { status: 'none' | 'unknown' | 'present'; detail: string; pids: number[] }
 interface LaunchView {
   launchId: string; kind: string; experimentId: string; outputRoot: string; startedAt: string; state: string; exitCode: number | null;
@@ -76,14 +76,39 @@ const initialForm: LaunchForm = {
   measurePerformance: false, outputRoot: '',
 };
 
-/** 展示徽标的种类由服务端结论决定，不在这里发明新的状态词。 */
+/**
+ * 展示徽标的种类由服务端结论决定，不在这里发明新的状态词。
+ * completed-with-failures 必须单独给一档：它是「跑完了但有行没通过」，不是失败，也不等于全部通过。
+ */
 const verdictKind = (verdict: string): 'ok' | 'warn' | 'bad' | 'idle' =>
-  verdict === 'running' || verdict === 'starting' ? 'ok' : verdict === 'completed' ? 'idle' : verdict === 'cancelled' || verdict === 'aborted' ? 'warn' : verdict === 'failed' || verdict === 'unknown' ? 'bad' : 'idle';
+  verdict === 'running' || verdict === 'starting' ? 'ok' : verdict === 'completed' ? 'idle' : verdict === 'completed-with-failures' ? 'warn' : verdict === 'cancelled' || verdict === 'aborted' ? 'warn' : verdict === 'failed' || verdict === 'unknown' ? 'bad' : 'idle';
 const verdictText: Record<string, string> = {
-  starting: '正在启动', running: '进行中', completed: '已完成', failed: '失败', cancelled: '已取消', aborted: '已中止', unknown: '状态未知',
+  starting: '正在启动', running: '进行中', completed: '已完成', 'completed-with-failures': '已完成（有未通过行）',
+  failed: '失败', cancelled: '已取消', aborted: '已中止', unknown: '状态未知',
 };
-const residueKind = (status: string): 'ok' | 'warn' | 'bad' => status === 'none' ? 'ok' : status === 'present' ? 'bad' : 'warn';
+
+/**
+ * 实验自身的结论（merged.reportOutcome，来自 experiment.json 的归档结论）。
+ * 它与进程结论是两件事：进程可能因 CI 语义（有行未通过）以非零码退出，而实验其实跑完了。
+ * null 表示没有 experiment.json 或它的 state 不可识别（仅预检属于这种情况），如实说，不拿进程结论顶替。
+ */
+const reportOutcomeText: Record<string, string> = {
+  running: '作答中（experiment.json 仍为 running）', completed: '跑完，逐行全部通过可用验证',
+  'completed-with-failures': '跑完，但有行未通过可用验证', cancelled: '实验被取消', failed: '实验失败',
+};
+const reportOutcomeLabel = (outcome: string | null): string =>
+  outcome === null ? '未登记（没有 experiment.json，或它的 state 不可识别；仅预检属于这种情况）' : (reportOutcomeText[outcome] ?? outcome);
+
+/**
+ * 残留三态。进程判定为 live 时服务端返回的 status 是 unknown 加中性描述——子进程树在场是
+ * 正常状态，不是残留告警，所以这时不写成「残留未知」（那会把正常运行显示成告警）。
+ * 只有已落定仍是 unknown 才如实显示「残留未知」。
+ */
+const residueKind = (status: string, process: string): 'ok' | 'warn' | 'bad' | 'idle' =>
+  process === 'live' && status === 'unknown' ? 'idle' : status === 'none' ? 'ok' : status === 'present' ? 'bad' : 'warn';
 const residueText: Record<string, string> = { none: '已确认无残留', unknown: '残留未知', present: '仍有残留' };
+const residueLabel = (status: string, process: string): string =>
+  process === 'live' && status === 'unknown' ? '运行中（不判残留）' : (residueText[status] ?? status);
 
 /**
  * 取消按钮为何不可用。以前只在无法取消时把按钮变灰，鼠标还显示「等待」光标，
@@ -94,6 +119,18 @@ function cancelDisabledReason(busy: boolean, process: string): string {
   if (process === 'live') return '测评进行中，点击即终止整棵进程树。';
   if (process === 'unknown') return '进程状态未知：无法确认它是否仍在运行，因此不提供取消，避免误终止。';
   return '进程已结束，没有可终止的对象。已结束的测评不能取消。';
+}
+
+/**
+ * 清理按钮为何不可用。闸门只拦「真的还在跑」，与服务端 clean() 的两条拒绝证据一致：
+ * 进程判定仍为 live，或残留扫描发现可证明归属的存活进程。已落定与 unknown 都允许归档——
+ * unknown 由 sweeper 在复核过「没有归它管的存活进程」后落定，此时账本不再参与对账。
+ */
+function cleanupDisabledReason(process: string, residueStatus: string): string {
+  if (process === 'live') return '测评仍在运行，不能归档：账本还参与对账，移走会让进程失管。请先取消并等它落定。';
+  if (residueStatus === 'present') return '发现可证明归属的存活进程，不能归档：请先终止它，再归档记录。';
+  if (process === 'unknown' || process === 'aborted') return '可以归档：它不是「仍在运行」，残留扫描也没有发现归它管的存活进程；账本不再参与对账，移入回收目录后文件不删除、可手动移回。';
+  return '可以归档：该次测评已经结束，账本不再参与对账。';
 }
 
 async function readError(response: Response): Promise<string> {
@@ -153,9 +190,9 @@ export function LaunchPanel({ tasks }: { tasks: Task[] }) {
 
   const headers = useMemo(() => ({ 'content-type': 'application/json', 'x-bench-token': token }), [token]);
   /**
-   * 无请求体请求（DELETE）专用：**不能**带 content-type: application/json。
-   * Fastify 见到该头却收到空体会以 400 FST_ERR_CTP_EMPTY_JSON_BODY 拒绝，
-   * 清理请求根本到不了业务逻辑。
+   * 无请求体请求（DELETE 清理与 POST 取消）专用：**不能**带 content-type: application/json。
+   * Fastify 见到该头却收到空体会以 400 FST_ERR_CTP_EMPTY_JSON_BODY 拒绝，请求根本到不了业务逻辑；
+   * 「取消这次测评」曾经因此点了没反应。取消路由在服务端另有一层兜底，但客户端不该依赖它。
    */
   const authHeaders = useMemo(() => ({ 'x-bench-token': token }), [token]);
 
@@ -278,7 +315,8 @@ export function LaunchPanel({ tasks }: { tasks: Task[] }) {
     setBusy(true);
     setError('');
     try {
-      const response = await fetch('/api/experiments/' + encodeURIComponent(launchId) + '/cancel', { method: 'POST', headers });
+      // 取消没有请求体：必须用 authHeaders（只带 x-bench-token），带 JSON content-type 会被解析器拒绝。
+      const response = await fetch('/api/experiments/' + encodeURIComponent(launchId) + '/cancel', { method: 'POST', headers: authHeaders });
       if (response.status === 401) { remember(''); throw new Error('取消需要有效令牌。'); }
       if (!response.ok) throw new Error(await readError(response));
       setCancelResult({ launchId, outcome: await response.json() as CancelOutcome });
@@ -396,8 +434,10 @@ export function LaunchPanel({ tasks }: { tasks: Task[] }) {
       : <div className="report-layout">
         <aside className="report-list" aria-label="选择启动记录">{launches.map(item => {
           const kind = verdictKind(item.merged.verdict);
+          const label = verdictText[item.merged.verdict] ?? item.merged.verdict;
           return <button key={item.launchId} aria-pressed={item.launchId === currentId} className={'report-item experiment-item' + (item.launchId === currentId ? ' selected' : '')} onClick={() => setSelection(item.launchId)}>
-            <b>{item.experimentId}</b><span className={'state-tag ' + kind}>{verdictText[item.merged.verdict] ?? item.merged.verdict}</span>
+            <b>{item.experimentId}</b><span className={'state-tag ' + kind}>{label}</span>
+            {item.merged.reportOutcome !== null && <span>实验结论：{reportOutcomeLabel(item.merged.reportOutcome)}</span>}
             <span>{item.kind === 'check' ? '仅预检' : '真实作答'} · {item.plan.answers} 次</span>
             <span>{time(item.startedAt)}</span>
           </button>;
@@ -415,6 +455,8 @@ export function LaunchPanel({ tasks }: { tasks: Task[] }) {
                 <div><span>报告目录</span><b>{current.experiment.directory || '未登记'}</b></div>
               </div>
               <p>{current.merged.text}</p>
+              <p>实验结论：{reportOutcomeLabel(current.merged.reportOutcome)}（进程结论另计，不互相顶替）</p>
+              <p>进程结论：{verdictText[current.merged.verdict] ?? current.merged.verdict}{current.merged.exitOk === null ? '（没有退出事实，不判成败）' : current.merged.exitOk ? '（退出码 0）' : '（退出码非 0）'}</p>
               <p>清理状态：{current.merged.cleanupText}</p>
               {current.exit !== null && <p>退出事实：code {String(current.exit.code)} · signal {String(current.exit.signal)} · {time(current.exit.at)} · 后代已确认退出 {current.exit.descendantsVerified ? '是' : '否（无法确认）'}{current.exit.note ? ' · ' + current.exit.note : ''}</p>}
               {current.note !== null && <p className="experiment-path">{current.note}</p>}
@@ -430,7 +472,7 @@ export function LaunchPanel({ tasks }: { tasks: Task[] }) {
                 <p>{cancelText.text}</p>
                 <p>终止目标：{cancelText.targets.length === 0 ? '无（未由 API 直接终止任何进程）' : cancelText.targets.join('、')}</p>
               </div>}
-              <p className={'state-tag ' + residueKind(current.residue.status)}>{residueText[current.residue.status]}</p>
+              <p className={'state-tag ' + residueKind(current.residue.status, current.merged.process)}>{residueLabel(current.residue.status, current.merged.process)}</p>
               <p>{current.residue.detail}</p>
               {shown !== null && <>
                 <h3>逐条作答 <small>{shown.rows.length} 条</small></h3>
@@ -448,7 +490,7 @@ export function LaunchPanel({ tasks }: { tasks: Task[] }) {
             </>}
             <h3>清理这条启动记录</h3>
             <div className="cleanup-block">
-              <p>清理会把该次测评的账本、退出事实、日志与取消标记一并移进启动记录根下的 <code>.trash</code>，启动记录列表不再显示它；文件不会删除。运行中或状态未知的记录会被服务端拒绝——账本是对账依据，移走会让进程失管。</p>
+              <p>清理会把该次测评的账本、退出事实、日志与取消标记一并移进启动记录根下的 <code>.trash</code>，启动记录列表不再显示它；文件不会删除，可手动移回。只有「仍在运行」或「残留扫描发现可证明归属的存活进程」会被服务端拒绝——那两种情况下账本仍是进程失管的对账依据。状态未知的记录可以归档：此时没有归它管的存活进程，账本不再参与对账。</p>
               <div className="token-bar">
                 <label htmlFor="launch-clean-token">运行令牌</label>
                 <input id="launch-clean-token" type="password" autoComplete="off" value={token} placeholder="x-bench-token" onChange={event => setToken(event.target.value)} />
@@ -464,8 +506,10 @@ export function LaunchPanel({ tasks }: { tasks: Task[] }) {
                   </div>
                 </div>
                 : <div className="report-actions">
-                  <button className="secondary" disabled={current.merged.process === 'live' || current.merged.process === 'unknown'} onClick={() => { setCleanupResult(null); setPendingCleanup(current.launchId); }}>清理这条记录…</button>
-                  {cancelDisabledReason(false, current.merged.process)}
+                  <button className="secondary" disabled={current.merged.process === 'live' || current.residue.status === 'present'}
+                    title={cleanupDisabledReason(current.merged.process, current.residue.status)}
+                    onClick={() => { setCleanupResult(null); setPendingCleanup(current.launchId); }}>清理这条记录…</button>
+                  <small className="experiment-path">{cleanupDisabledReason(current.merged.process, current.residue.status)}</small>
                 </div>}
               {cleanupResult !== null && cleanupResult.launchId === current.launchId &&
                 <div className={cleanupResult.ok ? 'ok-note' : 'error'} role="status">{cleanupResult.message}</div>}

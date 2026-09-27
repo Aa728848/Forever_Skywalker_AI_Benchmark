@@ -5,7 +5,8 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createServer } from 'node:http';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { discoverDshModels, discoverDshPresets, profilePluginSpecifiers } from './dsh-catalog.ts';
+import { discoverDshModels, discoverDshPresets, mergeProjectProviders, profilePluginSpecifiers } from './dsh-catalog.ts';
+import { emptyProviderStore, validateProviderProfile, type ProjectProviderStore } from './dsh.ts';
 
 /** 仓库根：用来读本机的 .env（测试进程不自动加载它）。 */
 const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -165,8 +166,8 @@ it('读取公开本地目录且保持同名模型的provider身份，仅返回�
   ] }));
   const result = await discoverDshModels({ dshRoot, dshHome, profile: 'sdk' });
   expect(result.providers).toEqual([
-    { id: 'gateway-a', name: 'A', models: [{ id: 'same-model', name: 'Plain', reasoningEfforts: [] }] },
-    { id: 'gateway-b', name: 'B', models: [{ id: 'same-model', name: 'Reasoner', reasoningEfforts: ['off', 'high'] }] },
+    { id: 'gateway-a', name: 'A', models: [{ id: 'same-model', name: 'Plain', reasoningEfforts: [] }], source: 'dsh-patch' },
+    { id: 'gateway-b', name: 'B', models: [{ id: 'same-model', name: 'Reasoner', reasoningEfforts: ['off', 'high'] }], source: 'dsh-patch' },
   ]);
   expect(result.warning).toContain('订阅渠道');
   expect(JSON.stringify(result)).not.toContain('private-test-value');
@@ -185,7 +186,7 @@ it('把当前 profile 已安装的本地插件路由并入目录，并只读取�
   const specs = profilePluginSpecifiers(dshRoot, dshHome, 'web');
   expect(specs.plugins).toEqual([{ id: 'subscription-channel', specifier: pathToFileURL(join(plugin, 'lib', 'index.js')).href }]);
   const result = await discoverDshModels({ dshRoot, dshHome, profile: 'web' });
-  expect(result.providers).toEqual([{ id: 'subscription', name: 'Subscription', models: [{ id: 'sub-model', name: 'Sub', reasoningEfforts: ['low', 'high'] }] }]);
+  expect(result.providers).toEqual([{ id: 'subscription', name: 'Subscription', models: [{ id: 'sub-model', name: 'Sub', reasoningEfforts: ['low', 'high'] }], source: 'dsh-patch' }]);
 });
 
 it('插件装载失败只提示该插件并保留其它目录与手工输入', async () => {
@@ -350,6 +351,96 @@ describe('profile 补丁层里的 pi-ai provider 档案', () => {
     expect(stepfun!.models.map(m => m.id)).toEqual(['step-5-preview']);
   });
 });
+
+describe('项目自己的供应商档案并入目录', () => {
+  // 回归（S2）：网页「供应商」页签把 pi-ai 档案写进本项目自己的 data/provider-profiles.json，
+  // 而目录此前只认 DSH profile 补丁层——于是新加的供应商既不在「发起测评」的模型目录里，
+  // 也无法在作答会话中解析。这里断言的是**目录结果**：项目档案必须出现在 providers 里。
+  const storeOf = (...sources: unknown[]): ProjectProviderStore => {
+    const store = emptyProviderStore();
+    for (const source of sources) {
+      const { profile, errors } = validateProviderProfile((source as { id: string }).id, source);
+      expect(errors).toEqual([]);
+      store.providers[profile!.id] = profile!;
+    }
+    return store;
+  };
+
+  it('项目档案的供应商出现在目录里，并带来源与它声明的模型能力', () => {
+    const base = { providers: [{ id: 'gateway-a', name: 'A', models: [{ id: 'plain', name: 'Plain', reasoningEfforts: [] }], source: 'dsh-patch' as const }], warning: null };
+    const merged = mergeProjectProviders(base, storeOf({
+      id: 'project-gw',
+      displayName: '项目网关',
+      api: 'openai-completions',
+      baseURL: 'https://project.invalid/v1',
+      apiKeyEnv: 'PROJECT_GW_KEY',
+      models: [{
+        id: 'vision-model', name: 'Vision', contextWindow: 131072, maxTokens: 8192,
+        input: ['text', 'image'], reasoningEfforts: { off: null, low: 'low', high: 'high' },
+      }],
+    }));
+    expect(merged.providers.map(provider => provider.id)).toEqual(['gateway-a', 'project-gw']);
+    expect(merged.providers[1]).toMatchObject({
+      id: 'project-gw', name: '项目网关', source: 'project',
+      models: [{ id: 'vision-model', name: 'Vision', reasoningEfforts: ['off', 'low', 'high'] }],
+      inputModalities: { 'vision-model': ['text', 'image'] },
+    });
+    // 补丁层那一份仍在，只是标了来源；两者在视图里能区分。
+    expect(merged.providers[0]!.source).toBe('dsh-patch');
+    expect(merged.warning).toContain('项目供应商页签');
+    // 目录协议里不携带任何凭据字段：页签自己从 /api/providers 读「已配置 / 未配置」，
+    // 连引用名都不进目录，密钥值更没有出现的路径。
+    expect(JSON.stringify(merged)).not.toContain('PROJECT_GW_KEY');
+    expect(JSON.stringify(merged)).not.toContain('apiKey');
+  });
+
+  it('与补丁层同名时项目档案胜出，且只出现一次', () => {
+    const base = { providers: [
+      { id: 'stepfun', name: 'patch-stepfun', models: [{ id: 'patch-model', name: 'Patch', reasoningEfforts: [] }], source: 'dsh-patch' as const },
+    ], warning: null };
+    const merged = mergeProjectProviders(base, storeOf({
+      id: 'stepfun', displayName: '项目 stepfun', api: 'openai-completions', baseURL: 'https://project.invalid/v1',
+      models: [{ id: 'project-model', name: 'Project', reasoningEfforts: false }],
+    }));
+    expect(merged.providers).toHaveLength(1);
+    expect(merged.providers[0]).toMatchObject({ id: 'stepfun', name: '项目 stepfun', source: 'project' });
+    expect(merged.providers[0]!.models.map(model => model.id)).toEqual(['project-model']);
+    expect(merged.warning).toContain('同名');
+  });
+
+  it('档案为空时目录逐字节不变，声明 false 的推理不给任何等级', () => {
+    const base = { providers: [{ id: 'gateway-a', name: 'A', models: [{ id: 'plain', name: 'Plain', reasoningEfforts: [] }], source: 'dsh-patch' as const }], warning: '原样保留。' };
+    expect(mergeProjectProviders(base, emptyProviderStore())).toEqual(base);
+    const merged = mergeProjectProviders({ providers: [], warning: null }, storeOf({
+      id: 'no-reasoning', api: 'anthropic-messages', baseURL: 'https://project.invalid/v1',
+      models: [{ id: 'plain', reasoningEfforts: false }],
+    }));
+    expect(merged.providers[0]!.models[0]!.reasoningEfforts).toEqual([]);
+  });
+
+  it('档案里的手改错误只降级成警告，不阻断目录也不回显档案内容', () => {
+    const store = emptyProviderStore();
+    const good = validateProviderProfile('project-gw', { id: 'project-gw', api: 'openai-completions', baseURL: 'https://project.invalid/v1', models: [{ id: 'm' }] }).profile!;
+    store.providers['project-gw'] = good;
+    const merged = mergeProjectProviders({ providers: [], warning: null }, store, ['供应商 broken 未通过校验：baseURL 端点必须是 http 或 https。']);
+    expect(merged.providers.map(provider => provider.id)).toEqual(['project-gw']);
+    expect(merged.warning).toContain('未通过校验');
+    expect(merged.warning).toContain('broken');
+  });
+
+  it('discoverDshModels 把项目档案并入（注入档案，不读用户真实文件）', async () => {
+    writeFileSync(join(dshHome, 'settings.yaml'), JSON.stringify({ providers: [
+      { id: 'gateway-a', name: 'A', models: [{ id: 'plain', name: 'Plain' }] },
+    ] }));
+    const result = await discoverDshModels({ dshRoot, dshHome, profile: 'sdk', providerStore: storeOf({
+      id: 'project-gw', displayName: '项目网关', api: 'openai-responses', baseURL: 'https://project.invalid/v1',
+      models: [{ id: 'project-model', name: 'Project' }],
+    }) });
+    expect(result.providers.map(provider => provider.id)).toEqual(['gateway-a', 'project-gw']);
+    expect(result.providers.find(provider => provider.id === 'project-gw')!.source).toBe('project');
+  });
+});
+
 describe('本地 DSH 预设枚举', () => {
   it('按声明顺序列出补丁层里的预设，并只回传相对安装目录的来源', () => {
     writeBundleManifest(['./cordis.patch.yml', './presets/standard.patch.yml', './presets/ptc.patch.yml', './presets/minimal.patch.yml', './presets/cordis.patch.yml']);

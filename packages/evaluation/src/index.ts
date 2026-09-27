@@ -12,8 +12,14 @@ import { measureVerificationCost } from './benchmark.ts';
 import { createDshJudgeFromEnvironment } from './dsh-judge.ts';
 import { DshCleanupError } from './dsh.ts';
 export { createDshJudgeFromEnvironment, dshJudgeOptionsFromEnvironment } from './dsh-judge.ts';
-export { discoverDshModels, discoverDshPresets, profilePluginSpecifiers } from './dsh-catalog.ts';
-export { dshPresetLabels, dshWorkspacePermissionLabels, resolveDshPreset, resolveDshWorkspacePermission } from './dsh.ts';
+export { discoverDshModels, discoverDshPresets, mergeProjectProviders, profilePluginSpecifiers, type DshCatalogProvider, type DshCatalogSource, type DshModelCatalog } from './dsh-catalog.ts';
+export {
+  dshPresetLabels, dshWorkspacePermissionLabels, emptyProviderStore, projectProviderRowId, projectProviderStorePath,
+  providerInputModalities, providerPatchRows, providerProfileApis, providerProfileValue, providerThinkingFormats,
+  providerThinkingLevels, readProjectProviderStore, resolveDshPreset, resolveDshWorkspacePermission,
+  validateProviderProfile, writeProjectProviderStore,
+  type ProviderFieldError, type ProviderModelProfile, type ProviderProfile, type ProjectProviderStore,
+} from './dsh.ts';
 export { inspectRunSelection, summarizeRuns } from './suite.ts';
 
 export interface EvaluationOptions {

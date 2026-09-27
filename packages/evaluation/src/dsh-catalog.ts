@@ -3,11 +3,32 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, 
 import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { checkDshInstallation } from './dsh.ts';
+import type { ProviderProfile, ProjectProviderStore } from './dsh.ts';
+import { checkDshInstallation, projectProviderStorePath, readProjectProviderStore } from './dsh.ts';
+
+/** 目录里一条供应商的来源：项目自己的档案，还是 DSH profile 的补丁层。 */
+export type DshCatalogSource = 'project' | 'dsh-patch';
 
 export interface DshCatalogModel { id: string; name: string; reasoningEfforts: string[] }
-export interface DshCatalogProvider { id: string; name: string; models: DshCatalogModel[] }
-export interface DshCatalogOptions { dshRoot: string; dshHome: string; profile?: string }
+export interface DshCatalogProvider {
+  id: string;
+  name: string;
+  models: DshCatalogModel[];
+  /**
+   * 这条路由来自哪里。同名时项目档案胜出：它是本网页能编辑的那一份，
+   * 而补丁层那一份按设计只读。缺省（外部调用方的既有期望）等同于 'dsh-patch'。
+   */
+  source?: DshCatalogSource;
+  /** 项目档案里该模型声明的输入模态；用于「发起测评」前的多模态提示，不是能力保证。 */
+  inputModalities?: Record<string, string[]>;
+}
+export interface DshCatalogOptions {
+  dshRoot: string;
+  dshHome: string;
+  profile?: string;
+  /** 项目供应商档案；省略时读取 data/provider-profiles.json。 */
+  providerStore?: ProjectProviderStore;
+}
 export interface DshModelCatalog { providers: DshCatalogProvider[]; warning: string | null }
 
 const fallback = '无法读取本地 DSH 模型目录，请手工填写供应商 ID 和模型 ID；不会自动探测远程端点。';
@@ -58,7 +79,7 @@ function catalogOutput(output: string): DshModelCatalog {
       modelIds.add(entry.id);
       models.push({ id: entry.id, name: entry.name, reasoningEfforts: [...new Set(entry.reasoningEfforts as string[])] });
     }
-    providers.push({ id: item.id, name: item.name, models });
+    providers.push({ id: item.id, name: item.name, models, source: 'dsh-patch' });
   }
   // 插件装载失败只影响该插件自己的路由，父进程只把它作为提示，不影响已取得的目录。
   // 插件失败原因可能带着配置或凭据片段，不进入目录协议；这里只保留失败插件的标识，
@@ -152,8 +173,51 @@ function pluginEntry(directory: string): string | undefined {
   return undefined;
 }
 
-/** 只加载受支持的本地目录模块；不启动CLI/profile、代理会话或凭据提供方。 */
-export async function discoverDshModels(options: DshCatalogOptions): Promise<DshModelCatalog> {
+/**
+ * 把项目自己的供应商档案并入目录：这是**网页能编辑的那一份**，因此与补丁层同名时
+ * 项目档案胜出（补丁层那一份按设计只读，两者同时列出只会让人分不清哪个在生效）。
+ * 项目供应商的模型来自档案本身；思考等级由档案的 reasoningEfforts 的等级名给出，
+ * 没有声明时为 []，与 DSH 目录对「未声明能力」的表达一致。
+ */
+export function mergeProjectProviders(
+  catalog: DshModelCatalog,
+  store: ProjectProviderStore,
+  issues: readonly string[] = [],
+): DshModelCatalog {
+  const projectIds = Object.keys(store.providers);
+  if (projectIds.length === 0) {
+    // 没有项目供应商时目录逐字节不变；档案里的手改错误仍然如实带出。
+    return issues.length === 0 ? catalog : { providers: catalog.providers, warning: catalog.warning === null ? null : catalog.warning + ' 项目供应商档案有 ' + String(issues.length) + ' 处未参与目录：' + issues.join('；') + '。' };
+  }
+  const project = projectIds.map(id => {
+    const profile: ProviderProfile = store.providers[id]!;
+    const inputModalities: Record<string, string[]> = {};
+    const models = profile.models.map(model => {
+      if (model.input !== undefined && model.input.length > 0) inputModalities[model.id] = [...model.input];
+      // reasoningEfforts === false 表示「不支持推理」，与「未声明」一样不给等级；
+      // 表里的键就是 DSH 会列出并接受的等级名（值只是发给端点的拼写）。
+      const table = model.reasoningEfforts === undefined || model.reasoningEfforts === false ? {} : model.reasoningEfforts;
+      return { id: model.id, name: model.name ?? model.id, reasoningEfforts: Object.keys(table) };
+    });
+    return {
+      id, name: profile.displayName ?? id, models, source: 'project' as const,
+      ...(Object.keys(inputModalities).length === 0 ? {} : { inputModalities }),
+    };
+  });
+  const declared = new Set(projectIds);
+  const notice = '目录含 ' + String(projectIds.length) + ' 个来自本项目供应商页签的档案'
+    + (catalog.providers.some(provider => declared.has(provider.id)) ? '（与 DSH 补丁层同名的以项目档案为准）' : '')
+    + (issues.length === 0 ? '' : '；档案有 ' + String(issues.length) + ' 处未参与目录：' + issues.join('；'))
+    + '。';
+  return { providers: [...catalog.providers.filter(provider => !declared.has(provider.id)), ...project],
+    warning: catalog.warning === null ? notice : catalog.warning + ' ' + notice };
+}
+
+/**
+ * 只加载受支持的本地目录模块；不启动CLI/profile、代理会话或凭据提供方。
+ * 这不含项目自己的供应商档案——对外入口是 discoverDshModels，它在这一份之上并入档案。
+ */
+async function discoverDshPatchModels(options: DshCatalogOptions): Promise<DshModelCatalog> {
   let scratch: string | undefined;
   try {
     if (options.profile !== undefined && (options.profile === '' || /[\\/]/.test(options.profile) || options.profile === '.' || options.profile === '..')) {
@@ -260,6 +324,18 @@ export async function discoverDshModels(options: DshCatalogOptions): Promise<Dsh
       rmSync(location, { recursive: true, force: true });
     }
   }
+}
+
+/**
+ * 模型目录的对外入口：DSH 补丁层的目录 + 本项目自己的供应商档案。
+ * 档案读取与校验在父进程完成（纯 JSON），任何手改错误都只降级为 warning 里的
+ * issues，不会让整条目录查询失败——那正是「静默变空」最难排查的形态。
+ */
+export async function discoverDshModels(options: DshCatalogOptions): Promise<DshModelCatalog> {
+  const catalog = await discoverDshPatchModels(options);
+  if (options.providerStore !== undefined) return mergeProjectProviders(catalog, options.providerStore);
+  const { store, issues } = readProjectProviderStore(projectProviderStorePath);
+  return mergeProjectProviders(catalog, store, issues);
 }
 
 /* ── 预设枚举 ───────────────────────────────────────────────────────────────

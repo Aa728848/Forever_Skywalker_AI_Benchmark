@@ -16,6 +16,7 @@ import { ReportAccessError, defaultReportsRoot, openReports } from './reports.ts
 import { CleanupError } from './cleanup.ts';
 import { ConfigValidationError, EnvironmentFileConflictError, apiRepositoryRoot, createConfigProvider, type ConfigFieldError } from './config.ts';
 import { LaunchError, createLaunches, listSubmissionCandidates, type LaunchRequest } from './launches.ts';
+import { ProviderError, createProviders, type ProviderProbeRequest, type ProviderProbeResult } from './providers.ts';
 
 export interface AppOptions {
   runRoot?: string;
@@ -54,6 +55,37 @@ export interface AppOptions {
    * 测试把它调长，才能让「两次 GET 之间没有其它写者」成为确定性事实而不是运气。
    */
   launchesSweepMs?: number;
+  /** 项目供应商档案路径；测试指向系统临时目录，绝不写真实 data/。 */
+  providersStorePath?: string;
+  /** DSH 凭据库路径（只读 refs 名字）；测试指向临时目录。 */
+  providersCredentialsPath?: string;
+  /** DSH profile 补丁层路径（export-dsh 的目标）；测试指向临时目录。 */
+  providersProfilePath?: string;
+  /** 供应商出网探测实现；测试注入假端点，绝不联网。 */
+  providersProbe?: (request: ProviderProbeRequest) => Promise<ProviderProbeResult>;
+  /** 供应商探测超时（毫秒）；测试可缩短。 */
+  providersProbeTimeoutMs?: number;
+}
+
+/**
+ * 无请求体的请求不该因为一个多余的 content-type 而被解析器挡在业务逻辑之前。
+ *
+ * Fastify 对 application/json 的默认解析器在「声明了该 content-type 却没有请求体」时直接拒绝
+ * （400 FST_ERR_CTP_EMPTY_JSON_BODY，Fastify 5 按消息体而非请求体长度判定），请求到不了路由。
+ * 实测：`POST /api/experiments/:launchId/cancel` 带 x-bench-token 与 content-type 且无请求体 → 400；
+ * 同一路由不带 content-type → 200。网页的「取消这次测评」按钮曾经因此点了没反应。
+ *
+ * 选择「在服务端容忍空体」而不是「只让客户端记住这个陷阱」：这条接口本身没有请求体，
+ * 客户端带不带 JSON 头都不改变语义，因此两类客户端（网页、脚本、将来新增的调用方）都不该被它拒绝。
+ * 判定只看传输层事实——没有 content-length（或为 0）且没有 transfer-encoding——不解析业务字段，
+ * 因此不放大任何参数校验的边界：确实带了请求体的请求（含畸形 JSON）行为完全不变。
+ * 具体做法是在解析器运行前摘掉这个头，让 Fastify 走「无 content-type」的既有路径
+ * （body 为 undefined，路由里用 `body ?? {}` 的写法照常成立）。只有真的没有请求体时才摘，不做其它改写。
+ */
+function dropEmptyBodyContentType(request: { headers: Record<string, unknown> }): void {
+  const length = request.headers['content-length'];
+  const empty = (length === undefined || length === '0') && request.headers['transfer-encoding'] === undefined;
+  if (empty) delete request.headers['content-type'];
 }
 
 export function buildApp(databasePath = ':memory:', options: AppOptions = {}) {
@@ -68,6 +100,8 @@ export function buildApp(databasePath = ':memory:', options: AppOptions = {}) {
   const runRoot = options.runRoot ?? (configuredRunDir !== undefined && configuredRunDir.trim() !== '' ? configuredRunDir : defaultRunRoot);
   // 报告标识是不透明 base64url，长度随报告根路径增长，默认 100 字符的路由参数上限会误判为过长。
   const app = Fastify({ bodyLimit: 262144, routerOptions: { maxParamLength: 512 }, ajv: { customOptions: { coerceTypes: false, removeAdditional: false, useDefaults: false } } });
+  // 无请求体的请求不因 content-type 被解析器拒绝；理由与边界见 dropEmptyBodyContentType 的注释。
+  app.addHook('preParsing', (request, _reply, payload, done) => { dropEmptyBodyContentType(request); done(null, payload); });
   const store = openStore(databasePath);
   // 单次提交的 measure 覆盖：提交是操作者驱动的低频动作，用串行链保证覆盖不会串到并发请求上。
   let measureOverride: boolean | undefined;
@@ -99,6 +133,17 @@ export function buildApp(databasePath = ':memory:', options: AppOptions = {}) {
     ...(options.launchesHeartbeatMs === undefined ? {} : { heartbeatMs: options.launchesHeartbeatMs }),
     ...(options.launchesConfirmMs === undefined ? {} : { confirmMs: options.launchesConfirmMs }),
     ...(options.launchesRegistrationWaitMs === undefined ? {} : { registrationWaitMs: options.launchesRegistrationWaitMs }),
+  });
+  // 供应商档案：本项目自己的 data/provider-profiles.json；读操作不需要令牌，写操作一律要求。
+  // 目录读取复用配置提供者的同一份实现，因此「供应商」页签与「配置」页签看到的是同一个 DSH 目录。
+  const providers = createProviders({
+    ...(options.providersStorePath === undefined ? {} : { storePath: options.providersStorePath }),
+    ...(options.providersCredentialsPath === undefined ? {} : { credentialsPath: options.providersCredentialsPath }),
+    ...(options.providersProfilePath === undefined ? {} : { dshProfilePath: options.providersProfilePath }),
+    ...(options.providersProbe === undefined ? {} : { probe: options.providersProbe }),
+    ...(options.providersProbeTimeoutMs === undefined ? {} : { probeTimeoutMs: options.providersProbeTimeoutMs }),
+    env: () => config.current(),
+    catalog: () => config.models(),
   });
   // 对账 sweeper：API 启动时先跑一次，之后按固定间隔对账。GET /api/experiments 绝不触发它。
   launches.sweep();
@@ -206,6 +251,46 @@ export function buildApp(databasePath = ':memory:', options: AppOptions = {}) {
       if (error instanceof EnvironmentFileConflictError) return reply.code(409).send({ error: error.message });
       return reply.code(400).send({ error: error instanceof Error ? error.message : '配置保存失败。' });
     }
+  });
+
+
+  // 供应商管理：档案读写、端点探测与可选的 DSH 导出。
+  // GET 只读、不需要令牌（与 /api/config 一致）；写操作一律要求 x-bench-token。
+  // 响应里只有凭据引用名与「已配置 / 未配置」布尔值，永远没有密钥值。
+  const providerFailure = (reply: FastifyReply, error: unknown) => {
+    if (error instanceof ProviderError) {
+      // 字段级错误就地回传，前端按 field 定位；message 只含结构性原因，不含端点或密钥。
+      return reply.code(error.status).send({ error: error.message, ...(error.errors.length === 0 ? {} : { errors: error.errors }) });
+    }
+    return reply.code(500).send({ error: '供应商操作失败：' + (error instanceof Error ? error.message : '未知原因') });
+  };
+  app.get('/api/providers', async (_request, reply) => {
+    try { return await providers.list(); }
+    catch (error) { return providerFailure(reply, error); }
+  });
+  app.post<{ Body: { baseURL?: unknown; api?: unknown; apiKeyEnv?: unknown } }>('/api/providers/probe', async (request, reply) => {
+    // 出网请求需要令牌：它是全项目唯一会向用户填写的地址发起连接的路由。
+    if (!authorized(request.headers['x-bench-token'])) return reply.code(401).send({ error: '探测端点需要有效的 x-bench-token 头。' });
+    try { return await providers.probe(request.body); }
+    catch (error) { return providerFailure(reply, error); }
+  });
+  app.put<{ Params: { id: string }; Body: unknown }>('/api/providers/:id', (request, reply) => {
+    if (!authorized(request.headers['x-bench-token'])) return reply.code(401).send({ error: '保存供应商需要有效的 x-bench-token 头。' });
+    try { return providers.upsert(request.params.id, request.body); }
+    catch (error) { return providerFailure(reply, error); }
+  });
+  app.delete<{ Params: { id: string } }>('/api/providers/:id', (request, reply) => {
+    if (!authorized(request.headers['x-bench-token'])) return reply.code(401).send({ error: '删除供应商需要有效的 x-bench-token 头。' });
+    try { return providers.remove(request.params.id); }
+    catch (error) { return providerFailure(reply, error); }
+  });
+  app.post<{ Params: { id: string }; Body: { confirm?: unknown } }>('/api/providers/:id/export-dsh', (request, reply) => {
+    if (!authorized(request.headers['x-bench-token'])) return reply.code(401).send({ error: '导出到 DSH 需要有效的 x-bench-token 头。' });
+    try {
+      // confirm !== true 时只回传将写入的内容：默认路径绝不触碰用户的 DSH home。
+      const confirm = (request.body as { confirm?: unknown } | null)?.confirm === true;
+      return providers.exportDsh(request.params.id, { confirm });
+    } catch (error) { return providerFailure(reply, error); }
   });
 
   // 正式运行入口：冻结候选快照并自动触发受控验证，需要来源令牌且只接受提交根目录内的候选。

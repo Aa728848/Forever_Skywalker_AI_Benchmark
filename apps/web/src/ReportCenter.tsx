@@ -67,15 +67,68 @@ function cleanupText(detail: ExperimentDetail): string {
 }
 
 /**
- * 报告级评分汇总：只对**已评分**的作答求平均。
+ * 一条作答记录的**落定状态**：把「跑完了没有」与「总分定没定」分开回答。
  *
- * 关键规则：`total` 为 null 表示该次作答尚未取得完整证据（总分待定），
+ * · settled：作答完成（phase === done）且拿到数值总分；
+ * · pending：作答完成但总分待定——它**已经跑完**，只差一份合格的质量证据，绝不是「未完成」；
+ * · unfinished：真的没跑完（待作答 / 作答中 / 评分中 / 作答中止 / 出错）。
+ *
+ * 这里刻意不做「needsRerun = phase !== 'done' || total === null」那种合并：
+ * 一份 state=completed、55/55 都 done 的报告里只要有 1 条待定（独立评审未通过协议校验），
+ * 合并口径就会让页面说「续跑未完成的 1 条」并列出一个早已跑完的题。
+ */
+type RowStateKind = 'settled' | 'pending' | 'unfinished';
+interface RowState { kind: RowStateKind; text: string; reason: string | null }
+/**
+ * 行状态徽标配色：待定是「如实留白」，既不写成失败（bad），也不借用通用的 `.warn`
+ * ——后者会连带告警块的边框、内边距与外边距，把一枚小徽标撑成大块提示。
+ * 中性色 + 明确的「作答完成 · 质量分待定」文字才是这里想要的表达。
+ */
+const rowStateKind: Record<RowStateKind, string> = { settled: 'ok', pending: 'idle', unfinished: 'bad' };
+
+/**
+ * 待定原因：只据出口协议**已有**的字段（`classification` / `total`）如实归纳，不新造字段、
+ * 也不为了好看把原因藏起来。ExperimentRow 上没有 error 与 scoring.reason，所以这里说明的是
+ * 「哪一类证据不全」并指向真正的原因所在：报告登记的 issues 与证据包 evidence.json.gz
+ * 里的 review-error.json / review-round-<n>-error.json（失败轮的原始响应与字段路径）。
+ */
+function pendingReason(row: ExperimentRow): string {
+  return '作答已完成（验证结论 ' + (row.classification ?? '未记录') + '），却没有数值总分：'
+    + '质量证据不完整（独立评审缺失或未通过协议校验，或质量维度被判不可判）。'
+    + '完整原因见本页「实验记录问题」与证据包 evidence.json.gz。';
+}
+
+function rowState(row: ExperimentRow): RowState {
+  if (row.phase === 'done' && typeof row.total === 'number') return { kind: 'settled', text: '作答完成 · 分数已出', reason: null };
+  if (row.phase === 'done') return { kind: 'pending', text: '作答完成 · 质量分待定', reason: pendingReason(row) };
+  return { kind: 'unfinished', text: '还没跑完（' + phaseLabels[row.phase] + '）', reason: null };
+}
+
+/**
+ * 续跑按钮文案：计数口径与三类行一一对应。
+ * 只有一类行需要重做时直接就那一类说话；两类都有时把两个数都写出来。
+ * 绝不把「作答已完成但分数待定」写成「未完成」——那份报告的行其实都跑完了。
+ */
+function rerunButtonText(total: number, unfinished: number, pending: number): string {
+  if (total === 0) return '续跑（没有需要重做的作答）…';
+  if (unfinished === 0) return '重跑 ' + total + ' 条待定…';
+  if (pending === 0) return '续跑未完成的 ' + total + ' 条…';
+  return '续跑 ' + total + ' 条（未完成 ' + unfinished + ' + 待定 ' + pending + '）…';
+}
+
+/**
+ * 报告级评分汇总：只对**已评分**的作答求平均，并把三类行各自计数。
+ *
+ * 关键规则（不得违反）：`total` 为 null 表示该次作答尚未取得完整证据（总分待定），
  * 它绝不能被当成 0 分参与平均——那会把一个「还不知道」的结果算成「很差」。
- * 因此待定项单独计数并如实显示，平均分只覆盖有分数的那些。
+ * 「作答已完成但待定」与「还没跑完」同样是两个不同的数：前者的 phase 是 done，后者不是；
+ * 合成一个计数就会让一份已完成的报告看起来还有没跑完的行。
  */
 function scoreSummary(rows: ExperimentRow[]) {
-  const scored = rows.filter(row => row.total !== null);
-  const pending = rows.length - scored.length;
+  const states = rows.map(rowState);
+  const scored = rows.filter((_, index) => states[index]!.kind === 'settled');
+  const pending = rows.filter((_, index) => states[index]!.kind === 'pending').length;
+  const unfinished = rows.filter((_, index) => states[index]!.kind === 'unfinished').length;
   const average = scored.length === 0 ? null : scored.reduce((sum, row) => sum + (row.total ?? 0), 0) / scored.length;
   const totals = scored.map(row => row.total as number);
   const sorted = [...totals].sort((left, right) => left - right);
@@ -86,6 +139,7 @@ function scoreSummary(rows: ExperimentRow[]) {
   return {
     scored: scored.length,
     pending,
+    unfinished,
     average,
     median,
     minimum: sorted[0] ?? null,
@@ -134,8 +188,11 @@ export function ReportCenter({ onCount }: { onCount?: (count: number) => void })
   const { token, setToken, authHeaders } = useBenchToken();
 
   /**
-   * 续跑一份报告：只补跑未完成/未作答/待定的作答，已落定的分数原样保留。
-   * 这是「不应该有待定」的修复入口——待定行的 phase 也是 done，只有续跑能重做它们。
+   * 续跑一份报告：只重做**该重做**的行——真的没跑完的（phase !== 'done'）与分数待定的
+   * （phase === 'done' 但 total 为 null），已落定的分数原样保留。
+   *
+   * 这两类都要重跑，但它们不是一回事：没跑完是「还没做」，待定是「做完了但没有合格证据」。
+   * 界面因此分开计数与措辞，绝不把待定叫成「未完成」——见下方续跑区块。
    */
   async function retryReport(reportId: string) {
     setRetryBusy(true);
@@ -150,7 +207,7 @@ export function ReportCenter({ onCount }: { onCount?: (count: number) => void })
         return;
       }
       const launch = typeof value === 'object' && value !== null && 'launch' in value ? (value as { launch?: { launchId?: string } }).launch : undefined;
-      setRetryResult({ reportId, ok: true, message: '已发起续跑（启动记录 ' + (launch?.launchId ?? '未登记') + '）：只重跑未完成与待定的作答，已完成的分数不变。本页会自动跟随进度刷新，完成后直接显示新分数。' });
+      setRetryResult({ reportId, ok: true, message: '已发起续跑（启动记录 ' + (launch?.launchId ?? '未登记') + '）：只重跑真的没跑完与分数待定的作答，已落定的分数不变。本页会自动跟随进度刷新，完成后直接显示新分数。' });
       setPendingRetry(null);
       setRetrying({ reportId, launchId: launch?.launchId ?? null });
       /**
@@ -326,35 +383,51 @@ export function ReportCenter({ onCount }: { onCount?: (count: number) => void })
                   const fixed = (value: number | null) => value === null ? '—' : value.toFixed(2);
                   return <>
                     <div className="summary-grid">
+                      <div><span>已评分</span><b>{summary.scored} 条</b></div>
+                      <div><span>作答已完成 / 计划</span><b>{summary.scored + summary.pending} / {shown.rows.length}</b></div>
+                      <div><span>分数待定</span><b>{summary.pending} 条</b></div>
+                      <div><span>还没跑完</span><b>{summary.unfinished} 条</b></div>
                       <div><span>平均总分</span><b>{fixed(summary.average)}{summary.average === null ? '' : ' /100'}</b></div>
                       <div><span>中位总分</span><b>{fixed(summary.median)}{summary.median === null ? '' : ' /100'}</b></div>
                       <div><span>最低 / 最高</span><b>{fixed(summary.minimum)} / {fixed(summary.maximum)}</b></div>
-                      <div><span>已评分 / 待定</span><b>{summary.scored} / {summary.pending}</b></div>
                       <div><span>低于 70 分</span><b>{summary.belowThreshold} 条</b></div>
                     </div>
                     <p className="field-hint">
                       {summary.scored === 0
                         ? '本次实验没有取得任何完整总分，无法给出平均分。'
-                        : '平均分只覆盖已评分的 ' + summary.scored + ' 条作答；' + (summary.pending === 0 ? '全部作答都已评分。' : '另有 ' + summary.pending + ' 条总分待定（缺完整证据），它们不参与平均——把待定当成 0 分会把「还不知道」误报成「很差」。')}
+                        : '平均分只覆盖已评分的 ' + summary.scored + ' 条作答。'}
+                      {summary.pending > 0
+                        ? '另有 ' + summary.pending + ' 条作答「已经跑完、但总分待定」（缺完整证据），它们不参与平均——把待定当成 0 分会把「还不知道」误报成「很差」。'
+                        : '没有「跑完但总分待定」的作答。'}
+                      {summary.unfinished > 0 ? ' 还有 ' + summary.unfinished + ' 条真的没有跑完，见下方「当前阶段」。' : ' 计划中的作答都已跑完。'}
+                      {' 「已评分」「分数待定」「还没跑完」是三个不同的数，不能相加成一个「完成度」。'}
                       {summary.pending > 0 && ' 待定的条目见下方表格中「分数」列为「待定」的行。'}
                     </p>
                   </>;
                 })()}
                 <h3>逐条作答 <small>{shown.rows.length} 条</small></h3>
+                {/* 行级状态是三种说法，不是两种：跑完且分数已出 / 跑完但分数待定（写明原因）/ 真的没跑完。
+                    「跑完但待定」一旦被叫成「未完成」，一份 state=completed 的报告就会看起来还有没跑完的行。 */}
                 {shown.rows.length === 0 ? <div className="empty">该实验没有作答记录。</div> : <div className="checks-table rows-table"><table>
-                  <thead><tr><th>题目</th><th>预设</th><th>思考等级</th><th>次数</th><th>当前阶段</th><th>结束原因</th><th>作答秒数</th><th>验证结论</th><th>分数</th><th>运行 / 尝试</th></tr></thead>
-                  <tbody>{shown.rows.map((row, index) => <tr key={row.taskId + '-' + row.preset + '-' + row.mode + '-' + row.repetition + '-' + index}>
+                  <thead><tr><th>题目</th><th>预设</th><th>思考等级</th><th>次数</th><th>当前阶段</th><th>行级状态</th><th>待定原因</th><th>结束原因</th><th>作答秒数</th><th>验证结论</th><th>分数</th><th>运行 / 尝试</th></tr></thead>
+                  <tbody>{shown.rows.map((row, index) => {
+                    const state = rowState(row);
+                    return <tr key={row.taskId + '-' + row.preset + '-' + row.mode + '-' + row.repetition + '-' + index}>
                     <td><b>{row.taskId}</b> <small>{row.taskVersion}</small></td>
                     <td>{row.preset}</td>
                     <td>{row.mode}</td>
                     <td>{row.repetition}</td>
                     <td><span className={'phase ' + phaseClass(row.phase)}>{phaseLabels[row.phase]}</span></td>
+                    <td><span className={'state-tag ' + rowStateKind[state.kind]}>{state.text}</span></td>
+                    {/* 原因要完整可读：它比别的列长得多，若不换行会把整张表撑得很宽（表格全局 nowrap）。 */}
+                    <td style={{ whiteSpace: 'normal', minWidth: '240px' }}>{state.reason ?? '—'}</td>
                     <td>{row.finishReason ?? '—'}</td>
                     <td>{row.durationMs === null ? '—' : (row.durationMs / 1000).toFixed(1)}</td>
-                    <td>{row.classification ?? '未评分'}</td>
+                    {/* 「验证结论」只回答验证本身：跑完的行没有结论时写「结论未登记」，绝不能写成像没跑过的样子。 */}
+                    <td>{row.classification ?? (row.phase === 'done' ? '结论未登记' : '尚无结论')}</td>
                     <td>{number(row.total)}</td>
                     <td>{row.runId && row.attemptId ? row.runId + '/' + row.attemptId : '—'}</td>
-                  </tr>)}</tbody>
+                  </tr>; })}</tbody>
                 </table></div>}
                 <h3>进度日志 <small>{shown.progress.length} 条</small></h3>
                 {shown.progress.length === 0 ? <div className="empty">该实验未记录进度日志（0.2.0 报告没有该字段）。</div> : <ol className="timeline">{shown.progress.map((entry, index) => <li key={entry.at + '-' + index}><b>{entry.message}</b><time>{time(entry.at)}</time></li>)}</ol>}
@@ -363,22 +436,33 @@ export function ReportCenter({ onCount }: { onCount?: (count: number) => void })
                   <a href={'/api/reports/' + encodeURIComponent(shown.reportId) + '/artifacts/' + id} download>{artifactLabels[id]} ↗</a>
                   <p>{id === 'evidence' ? shown.evidence === null ? '证据未归档（experiment.json 未登记 evidence）。' : shown.evidence.filename + ' · SHA-256 ' + shown.evidence.sha256.slice(0, 16) + '… · ' + shown.evidence.fileCount + ' 个文件' : artifactNotes[id]}</p>
                 </div>)}</div>
-                <h3>续跑未完成的作答</h3>
+                <h3>续跑这份报告</h3>
                 {(() => {
-                  // 「需要续跑」与评分汇总同一判据：必须拿到数值总分才算落定。
-                  // 待定行的 phase 也是 done，只按 phase 判断会漏掉它们——那正是修不好待定的原因。
-                  const needsRerun = shown.rows.filter(row => row.phase !== 'done' || typeof row.total !== 'number');
+                  // 需要重做 = 真的没跑完 + 分数待定。两类都要重做（isSettledRow 同样要求数值总分），
+                  // 但计数与文案分开：它们不是一回事，混成一个数就会把「做完了、证据不够」说成「没跑完」。
+                  const unfinishedRows = shown.rows.filter(row => row.phase !== 'done');
+                  const pendingRows = shown.rows.filter(row => row.phase === 'done' && typeof row.total !== 'number');
+                  const needsRerun = [...unfinishedRows, ...pendingRows];
+                  const ids = (rows: ExperimentRow[]) => rows.slice(0, 8).map(row => row.taskId).join('、') + (rows.length > 8 ? ' 等' : '');
                   return <div className="cleanup-block">
                     <p>
-                      续跑只重做未完成、未作答与分数待定的作答，已落定的分数原样保留。
+                      续跑只重做两类作答：真的没跑完的（待作答 / 作答中 / 评分中 / 作答中止 / 出错）与分数待定的
+                      （作答已完成、但缺完整证据拿不到总分）。已落定的分数原样保留，绝不重跑。
+                    </p>
+                    <ul>
+                      <li>没跑完：<b>{unfinishedRows.length} 条</b>{unfinishedRows.length > 0 ? '（' + ids(unfinishedRows) + '）' : ''}</li>
+                      <li>作答已完成但分数待定：<b>{pendingRows.length} 条</b>{pendingRows.length > 0 ? '（' + ids(pendingRows) + '）' : ''}</li>
+                    </ul>
+                    <p>
                       {needsRerun.length === 0
-                        ? ' 当前这份报告没有需要续跑的作答。'
-                        : ' 当前有 ' + needsRerun.length + ' 条需要续跑：' + needsRerun.slice(0, 8).map(row => row.taskId).join('、') + (needsRerun.length > 8 ? ' 等' : '') + '。'}
+                        ? '这份报告的作答全部已经跑完并取得分数，没有需要重做的：上面「还没有跑完」为 0，行级状态里也没有「作答完成 · 质量分待定」。'
+                        : '当前有 ' + needsRerun.length + ' 条需要重做：没跑完 ' + unfinishedRows.length + ' 条 + 分数待定 ' + pendingRows.length + ' 条。'
+                          + (pendingRows.length > 0 ? ' 待定的那 ' + pendingRows.length + ' 条其实已经跑完，重跑是为了补一份合格的质量证据，不是「补做没做完的题」。' : '')}
                     </p>
                     {pendingRetry === shown.reportId
                       ? <div className="warn broken" role="alert">
                         <b>确认续跑「{shown.id ?? shown.directoryName}」？</b>
-                        <p>会真实调用模型重跑那 {needsRerun.length} 条作答；已完成的 {shown.rows.length - needsRerun.length} 条不会重跑，分数也不会变。续跑在同一份报告上累积，产生一次新的「启动记录」。</p>
+                        <p>会真实调用模型重做这 {needsRerun.length} 条作答（没跑完 {unfinishedRows.length} 条 + 分数待定 {pendingRows.length} 条）；已落定的 {shown.rows.length - needsRerun.length} 条不会重跑，分数也不会变。续跑在同一份报告上累积，产生一次新的「启动记录」。</p>
                         <div className="report-actions">
                           <button className="primary" disabled={retryBusy} aria-busy={retryBusy} onClick={() => void retryReport(shown.reportId)}>{retryBusy ? '正在发起…' : '确认续跑'}</button>
                           <button className="secondary" disabled={retryBusy} onClick={() => setPendingRetry(null)}>取消</button>
@@ -386,9 +470,11 @@ export function ReportCenter({ onCount }: { onCount?: (count: number) => void })
                       </div>
                       : <div className="report-actions">
                         <button className="secondary" disabled={retryBusy || needsRerun.length === 0}
-                          title={needsRerun.length === 0 ? '这份报告没有未完成或待定的作答。' : '只重跑 ' + needsRerun.length + ' 条未完成/待定的作答。'}
-                          onClick={() => { setRetryResult(null); setPendingRetry(shown.reportId); }}>续跑未完成的 {needsRerun.length} 条…</button>
-                        <span>不会改动已完成的分数。</span>
+                          title={needsRerun.length === 0
+                            ? '这份报告的作答全部已经跑完并取得分数，没有需要重做的。'
+                            : '只重做 ' + needsRerun.length + ' 条：没跑完 ' + unfinishedRows.length + ' 条 + 分数待定 ' + pendingRows.length + ' 条。'}
+                          onClick={() => { setRetryResult(null); setPendingRetry(shown.reportId); }}>{rerunButtonText(needsRerun.length, unfinishedRows.length, pendingRows.length)}</button>
+                        <span>不会改动已落定的分数。</span>
                       </div>}
                   </div>;
                 })()}

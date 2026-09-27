@@ -33,8 +33,10 @@ if (!existsSync(configEnvFixture)) writeFileSync(configEnvFixture, [
  * 只替换 server.ts 的进程入口，行为与其一致（同样的 BENCH_DB 缺省、host、port 与关闭钩子）；
  * 唯一的增加项是把 configRoot 指向临时目录，保证 e2e 永不读写仓库根的 .env。
  */
+// launchesRoot 指向本次运行的临时根：否则「发起测评」页签会读写仓库根的 data/launches，
+// e2e 既不该看见真实启动记录，也不该往里写。测试自己往该目录写启动记录、并与真实 supervisor 交互。
 const apiEntry = "const m=await import('./apps/api/src/app.ts');"
-  + "const app=m.buildApp(process.env.BENCH_DB??':memory:',{configRoot:process.env.BENCH_CONFIG_ROOT});"
+  + "const app=m.buildApp(process.env.BENCH_DB??':memory:',{configRoot:process.env.BENCH_CONFIG_ROOT,launchesRoot:process.env.BENCH_E2E_LAUNCHES_ROOT});"
   + "await app.listen({host:'127.0.0.1',port:Number(process.env.BENCH_API_PORT??4318)});"
   + "process.once('SIGINT',()=>{void app.close();});process.once('SIGTERM',()=>{void app.close();});";
 
@@ -46,7 +48,7 @@ export default defineConfig({
   webServer: [
     // apps/api/src/server.ts 不接受配置根参数，也不得改动 apps/**；这里用内联入口把 AppOptions.configRoot
     // 指向本次运行的临时配置根，理由与边界见 tests/e2e/config-panel.spec.ts 的注释。
-    { command: `node --import tsx --input-type=module --eval "${apiEntry}"`, url: 'http://127.0.0.1:4318/api/health', env: { BENCH_CONFIG_ROOT: configRoot, BENCH_API_PORT: '4318', BENCH_DB: ':memory:', BENCH_RUN_DIR: join(process.env.BENCH_E2E_ROOT, 'runs'), BENCH_SUBMISSIONS_DIR: process.env.BENCH_E2E_ROOT, BENCH_DSH_REPORT_DIR: join(process.env.BENCH_E2E_ROOT, 'experiments'), BENCH_RUN_TOKEN: process.env.BENCH_E2E_TOKEN, BENCH_PROFILE: 'local', BENCH_JUDGE_ENDPOINT: '', BENCH_JUDGE_TOKEN: '', BENCH_MEASURE_PERFORMANCE: '0' }, reuseExistingServer: false },
+    { command: `node --import tsx --input-type=module --eval "${apiEntry}"`, url: 'http://127.0.0.1:4318/api/health', env: { BENCH_CONFIG_ROOT: configRoot, BENCH_E2E_LAUNCHES_ROOT: join(process.env.BENCH_E2E_ROOT, 'launches'), BENCH_API_PORT: '4318', BENCH_DB: ':memory:', BENCH_RUN_DIR: join(process.env.BENCH_E2E_ROOT, 'runs'), BENCH_SUBMISSIONS_DIR: process.env.BENCH_E2E_ROOT, BENCH_DSH_REPORT_DIR: join(process.env.BENCH_E2E_ROOT, 'experiments'), BENCH_RUN_TOKEN: process.env.BENCH_E2E_TOKEN, BENCH_PROFILE: 'local', BENCH_JUDGE_ENDPOINT: '', BENCH_JUDGE_TOKEN: '', BENCH_MEASURE_PERFORMANCE: '0' }, reuseExistingServer: false },
     { command: 'node apps/web/node_modules/vite/bin/vite.js apps/web --host 127.0.0.1 --port 4317 --strictPort', url: 'http://127.0.0.1:4317', reuseExistingServer: false },
   ],
 });

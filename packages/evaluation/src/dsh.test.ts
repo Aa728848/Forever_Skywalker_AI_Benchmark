@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { checkDshInstallation, checkDshPresetAssets, DshCleanupError, dshReviewPreset, resolveDshPreset, resolveDshWorkspacePermission, runDsh, type DshHarness, type DshRunOptions } from './dsh.ts';
+import { checkDshInstallation, checkDshPresetAssets, DshCleanupError, dshReviewPreset, emptyProviderStore, resolveDshPreset, resolveDshWorkspacePermission, runDsh, validateProviderProfile, type DshHarness, type DshRunOptions, type ProjectProviderStore } from './dsh.ts';
 
 let temporaryRoot: string;
 let options: DshRunOptions;
@@ -315,3 +315,77 @@ describe('DSH automation adapter', () => {
     expect(createHarness).not.toHaveBeenCalled();
   });
 });
+
+describe('项目供应商档案作为 launch patch 层注入作答会话', () => {
+  // 回归（S2）：网页配好的供应商必须**真的**能被作答会话解析到。档案层排在
+  // --patch 顺序的最后，因此项目档案与 profile 补丁层冲突时以项目档案为准；
+  // 档案为空时一层都不产生，会话挂载内容与改动前完全相同。
+  const storeOf = (raw: Record<string, unknown>): ProjectProviderStore => {
+    const store = emptyProviderStore();
+    for (const [id, value] of Object.entries(raw)) {
+      const { profile, errors } = validateProviderProfile(id, value);
+      expect(errors).toEqual([]);
+      store.providers[id] = profile!;
+    }
+    return store;
+  };
+  const projectStore = storeOf({
+    'project-gw': {
+      displayName: '项目网关', api: 'openai-completions', baseURL: 'https://project.invalid/v1', apiKeyEnv: 'PROJECT_GW_KEY',
+      models: [{ id: 'project-model', name: 'Project', contextWindow: 131072, maxTokens: 8192, input: ['text', 'image'],
+        reasoningEfforts: { off: null, low: 'low' } }],
+    },
+  });
+
+  it('把项目档案写成一个额外补丁层，并计入指纹', async () => {
+    const seen: string[][] = [];
+    const runWith = async (tag: string, providerStore: ProjectProviderStore) => runDsh(
+      { ...options, scratchDirectory: join(options.scratchDirectory!, tag), providerStore },
+      { createHarness: launch => { seen.push(launch.patches); return { close: async () => {}, run: async () => result('completed') }; } });
+    const report = await runWith('with-project', projectStore);
+    expect(seen[0]).toHaveLength(3);
+    // 第 0 层是本项目的 launch 补丁，第 1 层是预设声明，第 2 层是项目供应商档案。
+    expect(seen[0]![0]).toBe(join(options.scratchDirectory!, 'with-project', 'launch.patch.json'));
+    const rows = JSON.parse(readFileSync(seen[0]![2]!, 'utf8')) as Record<string, unknown>[];
+    // 先 insert 再按 id 配置：无论 profile 补丁层有没有这一行，会话里只挂载一条项目路由集。
+    expect(rows[0]).toMatchObject({ insert: [{ id: 'fsa-pi-ai-providers', name: '@deepseek-ai/dsh-llm-pi-ai' }] });
+    expect(rows[1]).toMatchObject({ id: 'fsa-pi-ai-providers' });
+    const providers = (rows[1]!.config as { providers: Record<string, unknown> }).providers;
+    expect(Object.keys(providers)).toEqual(['project-gw']);
+    expect(providers['project-gw']).toMatchObject({
+      displayName: '项目网关', api: 'openai-completions', baseURL: 'https://project.invalid/v1', apiKeyEnv: 'PROJECT_GW_KEY',
+      models: [{ id: 'project-model', name: 'Project', contextWindow: 131072, maxTokens: 8192, input: ['text', 'image'],
+        reasoningEfforts: { off: null, low: 'low' } }],
+    });
+    // 档案只存引用名：注入层里绝不能出现密钥值本身。
+    expect(readFileSync(seen[0]![2]!, 'utf8')).not.toContain('sk-');
+    // 指纹必须把这一层算进去：否则改了供应商档案，两次不可比的作答会被当成同一条件。
+    const without = await runWith('without-project', emptyProviderStore());
+    expect(report.presetFingerprint).not.toBe(without.presetFingerprint);
+    expect(seen[1]).toHaveLength(2);
+  });
+
+  it('档案为空时不产生额外层', async () => {
+    const patchesOf = async (tag: string, providerStore?: ProjectProviderStore) => {
+      let patches: string[] = [];
+      await runDsh({ ...options, scratchDirectory: join(options.scratchDirectory!, tag), ...(providerStore === undefined ? {} : { providerStore }) },
+        { createHarness: launch => { patches = launch.patches; return { close: async () => {}, run: async () => result('completed') }; } });
+      return patches;
+    };
+    expect(await patchesOf('empty-store', emptyProviderStore())).toHaveLength(2);
+    expect(await patchesOf('absent-store')).toHaveLength(2);
+  });
+
+  it('启动补丁层本身仍描述预设与运行时，不因注入供应商层而改变', async () => {
+    await runDsh({ ...options, scratchDirectory: join(options.scratchDirectory!, 'unchanged'), providerStore: projectStore },
+      { createHarness: launch => {
+        const rows = JSON.parse(readFileSync(launch.patches[0]!, 'utf8')) as Record<string, unknown>[];
+        const inserted = rows.flatMap(item => Array.isArray(item.insert) ? item.insert : []) as Record<string, unknown>[];
+        expect(inserted).toContainEqual(expect.objectContaining({ id: 'agent-preset-registry' }));
+        expect(inserted.some(item => item.id === 'fsa-pi-ai-providers')).toBe(false);
+        expect(readFileSync(launch.patches[1]!, 'utf8')).toBe(presetPatchText('standard', 1));
+        return { close: async () => {}, run: async () => result('completed') };
+      } });
+  });
+});
+

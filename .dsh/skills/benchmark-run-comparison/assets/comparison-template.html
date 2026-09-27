@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>三模型对比 · Forever Skywalker AI Benchmark</title>
+<style>
+  :root {
+    --bg: #0e1420; --panel: #161f2f; --panel2: #1c2739; --line: #27324a;
+    --ink: #e8eefc; --dim: #93a2c0; --dim2: #6d7d9c;
+    --bad: #ef6b6b; --warn: #e8c860; --ok: #47c98d;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: radial-gradient(1200px 600px at 20% -10%, #1a2740 0%, var(--bg) 60%); color: var(--ink);
+    font: 14px/1.55 "Segoe UI", "Microsoft YaHei", system-ui, -apple-system, sans-serif; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 34px 22px 70px; }
+  h1 { font-size: 24px; margin: 0 0 6px; letter-spacing: .2px; }
+  h2 { font-size: 17px; margin: 34px 0 12px; padding-left: 10px; border-left: 3px solid #4f8ff7; }
+  h3 { font-size: 14px; margin: 20px 0 8px; color: var(--dim); font-weight: 600; }
+  .sub { color: var(--dim); margin: 0 0 18px; font-size: 13px; }
+  .callout { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--warn); border-radius: 10px; padding: 14px 16px; margin: 14px 0; font-size: 13px; }
+  .callout b { color: var(--warn); }
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 18px; }
+  .card { background: linear-gradient(180deg, var(--panel2), var(--panel)); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+  .card .model { font-size: 12px; color: var(--dim); word-break: break-all; }
+  .card .name { font-size: 16px; font-weight: 700; margin: 4px 0 10px; }
+  .card .big { font-size: 32px; font-weight: 800; letter-spacing: -.5px; }
+  .card .big small { font-size: 13px; font-weight: 500; color: var(--dim2); }
+  .card .kv { display: flex; justify-content: space-between; font-size: 12.5px; padding: 3px 0; border-top: 1px dashed var(--line); }
+  .card .kv span:first-child { color: var(--dim); }
+  .swatch { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 7px; vertical-align: middle; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--line); }
+  th { background: #1b2536; color: var(--dim); font-weight: 600; font-size: 12px; white-space: nowrap; }
+  tr:last-child td { border-bottom: none; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .best { color: var(--ok); font-weight: 700; }
+  .worst { color: var(--bad); }
+  .fix { color: var(--warn); }
+  .bar-row { display: grid; grid-template-columns: 150px 1fr 68px; gap: 10px; align-items: center; margin: 4px 0; font-size: 12.5px; }
+  .bar { height: 16px; background: #101827; border-radius: 4px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; }
+  .bar-row .label { color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar-row .val { text-align: right; font-variant-numeric: tabular-nums; }
+  .scatter { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px 10px; }
+  .grid4 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  footer { color: var(--dim2); font-size: 12px; margin-top: 34px; border-top: 1px solid var(--line); padding-top: 14px; }
+  code { background: #101827; border-radius: 4px; padding: 1px 5px; font-size: 12px; color: #b9c8e6; }
+  .scroll { overflow-x: auto; }
+  @media (max-width: 900px) { .cards, .grid4 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1 id="title">模型对比</h1>
+  <p class="sub" id="intro"></p>
+
+  <div class="callout" id="correctionNote"></div>
+
+  <div class="cards" id="cards"></div>
+
+  <h2>逐项指标</h2>
+  <p class="sub">绿色＝三模型中该项最好，红色＝最差；并行度一行只作信息展示，不参与比较。</p>
+  <div class="scroll"><table id="metrics"></table></div>
+
+  <h2>可用验证分 vs 质量分</h2>
+  <p class="sub">横轴＝可用验证均分（/50，是否达到验收标准）；纵轴＝质量均分（/50，代码本身好不好）。两点离得越开，越说明「能做对但写得糙」或「写得漂亮但没做到」。</p>
+  <div class="scatter"><svg id="scatter" viewBox="0 0 720 400" width="100%" height="400" role="img" aria-label="可用验证分与质量分散点图"></svg></div>
+
+  <h2>难度维度</h2>
+  <div class="grid4">
+    <div><h3>按难度 · 可用验证均分 /50</h3><div id="diffFn"></div></div>
+    <div><h3>按难度 · 总均分 /100</h3><div id="diffTotal"></div></div>
+  </div>
+
+  <h2>赛道与领域</h2>
+  <div class="grid4">
+    <div><h3>按赛道 · 总均分 /100</h3><div id="track"></div></div>
+    <div><h3>按领域 · 总均分 /100</h3><div id="domain"></div></div>
+  </div>
+
+  <h2>逐题对照</h2>
+  <p class="sub">单元格＝总分 /100；<span class="fix">橙色</span>＝本次按新规则修正；<span class="worst">红色</span>＝该题可用验证未通过；<code>—</code>＝该题质量分待定（评审证据缺失）。</p>
+  <div class="scroll"><table id="tasks"></table></div>
+
+  <footer id="foot"></footer>
+</div>
+<script>
+const COLORS = { deepseek: '#4f8ff7', stepfun: '#f2a33c', antigravity: '#47c98d' };
+const stats = __STATS__;
+const fmt = (n, d = 2) => (n === null || n === undefined) ? '—' : Number(n).toFixed(d);
+// 标题与口径说明由数据驱动；stats.title / stats.intro 缺省时给出保守占位，不编造口径。
+document.getElementById('title').textContent = stats.title || (stats.models.length + ' 个模型对比');
+document.getElementById('intro').textContent = stats.intro || ('数据来自 data/experiments 的 ' + stats.models.length + ' 份 experiment.json，已按当前评分规则重算。');
+
+document.getElementById('correctionNote').innerHTML = '<b>已修正</b>：第一个报告（deepseek-flash）跑在评分规则调整<b>之前</b>——当时 <code>check-failed</code> 按「通过项权重比例」给部分分。按现行规则（check 不通过 ⇒ 可用验证分记 0）重算后，' +
+  stats.corrections.length + ' 行（' + stats.corrections.map(c => c.taskId).join('、') + '）的可用验证分从 ' +
+  stats.corrections.map(c => fmt(c.old.functional, 1)).join(' / ') + ' 降为 0，总分随之下降。<b>质量分与逐题结论不变</b>——只改可用验证分的给分方式。';
+
+const ranked = [...stats.models].sort((a, b) => (b.avgTotal ?? -1) - (a.avgTotal ?? -1));
+document.getElementById('cards').innerHTML = stats.models.map(m => {
+  const rank = ranked.findIndex(x => x.key === m.key) + 1;
+  return '<div class="card" style="border-top:3px solid ' + COLORS[m.key] + '">' +
+    '<div class="model">' + m.provider + ' / ' + m.model + '</div>' +
+    '<div class="name"><span class="swatch" style="background:' + COLORS[m.key] + '"></span>#' + rank + ' · ' + m.key + '</div>' +
+    '<div class="big">' + fmt(m.avgTotal) + '<small> /100 总均分</small></div>' +
+    '<div class="kv"><span>可用验证均分</span><b>' + fmt(m.avgFunctional) + ' /50</b></div>' +
+    '<div class="kv"><span>质量均分</span><b>' + fmt(m.avgQuality) + ' /50</b></div>' +
+    '<div class="kv"><span>中位总分</span><b>' + fmt(m.medianTotal) + '</b></div>' +
+    '<div class="kv"><span>通过 / 未通过 / 待定</span><b>' + m.pass + ' / ' + m.checkFailed + ' / ' + m.pending + '</b></div>' +
+    '<div class="kv"><span>一轮墙钟</span><b>' + m.wallMinutes + ' 分钟</b></div>' +
+    '<div class="kv"><span>本次修正行数</span><b class="' + (m.corrections.length ? 'fix' : '') + '">' + m.corrections.length + '</b></div>' +
+    '</div>';
+}).join('');
+
+const intKeys = new Set(['通过题数', '未通过题数', '关键项失败的题数', '作答完成（completed）', '并行度（仅信息）']);
+const metricDefs = [
+  ['总均分 /100', m => m.avgTotal, 'max'],
+  ['中位总分 /100', m => m.medianTotal, 'max'],
+  ['最低分 /100', m => m.minTotal, 'max'],
+  ['可用验证均分 /50', m => m.avgFunctional, 'max'],
+  ['质量均分 /50', m => m.avgQuality, 'max'],
+  ['通过题数', m => m.pass, 'max'],
+  ['未通过题数', m => m.checkFailed, 'min'],
+  ['关键项失败的题数', m => m.criticalFailed, 'min'],
+  ['通过率 %', m => m.passRate, 'max'],
+  ['质量分待定题数', m => m.qualityPending, 'min'],
+  ['作答完成（completed）', m => m.solverCompleted, 'max'],
+  ['平均作答秒数', m => m.avgSolverSeconds, 'min'],
+  ['最慢作答秒数', m => m.maxSolverSeconds, 'min'],
+  ['一轮墙钟分钟', m => m.wallMinutes, 'min'],
+  ['并行度（仅信息）', m => m.concurrency, 'info'],
+];
+document.getElementById('metrics').innerHTML =
+  '<thead><tr><th>指标</th>' + stats.models.map(m => '<th class="num">' + m.key + '</th>').join('') + '</tr></thead><tbody>' +
+  metricDefs.map(def => {
+    const label = def[0], get = def[1], dir = def[2];
+    const vals = stats.models.map(get);
+    const numeric = vals.filter(v => typeof v === 'number');
+    const best = dir === 'max' ? Math.max.apply(null, numeric) : Math.min.apply(null, numeric);
+    const worst = dir === 'max' ? Math.min.apply(null, numeric) : Math.max.apply(null, numeric);
+    return '<tr><td>' + label + '</td>' + vals.map(v => {
+      let cls = 'num';
+      if (dir !== 'info' && numeric.length > 1 && typeof v === 'number') {
+        if (v === best) cls += ' best';
+        else if (v === worst) cls += ' worst';
+      }
+      const shown = typeof v !== 'number' ? String(v) : (intKeys.has(label) ? String(v) : fmt(v));
+      return '<td class="' + cls + '">' + shown + '</td>';
+    }).join('') + '</tr>';
+  }).join('') + '</tbody>';
+
+(function () {
+  const svg = document.getElementById('scatter');
+  const W = 760, H = 430, P = { l: 66, r: 30, t: 22, b: 52 };
+  // 放大到实际分布区间：三个模型的均分都挤在右上角，用全量程 0–50 会把点叠在一起。
+  const X0 = 40, X1 = 50, Y0 = 40, Y1 = 50;
+  const x = v => P.l + ((v - X0) / (X1 - X0)) * (W - P.l - P.r);
+  const y = v => H - P.b - ((v - Y0) / (Y1 - Y0)) * (H - P.t - P.b);
+  const parts = [];
+  for (let g = X0; g <= X1; g += 2) {
+    parts.push('<line x1="' + x(g) + '" y1="' + P.t + '" x2="' + x(g) + '" y2="' + (H - P.b) + '" stroke="#27324a"/>');
+    parts.push('<text x="' + x(g) + '" y="' + (H - P.b + 20) + '" fill="#6d7d9c" font-size="11" text-anchor="middle">' + g + '</text>');
+  }
+  for (let g = Y0; g <= Y1; g += 2) {
+    parts.push('<line x1="' + P.l + '" y1="' + y(g) + '" x2="' + (W - P.r) + '" y2="' + y(g) + '" stroke="#27324a"/>');
+    parts.push('<text x="' + (P.l - 10) + '" y="' + (y(g) + 4) + '" fill="#6d7d9c" font-size="11" text-anchor="end">' + g + '</text>');
+  }
+  parts.push('<text x="' + ((W + P.l) / 2) + '" y="' + (H - 12) + '" fill="#93a2c0" font-size="12" text-anchor="middle">该模型全部 55 题的「可用验证分」均分（/50）→  越靠右＝越能达到验收标准</text>');
+  parts.push('<text x="16" y="' + (H / 2) + '" fill="#93a2c0" font-size="12" text-anchor="middle" transform="rotate(-90 16 ' + (H / 2) + ')">质量均分 /50 →  越靠上＝代码质量越好</text>');
+  for (const m of stats.models) {
+    // per-task dots: where this model's rows actually sit
+    for (const row of m.taskPoints) {
+      if (row.functional === null || row.quality === null) continue;
+      parts.push('<circle cx="' + x(Math.max(X0, Math.min(X1, row.functional))).toFixed(1) + '" cy="' + y(Math.max(Y0, Math.min(Y1, row.quality))).toFixed(1) + '" r="3.4" fill="' + COLORS[m.key] + '" fill-opacity="0.30"/>');
+    }
+    const cx = x(Math.max(X0, Math.min(X1, m.avgFunctional || 0))), cy = y(Math.max(Y0, Math.min(Y1, m.avgQuality || 0)));
+    parts.push('<circle cx="' + cx + '" cy="' + cy + '" r="13" fill="' + COLORS[m.key] + '" fill-opacity="0.18" stroke="' + COLORS[m.key] + '" stroke-width="2"/>');
+    parts.push('<circle cx="' + cx + '" cy="' + cy + '" r="4.5" fill="' + COLORS[m.key] + '"/>');
+    parts.push('<text x="' + (cx + 17) + '" y="' + (cy + 4) + '" fill="' + COLORS[m.key] + '" font-size="12.5" font-weight="700">' + m.key + ' 总均分 ' + fmt(m.avgTotal) + '</text>');
+  }
+  parts.push('<text x="' + (W - P.r) + '" y="' + (P.t + 14) + '" fill="#6d7d9c" font-size="11" text-anchor="end">小点＝逐题；大圈＝两维均分</text>');
+  svg.innerHTML = parts.join('');
+})();
+
+function bars(hostId, groups, pick, max, unit) {
+  const host = document.getElementById(hostId);
+  const rows = [];
+  for (const g of groups) {
+    rows.push('<div style="margin:12px 0 2px;color:#93a2c0;font-size:12.5px">' + g.group + ' · ' + g.tasks + ' 题</div>');
+    for (const m of g.models) {
+      const v = pick(m);
+      const w = v === null ? 0 : (v / max) * 100;
+      rows.push('<div class="bar-row"><span class="label"><span class="swatch" style="background:' + COLORS[m.key] + '"></span>' + m.key + '</span>' +
+        '<span class="bar"><i style="width:' + w.toFixed(1) + '%;background:' + COLORS[m.key] + '"></i></span>' +
+        '<span class="val">' + (v === null ? '—' : fmt(v, 1) + unit) + '</span></div>');
+    }
+  }
+  host.innerHTML = rows.join('');
+}
+bars('diffFn', stats.byDifficulty, m => m.avgFunctional, 50, '');
+bars('diffTotal', stats.byDifficulty, m => m.avgTotal, 100, '');
+bars('track', stats.byTrack, m => m.avgTotal, 100, '');
+bars('domain', stats.byDomain, m => m.avgTotal, 100, '');
+
+const order = ['easy', 'medium', 'hard', 'extreme'];
+const diffLabel = { easy: '简单', medium: '中等', hard: '困难', extreme: '极度困难' };
+const sorted = stats.taskTable.slice().sort((a, b) => {
+  const d = order.indexOf(a.meta && a.meta.difficulty) - order.indexOf(b.meta && b.meta.difficulty);
+  return d !== 0 ? d : a.taskId.localeCompare(b.taskId);
+});
+document.getElementById('tasks').innerHTML =
+  '<thead><tr><th>题目</th><th>难度</th><th>赛道</th>' + stats.models.map(m => '<th class="num">' + m.key + '</th>').join('') + '<th>备注</th></tr></thead><tbody>' +
+  sorted.map(t => {
+    const cells = t.cells.map(c => {
+      if (c === null || c.total === null) return '<td class="num" title="质量分待定">—</td>';
+      const cls = 'num' + (c.corrected ? ' fix' : '') + (c.classification === 'passed' ? '' : ' worst');
+      return '<td class="' + cls + '">' + fmt(c.total) + '</td>';
+    }).join('');
+    const pending = t.cells.some(c => c && c.total === null);
+    const corrected = t.cells.some(c => c && c.corrected);
+    const note = pending ? '质量分待定' : (corrected ? '已按新规则修正' : '');
+    return '<tr><td><b>' + t.taskId + '</b></td><td>' + (diffLabel[t.meta && t.meta.difficulty] || '—') + '</td><td>' +
+      (t.meta && t.meta.track === 'core' ? '核心' : '集成') + '</td>' + cells + '<td>' + note + '</td></tr>';
+  }).join('') + '</tbody>';
+
+document.getElementById('foot').innerHTML =
+  '<b>口径</b>：可用验证分（/50）由固定 Linux 容器里的公开+隐藏检查客观判定；质量分（/50）由独立 DSH 评审 Agent 按三维度给出，两轮独立会话取一致。总分＝两者之和。<br>' +
+  '<b>修正依据</b>：评分规则在 ' + stats.ruleCutoff + '（提交 680d0a0）之后改为「check 不通过 ⇒ 可用验证分记 0」；在此之前的实验按旧规则记了部分分，本页用归档的 execution.json 证据重算了这些行。<br>' +
+  '<b>统计</b>：均分按各模型 55 行计算，质量分待定的行不计入均分（缺测不补分）。生成于 ' + stats.generatedAt + '。';
+</script>
+</body>
+</html>
