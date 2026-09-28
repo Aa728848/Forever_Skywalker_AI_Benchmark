@@ -116,7 +116,12 @@ it('独立导出、反转重复顺序，模拟作答经真实验证，并保留�
     expect(comparisonGroups(drifted).groups.every(group => group.functional === null && group.total === null)).toBe(true);
     const missing = structuredClone(report);
     missing.rows[1]!.evaluation = null;
-    expect(comparisonGroups(missing).groups.find(group => group.mode === 'high')!.functional).toBeNull();
+    // 缺一行的分数不再把整组置成待定：只对已有分数的行取平均，并报出覆盖行数。
+    // 旧行为会让「48 题里 45 题都有分」整组显示待定，把真实成绩藏起来；
+    // 而把缺失行当 0 参与平均同样是伪造分数，所以必须用 functionalRows 显式交代覆盖率。
+    const missingHigh = comparisonGroups(missing).groups.find(group => group.mode === 'high')!;
+    expect(missingHigh).toMatchObject({ planned: 2, functional: 50, functionalRows: 1 });
+    expect(missingHigh.functionalRows).toBeLessThan(missingHigh.planned);
     const presetDrift = structuredClone(report);
     presetDrift.rows[0]!.solver!.presetFingerprint = 'changed';
     expect(comparisonGroups(presetDrift).drift).toContain('DSH standard 预设内容发生变化');

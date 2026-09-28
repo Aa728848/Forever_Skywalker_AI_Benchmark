@@ -3,7 +3,8 @@ import type { JudgeConfig } from '@fsa/contracts';
 import {
   JudgeBudgetExceededError, JudgeUnavailableError, createJudge, createScriptedJudge,
   judgeConfigFromEnvironment, sampleVerdict, type ReviewRequest,
-  compareReviews, createOpenAICompatibleCompletion,
+  compareReviews,
+  mergeReviewRounds, createOpenAICompatibleCompletion,
 } from './index.ts';
 
 const request: ReviewRequest = {
@@ -176,6 +177,54 @@ describe('独立双轮比较', () => {
     expect(compared.reasons.filter(reason => reason.includes('两轮相差'))).toHaveLength(1);
     expect(compared.reasons.join('；')).toContain('两轮均未判定这些维度');
     expect(compared.reasons.join('；')).toContain('decoupling');
+  });
+
+  it('某一维只有一轮给出分数时采用该轮，而不是让整题待定', () => {
+    // 现场证据（2026-09-27 MiniMax 的 LSP-02）：第 1 轮声明 simplicity 不可判、第 2 轮给出 85。
+    // 旧实现要求两轮「同时」给出分数，于是整题质量分与总分白白待定。声明不可判是
+    // 「这一轮判不了」，不是「这个分数不存在」；丢掉另一轮的真实分数是浪费证据。
+    const first = sampleVerdict(request, scores, ['candidate-1']);
+    (first.dimensions.simplicity as { score: number | null }).score = null;
+    const second = sampleVerdict(request, { ...scores, simplicity: 85 }, ['candidate-1']);
+    const merged = mergeReviewRounds([first, second]);
+    expect(merged.averages.simplicity).toBe(85);
+    expect(merged.roundsJudged.simplicity).toBe(1);
+    // 单轮结论必须显式标注，读者才知道它没有第二轮交叉验证。
+    expect(merged.reasons.join('；')).toContain('仅 1 轮给出有效判决');
+    // 其余两维两轮都有分，照常取平均。
+    expect(merged.roundsJudged.maintainability).toBe(2);
+    expect(merged.roundsJudged.decoupling).toBe(2);
+  });
+
+  it('只剩一轮有效判决时直接采用，并留下未经交叉验证的告警', () => {
+    // 现场证据（2026-09-27 Google 的 LSP-02）：第 1 轮会话 error，第 2 轮根本没有发起。
+    // 旧实现第 1 轮 await 后直接抛出，整题永久待定。
+    const only = sampleVerdict(request, { simplicity: 70, maintainability: 60, decoupling: 80 }, ['candidate-1']);
+    const merged = mergeReviewRounds([only]);
+    expect(merged.averages).toMatchObject({ simplicity: 70, maintainability: 60, decoupling: 80 });
+    expect(merged.roundsJudged).toEqual({ simplicity: 1, maintainability: 1, decoupling: 1 });
+    expect(merged.comparabilityWarnings.join(' ')).toContain('只有 1 轮有效判决');
+    // 单轮无从算分歧：报 null，不伪造成 0。
+    expect(merged.differences).toEqual({ simplicity: null, maintainability: null, decoupling: null });
+  });
+
+  it('所有轮次都没给出分数的维度才保持待定', () => {
+    const unjudged = (verdict: ReturnType<typeof sampleVerdict>) => {
+      (verdict.dimensions.decoupling as { score: number | null }).score = null;
+      return verdict;
+    };
+    const merged = mergeReviewRounds([unjudged(sampleVerdict(request, scores, ['candidate-1'])), unjudged(sampleVerdict(request, scores, ['candidate-1']))]);
+    expect(merged.averages.decoupling).toBeNull();
+    expect(merged.roundsJudged.decoupling).toBe(0);
+    expect(merged.reasons.join('；')).toContain('均未判定这些维度');
+    // 其余维照常给出分数，不因一维待定而清零。
+    expect(merged.averages.simplicity).toBe(scores.simplicity);
+  });
+
+  it('拒绝合并不属于同一冻结作答的判决', () => {
+    expect(() => mergeReviewRounds([sampleVerdict(request, scores, ['candidate-1']),
+      { ...sampleVerdict(request, scores, ['candidate-1']), attemptId: 'another' }])).toThrow(/同一冻结作答/);
+    expect(() => mergeReviewRounds([])).toThrow(/没有可合并/);
   });
 });
 

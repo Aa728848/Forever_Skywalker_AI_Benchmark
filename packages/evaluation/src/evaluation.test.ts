@@ -36,7 +36,54 @@ it('裁判长堆栈不破坏已完成的执行记录，首次评分和补评都�
   } finally { rmSync(scratch, { recursive: true, force: true }); }
 });
 
-it('第 2 轮判决不符合协议时保留该轮原始响应与字段路径，总分继续待定', async () => {
+it('第 1 轮会话失败时仍发起第 2 轮并采用它的判决，不再整题待定', async () => {
+  // 现场证据（2026-09-27 Google 的 LSP-02）：第 1 轮会话结束原因 error，报告里只有
+  // review-round-1-error、**没有 review-round-2** —— 旧实现在第 1 轮 await 处直接抛出，
+  // 第 2 轮从未发起，整题质量分与总分永久待定。
+  const scratch = mkdtempSync(join(tmpdir(), 'fsa-evaluation-round-'));
+  try {
+    const candidate = join(scratch, 'candidate');
+    exportWorkspace('CACHE-02', candidate);
+    expect(applyReferencePatch(readManifest('CACHE-02'), candidate, join(scratch, 'patch')).exitCode).toBe(0);
+    const store = createRunStore(join(scratch, 'runs'));
+    const rounds: string[] = [];
+    const judge: JudgeAdapter = {
+      model: 'test', promptVersion: 'review-v1',
+      async review(request) {
+        rounds.push(request.roundId ?? '1');
+        if (request.roundId === '1') throw new JudgeProtocolError('DSH 评分 Agent 未完成（第 1 轮）：会话结束原因 error，没有完整判决。',
+          { roundId: '1', rawResponse: '', issues: ['会话结束原因 error，没有完整判决'] });
+        return { source: 'scripted', calls: 1, inputTokens: null, outputTokens: null,
+          verdict: sampleVerdict(request, { simplicity: 80, maintainability: 80, decoupling: 80 },
+            ['task-contract', 'execution-evidence', 'source-0'], 'test') };
+      },
+    };
+    const qualityProvider = createQualityProvider({ judge, env: {}, measurePerformance: false });
+    const envelope = createEnvelope('CACHE-02', candidate, { idempotencyKey: 'evaluation-round-1-error' });
+    const outcome = await verifySubmission({ store, taskId: 'CACHE-02', envelope, candidateDirectory: candidate, submittedBy: 'test', qualityProvider });
+    const directory = join(outcome.submission.directory, 'execution');
+    // 承重断言：第 2 轮确实被发起了——这正是旧实现做不到的一步。
+    expect(rounds).toEqual(['1', '2']);
+    expect(existsSync(join(directory, 'review-round-1-error.json'))).toBe(true);
+    expect(existsSync(join(directory, 'review-round-2.json'))).toBe(true);
+    const score = readExecutionScore(outcome.submission.directory)!;
+    expect(score.functional).toBe(50);
+    expect(score.quality).not.toBeNull();
+    expect(score.total).not.toBeNull();
+    // 证据引用指向真正给出分数的第 2 轮，不虚报第 1 轮。
+    const reviewComparison = JSON.parse(readFileSync(join(directory, 'review-comparison.json'), 'utf8')) as { comparabilityWarnings: string[] };
+    expect(reviewComparison.comparabilityWarnings.join(' ')).toContain('只有 1 轮有效判决');
+    expect(readExecutionResult(outcome.submission.directory)!.notes.join(' ')).toContain('第 1 轮独立评审未取得有效判决');
+  } finally {
+    const target = resolve(scratch);
+    if (dirname(target) !== resolve(tmpdir()) || !basename(target).startsWith('fsa-evaluation-round-')) throw new Error('测试临时目录越界。');
+    rmSync(target, { recursive: true, force: true });
+  }
+}, 30000);
+
+it('第 2 轮判决不符合协议时保留该轮原始响应与字段路径，但仍采用第 1 轮的有效判决', async () => {
+  // 用户要求「不能出现待定」。旧实现在第 1 轮 await 后直接抛出、第 2 轮失败即丢弃第 1 轮，
+  // 使整题质量分与总分永久待定（实测 MiniMax 的 ARCH-01/INT-WEB 正是这个形态）。
   const scratch = mkdtempSync(join(tmpdir(), 'fsa-evaluation-round-'));
   try {
     const candidate = join(scratch, 'candidate');
@@ -60,14 +107,23 @@ it('第 2 轮判决不符合协议时保留该轮原始响应与字段路径，�
     const envelope = createEnvelope('CACHE-02', candidate, { idempotencyKey: 'evaluation-round-error' });
     const outcome = await verifySubmission({ store, taskId: 'CACHE-02', envelope, candidateDirectory: candidate, submittedBy: 'test', qualityProvider });
     const directory = join(outcome.submission.directory, 'execution');
+    // 失败轮仍然完整留档：原始响应与字段路径可定位，不因「不再作废」而丢掉排障证据。
     const roundError = JSON.parse(readFileSync(join(directory, 'review-round-2-error.json'), 'utf8')) as { roundId: string; rawResponse: string; issues: string[] };
     expect(roundError.roundId).toBe('2');
     expect(roundError.rawResponse).toBe(raw);
     expect(roundError.issues.join(' ')).toContain('/dimensions');
-    const reviewError = JSON.parse(readFileSync(join(directory, 'review-error.json'), 'utf8')) as { roundId: string; totalRemainsPending: boolean };
-    expect(reviewError.roundId).toBe('2');
-    expect(reviewError.totalRemainsPending).toBe(true);
-    expect(readExecutionScore(outcome.submission.directory)).toMatchObject({ functional: 50, quality: null, total: null });
+    // 关键：第 1 轮的有效判决被采用，总分落地而不再待定。
+    expect(existsSync(join(directory, 'review-round-1.json'))).toBe(true);
+    expect(existsSync(join(directory, 'review-round-2.json'))).toBe(false);
+    const score = readExecutionScore(outcome.submission.directory)!;
+    expect(score.functional).toBe(50);
+    expect(score.quality).not.toBeNull();
+    expect(score.total).not.toBeNull();
+    // 单轮结论必须留下告警，读者才知道它没有第二轮交叉验证。
+    const comparison = JSON.parse(readFileSync(join(directory, 'review-comparison.json'), 'utf8')) as { comparabilityWarnings: string[]; roundsJudged: Record<string, number> };
+    expect(comparison.comparabilityWarnings.join(' ')).toContain('只有 1 轮有效判决');
+    expect(comparison.roundsJudged).toEqual({ simplicity: 1, maintainability: 1, decoupling: 1 });
+    expect(readExecutionResult(outcome.submission.directory)!.notes.join(' ')).toContain('第 2 轮独立评审未取得有效判决');
   } finally {
     const target = resolve(scratch);
     if (dirname(target) !== resolve(tmpdir()) || !basename(target).startsWith('fsa-evaluation-round-')) throw new Error('测试临时目录越界。');

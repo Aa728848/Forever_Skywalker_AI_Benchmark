@@ -1,5 +1,45 @@
 # 开发交接与执行手册
 
+## 2026-09-27 消除「质量分待定」：评审轮次互相独立、按维取可用轮次
+
+四份真实报告（deepseek / stepfun / Google / MiniMax，各 55 题）里出现 **4 条待定**，用户要求
+「不能出现待定」。逐条挖开 `evidence.json.gz` 后发现是**三个评分流程缺陷**叠加，没有一条是模型作答失败——
+四条待定的候选**全部通过了可用验证（functional=50）**：
+
+| 模型 | 题目 | 真实原因 |
+| --- | --- | --- |
+| Google | LSP-02 | 第 1 轮会话 `error`，**第 2 轮从未发起** |
+| MiniMax | ARCH-01 | 第 2 轮 JSON 真未闭合；**第 1 轮三维都是有效分数** |
+| MiniMax | INT-WEB | 第 2 轮 `timeout`；**第 1 轮三维都是有效分数** |
+| MiniMax | LSP-02 | 第 1 轮声明 simplicity 不可判，**第 2 轮给出 85** |
+
+三个缺陷：**（1）轮次不独立**——对第 1 轮 `await` 后直接抛出：第 1 轮失败则第 2 轮根本不发起，
+第 2 轮失败则丢掉第 1 轮的有效判决；**（2）要求两轮同时给出分数**——`compareReviews` 的 `judged()`
+要求两轮都非 null，「一轮判不了、另一轮给了分」被判成待定；**（3）一行缺失拖垮整组**——
+`comparisonGroups` 的 `values.some(v => v === null)` 让任意一行缺失就把整组均分置空，
+MiniMax 48 道核心题里 45 道有分却整组显示「待定」，**把 94% 的真实成绩藏了起来**。
+
+修法（**没有伪造任何分数**）：两轮都发起、各自留档，成功几轮用几轮；合并改为**按维取可用轮次**
+（两轮都有取平均，只有一轮就用该轮，所有轮次都没有才为 null），单轮结论写入
+`comparabilityWarnings`「只有 1 轮有效判决……未经第二轮交叉验证」；均分**只统计有分数的行**
+并新增「计入均分行数」列，既不整组待定也不把缺失当 0。新增 `mergeReviewRounds`，
+`compareReviews` 保留为两轮兼容入口。
+
+**结果**：待定 4 → **1**；MiniMax 由 52/55 变 **55/55**，总均分 91.94 → **92.20**；
+恢复三行 MiniMax LSP-02 `待定→95.88`、ARCH-01 `待定→100`、INT-WEB `待定→94`。
+**剩下 1 条（Google LSP-02）保持待定**——它两轮都没有取得任何有效维度，没有任何可用的评审分，不补分。
+
+本轮验证：`pnpm check` exit 0（**428 项、29 个文件**）。
+**保真度自检**：用四份报告里**已落定**的 216 行反推合成公式，**216/216 与产品输出完全一致**——证明重算脚本与
+`scoreExecution` 同口径。**反向验证**三处承重判据：把 `roundsJudged` 改回「两轮同时给出才算」→ 失败；
+把第 1 轮的 `await` 改回直接抛出 → 失败；把组均分改回 `some(v => v === null)` → 失败。恢复后全过。
+按约束未跑 `pnpm test:e2e`、未重启任何服务、未动 `data/experiments/**`。
+owning Note [pending-elimination-and-per-round-merge](notes/implemented/bug-fix/2026-09-27-pending-elimination-and-per-round-merge.md)
+已新建，[dsh-judge-protocol-diagnostics](notes/implemented/bug-fix/2026-09-15-dsh-judge-protocol-diagnostics.md) 已就地推翻其中两条。
+
+**一个既有 flaky（非本次引入）**：`apps/api/src/launches.test.ts` 的「不谎报已确认无残留」偶发失败
+（实测约 1/5）。已做对照：`git stash` 掉本次全部改动后在**干净工作树**上跑 6 次仍失败 1 次——与本次改动无关。
+
 ## 2026-09-27 网页「供应商」页签：项目自己的 pi-ai 供应商档案，作答会话真的用得上
 
 此前供应商只能手工写进 `~/.dsh/profiles/<profile>/cordis.patch.yml` 的 `- id: llm-pi-ai`

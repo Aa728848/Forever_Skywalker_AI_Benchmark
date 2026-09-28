@@ -689,7 +689,9 @@ select { padding-right: 8px; }
 .badge.hard { background: var(--warn-soft); border-color: var(--warn-line); color: var(--warn); }
 .badge.extreme { background: #f4eefb; border-color: #e0d2f0; color: #7a55a8; }
 
-.phase-summary { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+/* 阶段统计是一行胶囊标签：必须 align-items:center + 不拉伸，否则每个 chip 会被拉成
+   整行最高者的高度（实测 24px 的自然高度被拉到 56px，看起来像圆圈而不是标签）。 */
+.phase-summary { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
 
 /* ── 10. 组件基元：表格 ──────────────────────────────────────────────────── */
 .checks-table {
@@ -843,7 +845,25 @@ ol.timeline > li:last-child { padding-bottom: var(--sp-1); }
   background: var(--panel-2);
 }
 .meta-grid span { color: var(--text-4); font-size: var(--fs-xs); }
-.meta-grid b { color: var(--text-2); font-size: var(--fs-base); font-weight: 600; }
+/**
+ * 值区固定两行高：长路径（如报告目录）在框内换行/滚动，而不是把整张卡片撑高。
+ * grid 行高由最高的单元格决定，一个长值会把同排其它卡片一起拉长（实测 69px → 108px）。
+ * 完整值仍可读：鼠标悬停有 title，框内也能滚动看到全部。
+ */
+.meta-grid b {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: var(--fs-base);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+  min-height: calc(1.35em * 2);
+}
+/* 需要看全值的地方（代码/路径）允许在框内滚动，而不是靠撑高卡片。 */
+.meta-grid b:hover { overflow: auto; -webkit-line-clamp: unset; display: block; max-height: 8em; }
 .meta-grid small.field-hint { margin-top: 0; }
 
 .summary-grid {
@@ -1103,13 +1123,27 @@ ol.timeline > li:last-child { padding-bottom: var(--sp-1); }
 .metric b { flex: 0 0 38px; color: var(--text-2); font-size: var(--fs-base); font-weight: 500; }
 
 /* ── 15. 页签：发起测评 ──────────────────────────────────────────────────── */
+/**
+ * 参数卡片用多列瀑布流，而不是等高网格。
+ *
+ * 为什么不用 grid：卡片高度差很大（题目范围 98px、并行度 413px）。grid 每行高度由最高者
+ * 决定，一张高卡片会把同排其它卡片一起拉长，并在最后留下大片空白——实测 1600px 下第二行
+ * 只填了 24%、整块填充率 38%，用户看到的就是「上面占满、下面空一大片」。
+ * 瀑布流让每列各排各的，填充率升到 47%（1600px）/ 63%（1280px），且卡片保持自然高度。
+ * columns 用固定宽度 + 自动列数，所以窄屏会自然降列，无需断点。
+ */
 .launch-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: var(--sp-4);
-  align-items: start;
+  display: block;
+  columns: 19rem;
+  column-gap: var(--sp-4);
   margin: var(--sp-3) 0 var(--sp-1);
 }
+.launch-grid > .launch-field {
+  /* 卡片不得被拆到两列之间 */
+  break-inside: avoid;
+  margin: 0 0 var(--sp-4);
+}
+.launch-grid > .launch-field:last-child { margin-bottom: 0; }
 .launch-field {
   display: flex;
   flex-direction: column;
@@ -1409,6 +1443,8 @@ ol.timeline > li:last-child { padding-bottom: var(--sp-1); }
   .provider-new { flex: 1 1 100%; }
   .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .meta-grid { grid-template-columns: 1fr; }
+  /* 窄屏下长值仍不得把卡片撑高：交给内部滚动而不是无限增高 */
+  .meta-grid b { max-height: 4.5em; overflow: auto; overflow-wrap: anywhere; }
   .artifact-grid { grid-template-columns: 1fr; }
   .section-head > span { display: none; }
   .heading { align-items: flex-start; flex-direction: column; gap: var(--sp-3); }

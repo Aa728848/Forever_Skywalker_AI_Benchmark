@@ -1,7 +1,7 @@
 import { judgeConfigValidator, reviewVerdictValidator, type JudgeConfig, type ReviewVerdict } from '@fsa/contracts';
 import { createHash } from 'node:crypto';
 export { createEnvironmentJudge, createOpenAICompatibleCompletion } from './http.ts';
-export { compareReviews } from './comparison.ts';
+export { compareReviews, mergeReviewRounds } from './comparison.ts';
 import { resolveJudgeConfiguration, type JudgeConfiguration } from './configuration.ts';
 export { resolveJudgeConfiguration, type JudgeConfiguration } from './configuration.ts';
 

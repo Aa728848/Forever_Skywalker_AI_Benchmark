@@ -5,7 +5,7 @@ import { requireTask } from '@fsa/catalog';
 import { reviewVerdictValidator, type ExecutionArtifact, type ReviewVerdict } from '@fsa/contracts';
 import { scoreExecution, type QualityEvidence } from '@fsa/core';
 import type { QualityProvider } from '@fsa/executor';
-import { compareReviews, JudgeProtocolError, JudgeUnavailableError, type JudgeAdapter, type ReviewMaterial } from '@fsa/judge';
+import { JudgeProtocolError, JudgeUnavailableError, mergeReviewRounds, type JudgeAdapter, type ReviewMaterial, type ReviewOutcome } from '@fsa/judge';
 import { analyzeWorkspace, defaultPolicy } from '@fsa/static';
 import { listFiles, taskPackageDir } from '@fsa/tasks';
 import { measureVerificationCost } from './benchmark.ts';
@@ -136,16 +136,40 @@ export function createQualityProvider(options: EvaluationOptions = {}): QualityP
           try { return await judge.review({ ...request, roundId }); }
           catch (error) { writeRoundFailure(roundId, error); throw error; }
         };
-        const first = await reviewRound('1');
-        writeEvidence('review-round-1', 'review-round-1.json', first);
-        const second = await reviewRound('2');
-        writeEvidence('review-round-2', 'review-round-2.json', second);
-        for (const [roundId, outcome] of [['1', first], ['2', second]] as const) {
+        /**
+         * 两轮互相独立：任一轮失败不得影响另一轮的结果。
+         *
+         * 旧实现对第 1 轮 await 后直接抛出，于是第 1 轮一旦失败，第 2 轮**根本不会发起**，
+         * 整题质量分与总分永久待定（实测 Google 的 LSP-02 第 1 轮会话 error：报告里只有
+         * review-round-1-error，没有 review-round-2）。同理第 2 轮失败会连第 1 轮已取得的
+         * 有效判决一起丢掉（实测 MiniMax 的 ARCH-01/INT-WEB：第 1 轮三维都是有效分数）。
+         *
+         * 现在两轮都跑、各自留档，成功几轮就用几轮；只有两轮都没有任何有效维度时才真的待定。
+         */
+        // 轮次 id 与结果一同保存：只按数组下标回推轮次会在第 1 轮失败时把第 2 轮错标成第 1 轮。
+        const succeeded: { roundId: string; outcome: ReviewOutcome }[] = [];
+        const failedRounds: string[] = [];
+        let roundFailure: unknown = null;
+        for (const roundId of ['1', '2']) {
+          try {
+            const outcome = await reviewRound(roundId);
+            writeEvidence('review-round-' + roundId, 'review-round-' + roundId + '.json', outcome);
+            succeeded.push({ roundId, outcome });
+          } catch (error) {
+            // 裁判会话清理失败属环境问题，仍然上抛；其余失败已写入 review-round-N-error 留档。
+            if (error instanceof DshCleanupError) throw error;
+            roundFailure = error;
+            failedRounds.push(roundId);
+          }
+        }
+        if (succeeded.length === 0) throw roundFailure instanceof Error ? roundFailure : new JudgeUnavailableError('两轮独立评审均未取得有效判决。');
+        for (const { roundId, outcome } of succeeded) {
           if (outcome.normalizations !== undefined && outcome.normalizations.length > 0) {
             notes.push('第 ' + roundId + ' 轮判决经平台归一化：' + outcome.normalizations.join('、') + '；四维分数与证据引用未改动。');
           }
         }
-        const comparison = compareReviews(first.verdict, second.verdict);
+        if (failedRounds.length > 0) notes.push('第 ' + failedRounds.join('、') + ' 轮独立评审未取得有效判决（原始响应与字段路径见 review-round-N-error）；其余轮次的有效判决照常采用。');
+        const comparison = mergeReviewRounds(succeeded.map(entry => entry.outcome.verdict));
         /**
          * 「两轮不可比」与「两轮分数不同」是两件事，必须分开：
          * 前者说明这两轮根本不是同一个实验条件（配置/模型版本/运行时变了），
@@ -153,34 +177,39 @@ export function createQualityProvider(options: EvaluationOptions = {}): QualityP
          * 因为它的可比性是有瑕疵的。后者只是正常的评审波动，取平均即可，无需额外告警。
          */
         const comparabilityWarnings: string[] = [];
-        if (first.configuration?.parametersFingerprint !== second.configuration?.parametersFingerprint
-          || (frozenConfiguration && [first, second].some(round => round.configuration?.parametersFingerprint !== frozenConfiguration.parametersFingerprint))) {
-          comparabilityWarnings.push('两轮实际生成参数未保持相同的冻结配置。');
+        // 只有多轮时才谈「轮次之间是否可比」；单轮无从比较，由 mergeReviewRounds 自行告警。
+        if (succeeded.length > 1) {
+          const fingerprints = new Set(succeeded.map(entry => entry.outcome.configuration?.parametersFingerprint));
+          if (fingerprints.size > 1
+            || (frozenConfiguration && succeeded.some(entry => entry.outcome.configuration?.parametersFingerprint !== frozenConfiguration.parametersFingerprint))) {
+            comparabilityWarnings.push('各轮实际生成参数未保持相同的冻结配置。');
+          }
+          if (new Set(succeeded.map(entry => entry.outcome.responseModel)).size > 1) comparabilityWarnings.push('各轮服务端返回的模型版本不同。');
+          if (new Set(succeeded.map(entry => entry.outcome.dshSession?.version)).size > 1
+            || new Set(succeeded.map(entry => entry.outcome.dshSession?.presetFingerprint)).size > 1) {
+            comparabilityWarnings.push('各轮 DSH 评分运行时或评分配置发生变化。');
+          }
         }
-        if (first.responseModel !== second.responseModel) comparabilityWarnings.push('两轮服务端返回的模型版本不同。');
-        if (first.dshSession?.version !== second.dshSession?.version || first.dshSession?.presetFingerprint !== second.dshSession?.presetFingerprint) {
-          comparabilityWarnings.push('两轮 DSH 评分运行时或评分配置发生变化。');
-        }
-        comparison.comparabilityWarnings = comparabilityWarnings;
-        const firstScore = scoreExecution(context.execution, task, { objective, review: first.verdict.dimensions });
-        const secondScore = scoreExecution(context.execution, task, { objective, review: second.verdict.dimensions });
-        // 门槛结论在两轮间不一致时不再作废分数，但同样要留告警。
-        if (firstScore.thresholdMet !== null && secondScore.thresholdMet !== null && firstScore.thresholdMet !== secondScore.thresholdMet) {
-          comparabilityWarnings.push('结合已取得的客观分后，两轮判决给出不同的合格门槛结论。');
-        }
-        // needsHumanReview 只表示「两轮不可比」，不表示「分数不同」：
+        // 门槛结论在各轮之间不一致时不再作废分数，但同样要留告警。
+        const roundThresholds = new Set(succeeded.map(entry =>
+          scoreExecution(context.execution, task, { objective, review: entry.outcome.verdict.dimensions }).thresholdMet));
+        if (roundThresholds.size > 1) comparabilityWarnings.push('结合已取得的客观分后，各轮判决给出不同的合格门槛结论。');
+        comparison.comparabilityWarnings = [...comparison.comparabilityWarnings, ...comparabilityWarnings];
+        // needsHumanReview 只表示「轮次之间不可比」，不表示「分数不同」：
         // 正常分歧由 averages 取平均消化，不该再被当成需要人工介入的异常。
-        comparison.needsHumanReview = comparabilityWarnings.length > 0;
+        comparison.needsHumanReview = comparison.comparabilityWarnings.length > 0;
         writeEvidence('review-comparison', 'review-comparison.json', comparison);
-        // 只有「两轮都判不可判」才真正没有可用的评审分；否则一律取两轮平均。
+        // 所有取得的轮次都没判定任何维度时，才真正没有可用的评审分。
         const unjudgedEverywhere = Object.values(comparison.averages).every(score => score === null);
         if (unjudgedEverywhere) {
-          notes.push('两轮评审均未判定任何维度，评审分保持缺失（没有可平均的结论）。');
+          notes.push('各轮评审均未判定任何维度，评审分保持缺失（没有可平均的结论）。');
         } else {
+          // 证据引用如实指向真正给出该维分数的轮次，不虚报不存在的轮次。
+          const roundEvidence = succeeded.map(entry => 'review-round-' + entry.roundId);
           review = Object.fromEntries(Object.entries(comparison.averages).filter(([, score]) => score !== null)
-            .map(([key, score]) => [key, { score, evidence: ['review-round-1', 'review-round-2'] }]));
-          for (const warning of comparabilityWarnings) notes.push('两轮评审可比性告警：' + warning + ' 分数仍按两轮平均给出，复核时请注意。');
-          independentReview = first.source === 'model' && second.source === 'model';
+            .map(([key, score]) => [key, { score, evidence: roundEvidence }]));
+          for (const warning of comparison.comparabilityWarnings) notes.push('评审可比性告警：' + warning + ' 分数仍按可用轮次给出，复核时请注意。');
+          independentReview = succeeded.every(entry => entry.outcome.source === 'model');
           rehearsal = !independentReview;
           if (!independentReview) notes.push('本轮为脚本评审演练，不属于真实模型验收。');
         }

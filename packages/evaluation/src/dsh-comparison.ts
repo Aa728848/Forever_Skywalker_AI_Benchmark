@@ -162,15 +162,28 @@ export function comparisonGroups(report: DshComparisonReport) {
     groups: report.settings.presets.flatMap(preset => report.settings.modes.flatMap(mode => (['core', 'integration'] as const).flatMap(track => {
       const rows = report.rows.filter(row => row.preset === preset && row.mode === mode && requireTask(row.taskId).track === track);
       if (rows.length === 0) return [];
+      /**
+       * 均分只统计**真正取到该分**的行，并把计入行数一并报出去。
+       *
+       * 旧实现只要有一行为 null 就把整组置成「待定」：miniMax 那轮 48 道核心题里 45 道都有分数，
+       * 却因为 3 行评审证据缺失而整组显示待定——把 94% 的真实成绩藏了起来。
+       * 反过来把缺失行当 0 参与平均同样不行（那是伪造分数）。
+       * 因此：只对已有分数取平均 + 显式给出计入行数，让读者一眼看到覆盖率。
+       * drift 非空时仍然拒绝合并——不同环境或裁判的分数不能混成一个均值。
+       */
       const average = (dimension: 'functional' | 'quality' | 'total') => {
         const values = rows.map(row => row.evaluation?.status.scoring[dimension] ?? null);
-        if (drift.length > 0 || values.length === 0 || values.some(value => value === null)) return null;
-        return Math.round(values.reduce<number>((sum, value) => sum + (value ?? 0), 0) / values.length * 100) / 100;
+        const scored = values.filter((value): value is number => value !== null);
+        if (drift.length > 0 || scored.length === 0) return null;
+        return Math.round(scored.reduce((sum, value) => sum + value, 0) / scored.length * 100) / 100;
       };
+      const scoreCount = (dimension: 'functional' | 'quality' | 'total') =>
+        rows.filter(row => (row.evaluation?.status.scoring[dimension] ?? null) !== null).length;
       return [{ preset, mode, track, planned: rows.length, completed: rows.filter(row => row.solver?.finishReason === 'completed').length,
         graded: rows.filter(row => row.evaluation !== null).length,
         passed: rows.filter(row => row.evaluation?.status.classification === 'passed').length,
-        functional: average('functional'), quality: average('quality'), total: average('total') }];
+        functional: average('functional'), quality: average('quality'), total: average('total'),
+        functionalRows: scoreCount('functional'), qualityRows: scoreCount('quality'), totalRows: scoreCount('total') }];
     }))),
   };
 }
@@ -187,9 +200,13 @@ export function renderComparison(report: DshComparisonReport): string {
     `每题 ${report.settings.repeats} 次；每次限时 ${report.settings.timeoutMs / 60_000} 分钟；每次模型请求输出上限 ${report.settings.maxTokens} Token（不是整题总预算）。`, '',
     ...report.settings.modes.includes('default') ? ['default 表示未向 DSH 指定思考等级，沿用供应商/模型配置；不等同于 off，也不代表已测得实际思考深度。', ''] : [],
     '以下为所选题目的试评均分，核心题与来源集成题的分级汇总另存；缺测不补分。', '',
-    '| 赛道 | DSH 预设 | 思考等级 | 完成/计划 | 已评分 | 验证通过 | 可用均分 /50 | 质量均分 /50 | 总均分 /100 |',
-    '| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
-    ...groups.map(group => `| ${group.track === 'core' ? '核心题' : '来源集成题'} | ${group.preset} | ${group.mode} | ${group.completed}/${group.planned} | ${group.graded} | ${group.passed} | ${number(group.functional)} | ${number(group.quality)} | ${number(group.total)} |`), '',
+    '| 赛道 | DSH 预设 | 思考等级 | 完成/计划 | 已评分 | 验证通过 | 可用均分 /50 | 质量均分 /50 | 总均分 /100 | 计入均分行数 |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+    // 均分只统计有分数的行：必须同时给出「计入行数/总行数」，否则读者会把部分覆盖误当成全量。
+    ...groups.map(group => {
+      const coverage = `总分 ${group.totalRows}/${group.planned} · 质量 ${group.qualityRows}/${group.planned}`;
+      return `| ${group.track === 'core' ? '核心题' : '来源集成题'} | ${group.preset} | ${group.mode} | ${group.completed}/${group.planned} | ${group.graded} | ${group.passed} | ${number(group.functional)} | ${number(group.quality)} | ${number(group.total)} | ${coverage} |`;
+    }), '',
     ...drift.map(issue => `对比无效：${issue}，已停止合并分数。`),
     ...report.issues.map(issue => `记录：${cell(issue)}`),
     ...report.rows.flatMap(row => {
@@ -197,7 +214,12 @@ export function renderComparison(report: DshComparisonReport): string {
       if (status === undefined) return [];
       const refs = status.evidenceRefs.filter(ref => ref === 'review-error' || /^review-round-.+-error$/.test(ref));
       if (refs.length === 0) return [];
-      return [`待定原因：${row.taskId} 独立评审未通过协议校验，质量分与总分保持待定；失败轮的原始响应与字段路径见 ${refs.map(ref => cell(ref)).join('、')}（在 evidence.json.gz 内）。`];
+      const kept = status.evidenceRefs.filter(ref => /^review-round-\d+$/.test(ref));
+      // 失败轮次与「有效轮次」必须同时说明：读者要能判断这份分数是几轮得出的。
+      const used = kept.length > 0
+        ? `本行质量分由 ${kept.map(ref => cell(ref)).join('、')} 的有效判决得出（共 ${kept.length} 轮）。`
+        : '本行没有任何有效判决轮次，质量分与总分确实无法给出。';
+      return [`待定原因：${row.taskId} 保留了未通过的评审轮次；失败轮的原始响应与字段路径见 ${refs.map(ref => cell(ref)).join('、')}（在 evidence.json.gz 内）。${used}`];
     }), '',
     '| 题目 | DSH 预设 | 思考等级 | 次数 | 作答结束原因 | 验证 | 作答秒数 | 分数 /100 | 运行/尝试 |',
     '| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
