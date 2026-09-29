@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "PERF-01",
-  "taskVersion": "0.2.0",
+  "taskVersion": "0.3.0",
   "title": "消除重复解析并保持结果",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -42,9 +42,10 @@
     "referencePatch": "graders/PERF-01/reference.patch",
     "alternative": "graders/PERF-01/alternative",
     "defectDetectors": [
-      "public/input-accesses-are-linear",
-      "hidden/scaling-ratio-is-subquadratic",
-      "hidden/prototype-keys-are-data"
+      "hidden/access-count-stays-linear",
+      "hidden/matches-a-naive-single-pass-reference",
+      "hidden/prototype-keys-are-data",
+      "public/input-accesses-are-linear"
     ]
   },
   "limits": {
@@ -95,60 +96,76 @@
       "summary": "重复行密集的输入同样保持线性。"
     },
     {
-      "id": "hidden/scaling-ratio-is-subquadratic",
-      "kind": "hidden",
-      "group": "resources",
-      "weight": 1,
-      "critical": false,
-      "summary": "4 倍规模下访问次数比值必须亚二次。"
-    },
-    {
-      "id": "hidden/parses-and-sums",
-      "kind": "hidden",
-      "group": "behavior",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的解析与累加。"
-    },
-    {
-      "id": "hidden/rejects-invalid-lines",
-      "kind": "hidden",
-      "group": "boundary",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的非法行。"
-    },
-    {
-      "id": "hidden/matches-naive-reference",
-      "kind": "hidden",
-      "group": "regression",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的差分一致。"
-    },
-    {
-      "id": "hidden/does-not-mutate-input",
+      "id": "hidden/prototype-keys-are-data",
       "kind": "hidden",
       "group": "state",
       "weight": 1,
       "critical": false,
-      "summary": "输入不可变且重复调用结果一致。"
-    },
-    {
-      "id": "hidden/prototype-keys-are-data",
-      "kind": "hidden",
-      "group": "boundary",
-      "summary": "特殊合法键不触发原型语义",
-      "weight": 1,
-      "critical": true
+      "summary": "prototype keys are data"
     },
     {
       "id": "hidden/seeded-independent-totals-and-invalid-index",
       "kind": "hidden",
-      "group": "regression",
-      "summary": "独立数值oracle和错误行定位",
+      "group": "boundary",
       "weight": 1,
-      "critical": true
+      "critical": true,
+      "summary": "seeded independent totals and invalid index"
+    },
+    {
+      "id": "hidden/access-count-stays-linear",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "access count stays linear"
+    },
+    {
+      "id": "hidden/duplicate-lines-do-not-inflate-access-count",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "duplicate lines do not inflate access count"
+    },
+    {
+      "id": "hidden/empty-and-single-line-inputs",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "empty and single line inputs"
+    },
+    {
+      "id": "hidden/parse-line-accepts-and-rejects-exactly",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "parse line accepts and rejects exactly"
+    },
+    {
+      "id": "hidden/summarize-reports-the-offending-line-index",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "summarize reports the offending line index"
+    },
+    {
+      "id": "hidden/input-is-never-mutated-and-calls-are-repeatable",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "input is never mutated and calls are repeatable"
+    },
+    {
+      "id": "hidden/matches-a-naive-single-pass-reference",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "matches a naive single pass reference"
     }
   ]
 }

@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "GRAPH-02",
-  "taskVersion": "0.2.0",
+  "taskVersion": "0.3.0",
   "title": "图去重、环与确定性排序",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -42,10 +42,14 @@
     "referencePatch": "graders/GRAPH-02/reference.patch",
     "alternative": "graders/GRAPH-02/alternative",
     "defectDetectors": [
-      "hidden/lexicographic-tiebreak-is-deterministic",
-      "public/lexicographic-tiebreak-is-deterministic",
+      "hidden/cycle-detection-is-order-invariant",
       "hidden/cycle-edges-and-permutation-invariance",
-      "hidden/independent-dag-order"
+      "hidden/independent-dag-order",
+      "hidden/isolated-nodes-sort-lexicographically-among-themselves",
+      "hidden/lexicographic-tiebreak-is-deterministic",
+      "hidden/order-is-invariant-under-node-and-edge-permutation",
+      "hidden/self-loop-is-a-two-element-cycle",
+      "public/lexicographic-tiebreak-is-deterministic"
     ]
   },
   "limits": {
@@ -98,58 +102,114 @@
     {
       "id": "hidden/orders-simple-dag",
       "kind": "hidden",
-      "group": "behavior",
+      "group": "resources",
       "weight": 1,
       "critical": false,
-      "summary": "隐藏样本下的排序。"
+      "summary": "orders simple dag"
     },
     {
       "id": "hidden/lexicographic-tiebreak-is-deterministic",
       "kind": "hidden",
-      "group": "state",
+      "group": "behavior",
       "weight": 1,
       "critical": false,
-      "summary": "隐藏样本下的确定性。"
+      "summary": "lexicographic tiebreak is deterministic"
     },
     {
       "id": "hidden/deduplicates-repeated-edges",
       "kind": "hidden",
-      "group": "resources",
+      "group": "regression",
       "weight": 1,
       "critical": false,
-      "summary": "隐藏样本下的去重。"
+      "summary": "deduplicates repeated edges"
     },
     {
       "id": "hidden/detects-cycles-with-path",
       "kind": "hidden",
-      "group": "regression",
+      "group": "state",
       "weight": 1,
       "critical": false,
-      "summary": "隐藏样本下的错误类型。"
+      "summary": "detects cycles with path"
     },
     {
       "id": "hidden/empty-graph-returns-empty-order",
       "kind": "hidden",
-      "group": "boundary",
+      "group": "behavior",
       "weight": 1,
       "critical": false,
-      "summary": "隐藏样本下的空图。"
+      "summary": "empty graph returns empty order"
+    },
+    {
+      "id": "hidden/order-is-invariant-under-node-and-edge-permutation",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "order is invariant under node and edge permutation"
+    },
+    {
+      "id": "hidden/duplicate-nodes-and-edges-do-not-block-progress",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "duplicate nodes and edges do not block progress"
+    },
+    {
+      "id": "hidden/self-loop-is-a-two-element-cycle",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "self loop is a two element cycle"
+    },
+    {
+      "id": "hidden/cycle-path-contains-only-the-cycle-itself",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "cycle path contains only the cycle itself"
+    },
+    {
+      "id": "hidden/cycle-detection-is-order-invariant",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "cycle detection is order invariant"
+    },
+    {
+      "id": "hidden/unknown-node-edges-are-rejected",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "unknown node edges are rejected"
+    },
+    {
+      "id": "hidden/isolated-nodes-sort-lexicographically-among-themselves",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "isolated nodes sort lexicographically among themselves"
     },
     {
       "id": "hidden/cycle-edges-and-permutation-invariance",
       "kind": "hidden",
-      "group": "boundary",
-      "summary": "闭环真实边、自环和输入排列不变",
+      "group": "state",
       "weight": 1,
-      "critical": true
+      "critical": false,
+      "summary": "cycle edges and permutation invariance"
     },
     {
       "id": "hidden/independent-dag-order",
       "kind": "hidden",
       "group": "regression",
-      "summary": "独立可用节点oracle",
       "weight": 1,
-      "critical": true
+      "critical": false,
+      "summary": "independent dag order"
     }
   ]
 }

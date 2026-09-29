@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "ARCH-03",
-  "taskVersion": "0.2.0",
+  "taskVersion": "0.3.0",
   "title": "替换适配器并保持公共契约",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -42,18 +42,20 @@
     "referencePatch": "graders/ARCH-03/reference.patch",
     "alternative": "graders/ARCH-03/alternative",
     "defectDetectors": [
-      "hidden/adapter-failures-are-normalized",
-      "hidden/v2-seconds-become-milliseconds",
-      "hidden/v2-status-maps-to-ok",
-      "public/adapter-failures-are-normalized",
-      "public/v2-seconds-become-milliseconds",
-      "public/v2-status-maps-to-ok",
-      "public/subscriber-cancel-does-not-abort-other-readers",
-      "public/old-adapter-completion-cannot-clear-new-inflight",
-      "hidden/last-reader-cancel-detaches-before-retry",
       "hidden/adapter-failure-normalization-and-retry",
       "hidden/already-aborted-read-never-loads",
-      "hidden/synchronous-adapter-reentry-cannot-publish-old-read"
+      "hidden/last-reader-cancel-detaches-before-retry",
+      "hidden/legacy-and-v2-produce-identical-semantics",
+      "hidden/repeated-reads-are-independent",
+      "hidden/seconds-to-milliseconds-is-exact",
+      "hidden/sync-and-async-failures-both-wrap",
+      "hidden/synchronous-adapter-reentry-cannot-publish-old-read",
+      "hidden/v2-missing-is-not-an-error-and-has-null-body",
+      "public/adapter-failures-are-normalized",
+      "public/old-adapter-completion-cannot-clear-new-inflight",
+      "public/subscriber-cancel-does-not-abort-other-readers",
+      "public/v2-seconds-become-milliseconds",
+      "public/v2-status-maps-to-ok"
     ]
   },
   "limits": {
@@ -104,46 +106,6 @@
       "summary": "不修改适配器对象。"
     },
     {
-      "id": "hidden/legacy-adapter-keeps-contract",
-      "kind": "hidden",
-      "group": "behavior",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的旧适配器契约。"
-    },
-    {
-      "id": "hidden/v2-status-maps-to-ok",
-      "kind": "hidden",
-      "group": "state",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的状态映射。"
-    },
-    {
-      "id": "hidden/v2-seconds-become-milliseconds",
-      "kind": "hidden",
-      "group": "resources",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的单位换算。"
-    },
-    {
-      "id": "hidden/adapter-failures-are-normalized",
-      "kind": "hidden",
-      "group": "boundary",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的错误统一。"
-    },
-    {
-      "id": "hidden/adapter-object-is-not-mutated",
-      "kind": "hidden",
-      "group": "regression",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的不可变性。"
-    },
-    {
       "id": "public/subscriber-cancel-does-not-abort-other-readers",
       "kind": "public",
       "group": "resources",
@@ -163,33 +125,89 @@
       "id": "hidden/last-reader-cancel-detaches-before-retry",
       "kind": "hidden",
       "group": "boundary",
-      "weight": 2,
-      "critical": true,
-      "summary": "最后读者取消立即移除在途身份，下一次请求不复用已abort请求。"
+      "weight": 1,
+      "critical": false,
+      "summary": "last reader cancel detaches before retry"
     },
     {
       "id": "hidden/adapter-failure-normalization-and-retry",
       "kind": "hidden",
-      "group": "behavior",
-      "weight": 2,
-      "critical": true,
-      "summary": "同步和异步故障统一AdapterError并释放合并记录。"
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "adapter failure normalization and retry"
     },
     {
       "id": "hidden/already-aborted-read-never-loads",
       "kind": "hidden",
-      "group": "regression",
-      "weight": 2,
-      "critical": true,
-      "summary": "预先取消的读者不会触发底层适配器。"
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "already aborted read never loads"
     },
     {
       "id": "hidden/synchronous-adapter-reentry-cannot-publish-old-read",
       "kind": "hidden",
-      "group": "state",
-      "weight": 2,
-      "critical": true,
-      "summary": "load调用同步重入replace，外层请求已经登记且能被新代撤销。"
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "synchronous adapter reentry cannot publish old read"
+    },
+    {
+      "id": "hidden/v2-missing-is-not-an-error-and-has-null-body",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "v2 missing is not an error and has null body"
+    },
+    {
+      "id": "hidden/seconds-to-milliseconds-is-exact",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "seconds to milliseconds is exact"
+    },
+    {
+      "id": "hidden/legacy-and-v2-produce-identical-semantics",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "legacy and v2 produce identical semantics"
+    },
+    {
+      "id": "hidden/legacy-missing-payload-becomes-null",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "legacy missing payload becomes null"
+    },
+    {
+      "id": "hidden/sync-and-async-failures-both-wrap",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "sync and async failures both wrap"
+    },
+    {
+      "id": "hidden/adapter-object-is-never-mutated",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "adapter object is never mutated"
+    },
+    {
+      "id": "hidden/repeated-reads-are-independent",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "repeated reads are independent"
     }
   ]
 }

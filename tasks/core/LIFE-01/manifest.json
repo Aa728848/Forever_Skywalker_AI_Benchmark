@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "LIFE-01",
-  "taskVersion": "0.1.0",
+  "taskVersion": "0.2.0",
   "title": "订阅与定时器释放",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -42,9 +42,13 @@
     "referencePatch": "graders/LIFE-01/reference.patch",
     "alternative": "graders/LIFE-01/alternative",
     "defectDetectors": [
-      "hidden/repeated-start-keeps-one-timer",
-      "hidden/restart-after-stop",
-      "hidden/stop-cancels-timer",
+      "hidden/repeated-start-does-not-duplicate-ticks",
+      "hidden/restart-creates-a-fresh-independent-timer",
+      "hidden/stop-cancels-exactly-once-and-keeps-counting",
+      "hidden/stop-marks-timer-cancelled-so-scheduler-stops-firing",
+      "hidden/stop-start-cycle-releases-every-timer",
+      "hidden/tick-throwing-does-not-break-lifecycle",
+      "hidden/two-pollers-on-one-scheduler-are-independent",
       "public/repeated-start-keeps-one-timer",
       "public/restart-after-stop",
       "public/stop-cancels-timer"
@@ -106,52 +110,76 @@
       "summary": "缺省间隔为 1000ms。"
     },
     {
-      "id": "hidden/start-schedules-one-timer",
-      "kind": "hidden",
-      "group": "behavior",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下 start 的行为。"
-    },
-    {
-      "id": "hidden/stop-cancels-timer",
-      "kind": "hidden",
-      "group": "resources",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下不得留下存活定时器。"
-    },
-    {
-      "id": "hidden/repeated-start-keeps-one-timer",
-      "kind": "hidden",
-      "group": "state",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的重复 start。"
-    },
-    {
-      "id": "hidden/restart-after-stop",
-      "kind": "hidden",
-      "group": "state",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的重启。"
-    },
-    {
-      "id": "hidden/stop-without-start-is-safe",
-      "kind": "hidden",
-      "group": "boundary",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的空操作。"
-    },
-    {
-      "id": "hidden/default-interval-is-used",
+      "id": "hidden/repeated-start-does-not-duplicate-ticks",
       "kind": "hidden",
       "group": "regression",
       "weight": 1,
       "critical": false,
-      "summary": "隐藏样本下的缺省间隔。"
+      "summary": "repeated start does not duplicate ticks"
+    },
+    {
+      "id": "hidden/stop-cancels-exactly-once-and-keeps-counting",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "stop cancels exactly once and keeps counting"
+    },
+    {
+      "id": "hidden/stop-marks-timer-cancelled-so-scheduler-stops-firing",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "stop marks timer cancelled so scheduler stops firing"
+    },
+    {
+      "id": "hidden/stop-without-start-is-a-no-op",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "stop without start is a no op"
+    },
+    {
+      "id": "hidden/restart-creates-a-fresh-independent-timer",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "restart creates a fresh independent timer"
+    },
+    {
+      "id": "hidden/default-interval-and-explicit-zero",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "default interval and explicit zero"
+    },
+    {
+      "id": "hidden/two-pollers-on-one-scheduler-are-independent",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "two pollers on one scheduler are independent"
+    },
+    {
+      "id": "hidden/tick-throwing-does-not-break-lifecycle",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "tick throwing does not break lifecycle"
+    },
+    {
+      "id": "hidden/stop-start-cycle-releases-every-timer",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "stop start cycle releases every timer"
     }
   ]
 }

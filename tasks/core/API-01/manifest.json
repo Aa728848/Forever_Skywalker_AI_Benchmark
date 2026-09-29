@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "API-01",
-  "taskVersion": "0.2.0",
+  "taskVersion": "0.3.0",
   "title": "请求校验与错误契约",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -42,18 +42,19 @@
     "referencePatch": "graders/API-01/reference.patch",
     "alternative": "graders/API-01/alternative",
     "defectDetectors": [
+      "hidden/independent-combinations-and-stable-order",
+      "hidden/issue-order-is-stable-and-complete",
+      "hidden/non-plain-payloads-rejected",
+      "hidden/note-optional-but-when-present-strict",
+      "hidden/plain-object-boundary",
+      "hidden/quantity-must-be-integer-in-1-to-1000",
+      "hidden/result-is-frozen-and-detached",
+      "hidden/unknown-fields-including-prototype-names",
       "public/collects-every-issue",
       "public/quantity-range-boundaries",
       "public/rejects-numeric-strings",
       "public/rejects-unknown-fields",
-      "public/returns-frozen-copy",
-      "hidden/collects-every-issue",
-      "hidden/quantity-range-boundaries",
-      "hidden/rejects-numeric-strings",
-      "hidden/rejects-unknown-fields",
-      "hidden/returns-frozen-copy",
-      "hidden/plain-object-boundary",
-      "hidden/independent-combinations-and-stable-order"
+      "public/returns-frozen-copy"
     ]
   },
   "limits": {
@@ -128,84 +129,84 @@
       "summary": "返回冻结副本，不受调用方后续修改影响。"
     },
     {
-      "id": "hidden/accepts-valid-request",
-      "kind": "hidden",
-      "group": "behavior",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的合法请求同样通过。"
-    },
-    {
-      "id": "hidden/reports-missing-fields",
-      "kind": "hidden",
-      "group": "boundary",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的缺失字段报告。"
-    },
-    {
-      "id": "hidden/rejects-numeric-strings",
-      "kind": "hidden",
-      "group": "boundary",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下不隐式转换。"
-    },
-    {
-      "id": "hidden/quantity-range-boundaries",
-      "kind": "hidden",
-      "group": "boundary",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的边界行为。"
-    },
-    {
-      "id": "hidden/rejects-unknown-fields",
-      "kind": "hidden",
-      "group": "boundary",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的未知字段。"
-    },
-    {
-      "id": "hidden/collects-every-issue",
-      "kind": "hidden",
-      "group": "resources",
-      "weight": 1,
-      "critical": false,
-      "summary": "大 note 与多问题一次返回。"
-    },
-    {
-      "id": "hidden/rejects-non-object-payload",
-      "kind": "hidden",
-      "group": "boundary",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的非对象载荷。"
-    },
-    {
-      "id": "hidden/returns-frozen-copy",
-      "kind": "hidden",
-      "group": "regression",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的副本语义。"
-    },
-    {
       "id": "hidden/plain-object-boundary",
       "kind": "hidden",
       "group": "boundary",
-      "summary": "普通对象和继承字段隔离",
       "weight": 1,
-      "critical": true
+      "critical": true,
+      "summary": "plain object boundary"
     },
     {
       "id": "hidden/independent-combinations-and-stable-order",
       "kind": "hidden",
-      "group": "behavior",
-      "summary": "独立组合验证全部错误与稳定顺序",
+      "group": "regression",
       "weight": 1,
-      "critical": true
+      "critical": false,
+      "summary": "independent combinations and stable order"
+    },
+    {
+      "id": "hidden/quantity-must-be-integer-in-1-to-1000",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "quantity must be integer in 1 to 1000"
+    },
+    {
+      "id": "hidden/order-id-must-be-non-empty-string",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "order id must be non empty string"
+    },
+    {
+      "id": "hidden/note-optional-but-when-present-strict",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "note optional but when present strict"
+    },
+    {
+      "id": "hidden/issue-order-is-stable-and-complete",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "issue order is stable and complete"
+    },
+    {
+      "id": "hidden/unknown-fields-including-prototype-names",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "unknown fields including prototype names"
+    },
+    {
+      "id": "hidden/non-plain-payloads-rejected",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "non plain payloads rejected"
+    },
+    {
+      "id": "hidden/result-is-frozen-and-detached",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "result is frozen and detached"
+    },
+    {
+      "id": "hidden/error-shape-and-message-are-stable",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "error shape and message are stable"
     }
   ]
 }

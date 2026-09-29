@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "ARCH-04",
-  "taskVersion": "0.2.0",
+  "taskVersion": "0.3.0",
   "title": "插件热切换、失败回滚与资源归属",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -42,19 +42,22 @@
     "referencePatch": "graders/ARCH-04/reference.patch",
     "alternative": "graders/ARCH-04/alternative",
     "defectDetectors": [
-      "hidden/failed-switch-keeps-previous-plugin",
-      "hidden/failed-switch-releases-new-plugin",
-      "public/failed-switch-keeps-previous-plugin",
-      "public/failed-switch-releases-new-plugin",
-      "public/async-activation-rollback-owns-partial-resources",
-      "public/latest-intent-fences-out-of-order-setup",
-      "public/cleanup-lifo-continues-after-failure",
-      "public/scope-closes-registration-after-setup",
+      "hidden/committed-plugin-survives-previous-cleanup-error",
+      "hidden/each-plugin-is-torn-down-at-most-once",
+      "hidden/failed-setup-rolls-back-new-and-keeps-old",
       "hidden/reentrant-dispose-joins-unpublished-setup",
       "hidden/reentrant-new-selection-is-visible-before-publication",
+      "hidden/released-is-snapshot-and-rollback-then-retry-succeeds",
       "hidden/same-active-selection-cancels-pending-intent",
-      "hidden/committed-plugin-survives-previous-cleanup-error",
-      "hidden/seeded-completion-order-has-one-owner"
+      "hidden/seeded-completion-order-has-one-owner",
+      "hidden/success-order-is-setup-then-commit-then-teardown",
+      "hidden/switch-to-same-id-is-a-complete-noop",
+      "public/async-activation-rollback-owns-partial-resources",
+      "public/cleanup-lifo-continues-after-failure",
+      "public/failed-switch-keeps-previous-plugin",
+      "public/failed-switch-releases-new-plugin",
+      "public/latest-intent-fences-out-of-order-setup",
+      "public/scope-closes-registration-after-setup"
     ]
   },
   "limits": {
@@ -73,28 +76,12 @@
       "summary": "成功切换并释放旧插件。"
     },
     {
-      "id": "hidden/switch-succeeds-and-releases-previous",
-      "kind": "hidden",
-      "group": "behavior",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本：成功切换并释放旧插件。"
-    },
-    {
       "id": "public/failed-switch-keeps-previous-plugin",
       "kind": "public",
       "group": "state",
       "weight": 1,
       "critical": true,
       "summary": "切换失败后旧插件必须仍然生效且不被 teardown。"
-    },
-    {
-      "id": "hidden/failed-switch-keeps-previous-plugin",
-      "kind": "hidden",
-      "group": "state",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本：切换失败后旧插件必须仍然生效且不被 teardown。"
     },
     {
       "id": "public/failed-switch-releases-new-plugin",
@@ -105,14 +92,6 @@
       "summary": "失败的新插件必须释放它占用的资源。"
     },
     {
-      "id": "hidden/failed-switch-releases-new-plugin",
-      "kind": "hidden",
-      "group": "resources",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本：失败的新插件必须释放它占用的资源。"
-    },
-    {
       "id": "public/teardown-happens-once-per-plugin",
       "kind": "public",
       "group": "regression",
@@ -121,28 +100,12 @@
       "summary": "每个插件最多 teardown 一次。"
     },
     {
-      "id": "hidden/teardown-happens-once-per-plugin",
-      "kind": "hidden",
-      "group": "regression",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本：每个插件最多 teardown 一次。"
-    },
-    {
       "id": "public/switch-to-same-plugin-is-noop",
       "kind": "public",
       "group": "boundary",
       "weight": 1,
       "critical": false,
       "summary": "切换到同一个插件是空操作。"
-    },
-    {
-      "id": "hidden/switch-to-same-plugin-is-noop",
-      "kind": "hidden",
-      "group": "boundary",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本：切换到同一个插件是空操作。"
     },
     {
       "id": "public/async-activation-rollback-owns-partial-resources",
@@ -179,42 +142,82 @@
     {
       "id": "hidden/reentrant-dispose-joins-unpublished-setup",
       "kind": "hidden",
-      "group": "resources",
-      "weight": 2,
-      "critical": true,
-      "summary": "setup内同步重入关闭，等待迟到资源登记及异步释放全部结算。"
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "reentrant dispose joins unpublished setup"
     },
     {
       "id": "hidden/reentrant-new-selection-is-visible-before-publication",
       "kind": "hidden",
-      "group": "state",
-      "weight": 2,
-      "critical": true,
-      "summary": "setup同步再次替换时，外层启动不得覆盖内层最新选择。"
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "reentrant new selection is visible before publication"
     },
     {
       "id": "hidden/same-active-selection-cancels-pending-intent",
       "kind": "hidden",
-      "group": "regression",
-      "weight": 2,
-      "critical": true,
-      "summary": "重新选择当前确认插件不重复启动，但必须撤销待启动选择。"
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "same active selection cancels pending intent"
     },
     {
       "id": "hidden/committed-plugin-survives-previous-cleanup-error",
       "kind": "hidden",
       "group": "behavior",
-      "weight": 2,
-      "critical": true,
-      "summary": "提交后旧资源清理报错仍保留新插件，不回退已确认选择。"
+      "weight": 1,
+      "critical": false,
+      "summary": "committed plugin survives previous cleanup error"
     },
     {
       "id": "hidden/seeded-completion-order-has-one-owner",
       "kind": "hidden",
-      "group": "regression",
-      "weight": 2,
-      "critical": true,
-      "summary": "固定种子打乱12个启动完成顺序，验证唯一确认所有者与全部释放。"
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "seeded completion order has one owner"
+    },
+    {
+      "id": "hidden/success-order-is-setup-then-commit-then-teardown",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "success order is setup then commit then teardown"
+    },
+    {
+      "id": "hidden/failed-setup-rolls-back-new-and-keeps-old",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "failed setup rolls back new and keeps old"
+    },
+    {
+      "id": "hidden/each-plugin-is-torn-down-at-most-once",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "each plugin is torn down at most once"
+    },
+    {
+      "id": "hidden/switch-to-same-id-is-a-complete-noop",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "switch to same id is a complete noop"
+    },
+    {
+      "id": "hidden/released-is-snapshot-and-rollback-then-retry-succeeds",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "released is snapshot and rollback then retry succeeds"
     }
   ]
 }

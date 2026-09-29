@@ -25,11 +25,9 @@ export function resolveSettings(port: HostPort): Settings {
   const endpoint = values.get('endpoint') ?? null;
   if (endpoint === null || endpoint.trim() === '') throw new SettingsError('endpoint', '缺少 endpoint');
   const raw = values.get('retries') ?? null;
-  let retries = 3;
-  if (raw !== null) {
-    const parsed = Number(raw);
-    if (!Number.isInteger(parsed) || parsed < 0 || parsed > 10) throw new SettingsError('retries', 'retries 必须是 0..10 的整数');
-    retries = parsed;
-  }
+  // 契约要求按字符串判定：只接受 /^[0-9]+$/，不能靠 Number() 的宽松转换。
+  if (raw !== null && !/^[0-9]+$/.test(raw)) throw new SettingsError('retries', 'retries 必须是 0..10 的整数');
+  const retries = raw === null ? 3 : Number(raw);
+  if (retries > 10) throw new SettingsError('retries', 'retries 必须是 0..10 的整数');
   return Object.freeze({ mode, endpoint, retries });
 }

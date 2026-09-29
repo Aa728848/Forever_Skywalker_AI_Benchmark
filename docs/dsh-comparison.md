@@ -43,7 +43,9 @@ BENCH_DSH_REPORT_DIR=C:/Users/A/Documents/DSH-Reports
 
 未声明推理等级的模型使用 `--reasoning default`（也可设置 `BENCH_DSH_REASONING_EFFORT=default`）：本项目会省略 DSH SDK 的 `reasoningEffort` 字段，由供应商/模型配置决定行为。`default` 不等同于关闭思考；`off`、`high` 等仍要求模型明确支持该等级，原有默认 Off/High 比较不变。手动添加的自定义模型默认没有等级声明，不能直接给它传 High；若需要控制等级，先按 DSH 的 `providers.zh.md` 在模型配置中声明 `reasoningEfforts`。
 
-工作区权限通过 `BENCH_DSH_WORKSPACE_PERMISSION` 设置，可选 `read-only`（只读）、`workspace-write`（默认，仅允许修改当前题目工作区）和 `danger-full-access`（完整文件访问）。向导会在首次配置或选择 DSH 测评时询问该项。权限由 DSH 的 `DSH_PERMISSION_MODE` 传给 SDK，并以每题独立工作区为根；建议评测模型使用 `workspace-write`，避免暴露评测仓库中的隐藏检查和参考答案。
+工作区权限通过 `BENCH_DSH_WORKSPACE_PERMISSION` 设置，可选 `read-only`（只读）、`workspace-write`（默认，仅允许修改当前题目工作区）和 `danger-full-access`（完整文件访问）。向导会在首次配置或选择 DSH 测评时询问该项。权限由 DSH 的 `DSH_PERMISSION_MODE` 传给 SDK，并以每题独立工作区为根。
+
+这三档都只限制**写入**，不限制**读取**：DSH 的文件沙箱保留本地文件系统的读取行为，因此 `read-only` 与 `workspace-write` 都不能阻止作答进程读取工作区之外的文件。作答阶段运行在宿主上，隐藏检查与参考答案同机可达；提示词中的边界声明是公平性约束，不是技术隔离。评分阶段不同：容器档案把隐藏检查以只读方式挂载在 `/work/__checks__`，且只在验证时挂载，被测对象此时已是冻结快照（见 [容器档案与固定镜像](notes/implemented/feature/2026-09-14-container-profile-and-pinned-image.md)）。
 
 ```powershell
 pnpm dsh:compare --provider gateway-a --model "same-model" --preset standard --reasoning default

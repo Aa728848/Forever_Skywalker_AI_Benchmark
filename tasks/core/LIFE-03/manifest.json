@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "LIFE-03",
-  "taskVersion": "0.2.0",
+  "taskVersion": "0.3.0",
   "title": "启动、停止和重启竞争",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -42,15 +42,17 @@
     "referencePatch": "graders/LIFE-03/reference.patch",
     "alternative": "graders/LIFE-03/alternative",
     "defectDetectors": [
-      "hidden/start-during-stop-waits-and-uses-fresh-signal",
-      "hidden/stop-then-start-restarts-cleanly",
+      "hidden/async-runner-rejection-releases-resources",
+      "hidden/concurrent-restarts-join-one-stopping-generation",
+      "hidden/multiple-starts-during-stop-merge-into-one",
+      "hidden/old-generation-settlement-cannot-clear-new-state",
+      "hidden/seeded-natural-and-controlled-stops-remain-independent",
+      "hidden/start-while-stopping-defers-and-is-not-dropped",
+      "hidden/sync-throwing-runner-rejects-start-and-returns-to-idle",
+      "public/natural-completion-releases-generation",
       "public/start-during-stop-waits-and-uses-fresh-signal",
       "public/stop-then-start-restarts-cleanly",
-      "public/natural-completion-releases-generation",
-      "public/synchronous-runner-failure-is-retryable",
-      "hidden/concurrent-restarts-join-one-stopping-generation",
-      "hidden/async-runner-rejection-releases-resources",
-      "hidden/seeded-natural-and-controlled-stops-remain-independent"
+      "public/synchronous-runner-failure-is-retryable"
     ]
   },
   "limits": {
@@ -101,46 +103,6 @@
       "summary": "停止后重新启动干净可用。"
     },
     {
-      "id": "hidden/starts-and-stops",
-      "kind": "hidden",
-      "group": "behavior",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的启停。"
-    },
-    {
-      "id": "hidden/repeated-start-is-idempotent",
-      "kind": "hidden",
-      "group": "resources",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的幂等启动。"
-    },
-    {
-      "id": "hidden/start-during-stop-waits-and-uses-fresh-signal",
-      "kind": "hidden",
-      "group": "state",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的重启竞争。"
-    },
-    {
-      "id": "hidden/stop-is-idempotent",
-      "kind": "hidden",
-      "group": "boundary",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的幂等停止。"
-    },
-    {
-      "id": "hidden/stop-then-start-restarts-cleanly",
-      "kind": "hidden",
-      "group": "regression",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的停止后重启。"
-    },
-    {
       "id": "public/natural-completion-releases-generation",
       "kind": "public",
       "group": "state",
@@ -160,25 +122,97 @@
       "id": "hidden/concurrent-restarts-join-one-stopping-generation",
       "kind": "hidden",
       "group": "state",
-      "weight": 2,
-      "critical": true,
-      "summary": "停止屏障未完成时多个start等待且合并为一次新启动。"
+      "weight": 1,
+      "critical": false,
+      "summary": "concurrent restarts join one stopping generation"
     },
     {
       "id": "hidden/async-runner-rejection-releases-resources",
       "kind": "hidden",
-      "group": "resources",
-      "weight": 2,
+      "group": "boundary",
+      "weight": 1,
       "critical": true,
-      "summary": "后台运行拒绝后结束生命周期，不保留已死运行实例阻塞重启。"
+      "summary": "async runner rejection releases resources"
     },
     {
       "id": "hidden/seeded-natural-and-controlled-stops-remain-independent",
       "kind": "hidden",
       "group": "regression",
-      "weight": 2,
+      "weight": 1,
+      "critical": false,
+      "summary": "seeded natural and controlled stops remain independent"
+    },
+    {
+      "id": "hidden/start-while-stopping-defers-and-is-not-dropped",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "start while stopping defers and is not dropped"
+    },
+    {
+      "id": "hidden/multiple-starts-during-stop-merge-into-one",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "multiple starts during stop merge into one"
+    },
+    {
+      "id": "hidden/old-generation-settlement-cannot-clear-new-state",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "old generation settlement cannot clear new state"
+    },
+    {
+      "id": "hidden/sync-throwing-runner-rejects-start-and-returns-to-idle",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
       "critical": true,
-      "summary": "混合自然退出与控制停止的固定序列验证代际不会复用。"
+      "summary": "sync throwing runner rejects start and returns to idle"
+    },
+    {
+      "id": "hidden/repeated-start-in-running-is-idempotent",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "repeated start in running is idempotent"
+    },
+    {
+      "id": "hidden/repeated-stop-shares-one-process",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "repeated stop shares one process"
+    },
+    {
+      "id": "hidden/stop-waits-for-real-settlement-not-just-abort",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "stop waits for real settlement not just abort"
+    },
+    {
+      "id": "hidden/async-runner-failure-does-not-disturb-settled-start",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "async runner failure does not disturb settled start"
+    },
+    {
+      "id": "hidden/phase-transitions-are-observable-and-legal",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "phase transitions are observable and legal"
     }
   ]
 }

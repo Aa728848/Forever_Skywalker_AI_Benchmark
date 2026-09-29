@@ -39,19 +39,18 @@ export function runCancelable<T>(
     resolveOuter = resolve;
     rejectOuter = reject;
   });
-  const timer = options.scheduler.after(timeoutMs, () => {
-    if (state !== 'pending') return;
-    state = 'done';
-    controller.abort();
-    rejectOuter(new TimeoutError());
-  });
   const finish = (error: unknown, value?: T): void => {
     if (state !== 'pending') return;
     state = 'done';
-    timer.cancel();
+    // 四条结算路径都必须经过这里，timer 才会被取消。
+    timerHandle.cancel();
     if (error === null) resolveOuter(value as T);
     else rejectOuter(error);
   };
+  const timerHandle = options.scheduler.after(timeoutMs, () => {
+    controller.abort();
+    finish(new TimeoutError());
+  });
   try {
     work(controller.signal).then(value => finish(null, value), error => finish(error));
   } catch (error) {

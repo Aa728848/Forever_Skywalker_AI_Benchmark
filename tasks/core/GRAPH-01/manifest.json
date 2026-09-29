@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "GRAPH-01",
-  "taskVersion": "0.1.0",
+  "taskVersion": "0.2.0",
   "title": "树遍历终止与叶节点",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -42,10 +42,11 @@
     "referencePatch": "graders/GRAPH-01/reference.patch",
     "alternative": "graders/GRAPH-01/alternative",
     "defectDetectors": [
-      "hidden/cycle-is-rejected",
-      "hidden/node-limit-is-enforced",
-      "hidden/shared-node-is-visited-per-occurrence",
-      "hidden/walks-preorder-and-collects-leaves",
+      "hidden/deep-chain-terminates-without-truncating",
+      "hidden/leaf-defaults-and-empty-array-are-equivalent",
+      "hidden/limit-boundaries-are-exact",
+      "hidden/limit-counts-occurrences-not-unique-objects",
+      "hidden/cycle-path-points-at-repeated-occurrence",
       "public/cycle-is-rejected",
       "public/node-limit-is-enforced",
       "public/shared-node-is-visited-per-occurrence",
@@ -100,44 +101,60 @@
       "summary": "DAG 共享节点按出现次数各访问一次。"
     },
     {
-      "id": "hidden/walks-preorder-and-collects-leaves",
       "kind": "hidden",
+      "summary": "children 缺省与空数组都算叶子，且叶子顺序与 visited 一致。",
+      "critical": true,
+      "id": "hidden/leaf-defaults-and-empty-array-are-equivalent",
       "group": "behavior",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的前序与叶子。"
+      "weight": 1
     },
     {
-      "id": "hidden/node-limit-is-enforced",
       "kind": "hidden",
+      "summary": "maxNodes 恰好等于上限时完整返回，上限-1 时抛错并回显 limit。",
+      "critical": true,
+      "id": "hidden/limit-boundaries-are-exact",
       "group": "boundary",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的上限行为。"
+      "weight": 1
     },
     {
-      "id": "hidden/rejects-malformed-nodes",
       "kind": "hidden",
+      "summary": "上限按出现位置计数：5 个出现位置、3 个唯一对象时按 5 判定。",
+      "critical": true,
+      "id": "hidden/limit-counts-occurrences-not-unique-objects",
       "group": "boundary",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的非法结构。"
+      "weight": 1
     },
     {
-      "id": "hidden/cycle-is-rejected",
       "kind": "hidden",
-      "group": "resources",
-      "weight": 1,
+      "summary": "0、负数、小数、NaN 与 Infinity 都不是合法上限。",
       "critical": false,
-      "summary": "深层循环也会被拒绝而不是耗尽栈。"
+      "id": "hidden/invalid-maxnodes-rejects-non-integers",
+      "group": "boundary",
+      "weight": 1
     },
     {
-      "id": "hidden/shared-node-is-visited-per-occurrence",
       "kind": "hidden",
+      "summary": "循环的 path 指向再次出现的位置；互不为祖先的共享仍合法。",
+      "critical": true,
+      "id": "hidden/cycle-path-points-at-repeated-occurrence",
       "group": "state",
-      "weight": 1,
+      "weight": 1
+    },
+    {
+      "kind": "hidden",
+      "summary": "非法结构按路径定位且不修改输入，重复调用结果一致。",
       "critical": false,
-      "summary": "隐藏样本下的共享节点。"
+      "id": "hidden/validates-lazily-and-does-not-mutate-input",
+      "group": "regression",
+      "weight": 1
+    },
+    {
+      "kind": "hidden",
+      "summary": "2000 层链完整遍历，不栈溢出也不截断。",
+      "critical": false,
+      "id": "hidden/deep-chain-terminates-without-truncating",
+      "group": "resources",
+      "weight": 1
     }
   ]
 }

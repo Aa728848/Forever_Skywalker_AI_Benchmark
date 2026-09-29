@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "CONC-03",
-  "taskVersion": "0.2.0",
+  "taskVersion": "0.3.0",
   "title": "多资源锁顺序和饥饿控制",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -42,14 +42,15 @@
     "referencePatch": "graders/CONC-03/reference.patch",
     "alternative": "graders/CONC-03/alternative",
     "defectDetectors": [
-      "hidden/first-come-first-served",
-      "hidden/newcomers-cannot-jump-the-queue",
-      "public/first-come-first-served",
-      "public/newcomers-cannot-jump-the-queue",
+      "hidden/conflict-transitivity-and-disjoint-bypass",
+      "hidden/fifo-order-is-strictly-first-come-first-served",
+      "hidden/newcomers-cannot-jump-waiting-queue",
+      "hidden/preaborted-and-empty-request",
+      "hidden/ten-waiters-are-served-in-order",
       "public/atomic-bundle-and-disjoint-progress",
       "public/cancel-unblocks-overlap",
-      "hidden/conflict-transitivity-and-disjoint-bypass",
-      "hidden/preaborted-and-empty-request"
+      "public/first-come-first-served",
+      "public/newcomers-cannot-jump-the-queue"
     ]
   },
   "limits": {
@@ -100,46 +101,6 @@
       "summary": "不同资源互不影响。"
     },
     {
-      "id": "hidden/grants-when-free",
-      "kind": "hidden",
-      "group": "behavior",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的立即授予。"
-    },
-    {
-      "id": "hidden/first-come-first-served",
-      "kind": "hidden",
-      "group": "state",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的先来先服务。"
-    },
-    {
-      "id": "hidden/newcomers-cannot-jump-the-queue",
-      "kind": "hidden",
-      "group": "resources",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的禁止插队。"
-    },
-    {
-      "id": "hidden/release-is-idempotent",
-      "kind": "hidden",
-      "group": "boundary",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的幂等释放。"
-    },
-    {
-      "id": "hidden/resources-are-independent",
-      "kind": "hidden",
-      "group": "regression",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的资源独立。"
-    },
-    {
       "id": "public/atomic-bundle-and-disjoint-progress",
       "kind": "public",
       "group": "behavior",
@@ -158,26 +119,74 @@
     {
       "id": "hidden/conflict-transitivity-and-disjoint-bypass",
       "kind": "hidden",
-      "group": "resources",
+      "group": "state",
       "weight": 1,
-      "critical": true,
-      "summary": "冲突传递公平与无关请求无队首阻塞。"
+      "critical": false,
+      "summary": "conflict transitivity and disjoint bypass"
     },
     {
       "id": "hidden/granted-abort-and-idempotent-bundle-release",
       "kind": "hidden",
-      "group": "regression",
+      "group": "boundary",
       "weight": 1,
       "critical": true,
-      "summary": "授予后取消无效，重复释放不释放下一位。"
+      "summary": "granted abort and idempotent bundle release"
     },
     {
       "id": "hidden/preaborted-and-empty-request",
       "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "preaborted and empty request"
+    },
+    {
+      "id": "hidden/fifo-order-is-strictly-first-come-first-served",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "fifo order is strictly first come first served"
+    },
+    {
+      "id": "hidden/newcomers-cannot-jump-waiting-queue",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "newcomers cannot jump waiting queue"
+    },
+    {
+      "id": "hidden/release-is-idempotent-and-does-not-steal-next-holder",
+      "kind": "hidden",
       "group": "boundary",
       "weight": 1,
       "critical": true,
-      "summary": "预取消不占资源，空集合与重复资源合法。"
+      "summary": "release is idempotent and does not steal next holder"
+    },
+    {
+      "id": "hidden/queue-length-counts-waiters-not-resources",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "queue length counts waiters not resources"
+    },
+    {
+      "id": "hidden/resources-are-fully-independent",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "resources are fully independent"
+    },
+    {
+      "id": "hidden/ten-waiters-are-served-in-order",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "ten waiters are served in order"
     }
   ]
 }

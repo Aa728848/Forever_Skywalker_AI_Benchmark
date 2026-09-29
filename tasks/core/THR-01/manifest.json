@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "THR-01",
-  "taskVersion": "0.1.1",
+  "taskVersion": "0.2.0",
   "title": "真实工作线程的分发与汇总",
   "runtime": "mixed",
   "runtimeRange": "node >=24.14.1 <25",
@@ -42,13 +42,19 @@
     "referencePatch": "graders/THR-01/reference.patch",
     "alternative": "graders/THR-01/alternative",
     "defectDetectors": [
+      "hidden/empty-input-rejects-invalid-size-too",
+      "hidden/input-array-is-not-mutated",
+      "hidden/large-batch-processes-every-job",
+      "hidden/negative-payloads-do-not-affect-others",
+      "hidden/observes-real-workers-and-exit",
       "hidden/rejects-invalid-size",
+      "hidden/repeated-calls-do-not-leak-thread-ids",
       "hidden/reports-failed-jobs",
+      "hidden/single-job-still-uses-a-worker-thread",
       "hidden/uses-real-worker-threads",
       "public/rejects-invalid-size",
       "public/reports-failed-jobs",
-      "public/uses-real-worker-threads",
-      "hidden/observes-real-workers-and-exit"
+      "public/uses-real-worker-threads"
     ]
   },
   "limits": {
@@ -101,10 +107,10 @@
     {
       "id": "hidden/computes-each-job",
       "kind": "hidden",
-      "group": "behavior",
+      "group": "state",
       "weight": 1,
       "critical": false,
-      "summary": "隐藏样本下的汇总。"
+      "summary": "computes each job"
     },
     {
       "id": "hidden/uses-real-worker-threads",
@@ -112,39 +118,95 @@
       "group": "resources",
       "weight": 1,
       "critical": false,
-      "summary": "隐藏样本下的真实线程与窗口。"
+      "summary": "uses real worker threads"
     },
     {
       "id": "hidden/reports-failed-jobs",
       "kind": "hidden",
-      "group": "state",
+      "group": "behavior",
       "weight": 1,
       "critical": false,
-      "summary": "隐藏样本下的失败记录。"
+      "summary": "reports failed jobs"
     },
     {
       "id": "hidden/empty-input-creates-no-threads",
       "kind": "hidden",
-      "group": "boundary",
+      "group": "behavior",
       "weight": 1,
       "critical": false,
-      "summary": "隐藏样本下的空输入。"
+      "summary": "empty input creates no threads"
     },
     {
       "id": "hidden/rejects-invalid-size",
       "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "rejects invalid size"
+    },
+    {
+      "id": "hidden/single-job-still-uses-a-worker-thread",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "single job still uses a worker thread"
+    },
+    {
+      "id": "hidden/size-larger-than-jobs-caps-thread-count",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "size larger than jobs caps thread count"
+    },
+    {
+      "id": "hidden/negative-payloads-do-not-affect-others",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "negative payloads do not affect others"
+    },
+    {
+      "id": "hidden/empty-input-rejects-invalid-size-too",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "empty input rejects invalid size too"
+    },
+    {
+      "id": "hidden/input-array-is-not-mutated",
+      "kind": "hidden",
       "group": "regression",
       "weight": 1,
       "critical": false,
-      "summary": "隐藏样本下的非法窗口。"
+      "summary": "input array is not mutated"
+    },
+    {
+      "id": "hidden/repeated-calls-do-not-leak-thread-ids",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "repeated calls do not leak thread ids"
+    },
+    {
+      "id": "hidden/large-batch-processes-every-job",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "large batch processes every job"
     },
     {
       "id": "hidden/observes-real-workers-and-exit",
       "kind": "hidden",
-      "group": "resources",
+      "group": "behavior",
       "weight": 1,
-      "critical": true,
-      "summary": "由受信侧观测真实 worker、每项消息、总线程上限与退出。"
+      "critical": false,
+      "summary": "observes real workers and exit"
     }
   ]
 }

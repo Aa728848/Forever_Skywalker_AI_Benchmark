@@ -11,7 +11,7 @@ import { DshCleanupError, resolveDshWorkspacePermission, runDsh, type DshPreset,
 import { inspectRunSelection, summarizeRuns } from './suite.ts';
 import { archiveComparisonEvidence, cleanupComparisonScratch, createComparisonScratch, restoreComparisonEvidence } from './comparison-artifacts.ts';
 
-export const comparisonPrompt = '阅读当前目录的 TASK.md，按照其中的契约完成 starter 中的代码修改。遵守修改范围，运行公开测试，完成后说明修改内容和测试结果。独立完成本次任务，不读取其它作答、评测仓库、隐藏检查或参考答案。';
+export const comparisonPrompt = '阅读当前目录的 TASK.md，按照其中的契约完成 starter 中的代码修改。遵守修改范围，运行公开测试，完成后说明修改内容和测试结果。独立完成本次任务，不读取其它作答、评测仓库、隐藏检查或参考答案。本任务仅在当前工作区内进行：可以自由读写工作区、运行构建与测试所需的外部程序（node、dotnet、浏览器等），但不得访问或检索本评测项目的任何资产，包括工作区之外的参考答案、隐藏检查、评分脚本与本项目仓库；也不得联网检索本评测项目或其来源仓库。';
 
 export interface DshComparisonOptions {
   dshRoot: string;

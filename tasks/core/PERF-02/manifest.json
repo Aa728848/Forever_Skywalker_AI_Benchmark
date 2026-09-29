@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "PERF-02",
-  "taskVersion": "0.2.0",
+  "taskVersion": "0.3.0",
   "title": "长列表局部更新与渲染范围",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -42,11 +42,11 @@
     "referencePatch": "graders/PERF-02/reference.patch",
     "alternative": "graders/PERF-02/alternative",
     "defectDetectors": [
-      "hidden/accesses-do-not-grow-with-list-size",
-      "public/does-not-scan-whole-list",
-      "public/dom-preserves-nodes-and-focus",
+      "hidden/access-count-is-bounded-and-independent-of-length",
+      "hidden/dom-ignores-offscreen-and-unchanged-patches",
       "hidden/dom-reuses-overlapping-window-rows",
-      "hidden/dom-ignores-offscreen-and-unchanged-patches"
+      "public/does-not-scan-whole-list",
+      "public/dom-preserves-nodes-and-focus"
     ]
   },
   "limits": {
@@ -97,46 +97,6 @@
       "summary": "越界窗口返回空 items。"
     },
     {
-      "id": "hidden/returns-window",
-      "kind": "hidden",
-      "group": "behavior",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的窗口。"
-    },
-    {
-      "id": "hidden/applies-patch-inside-window",
-      "kind": "hidden",
-      "group": "state",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的补丁命中。"
-    },
-    {
-      "id": "hidden/accesses-do-not-grow-with-list-size",
-      "kind": "hidden",
-      "group": "resources",
-      "weight": 1,
-      "critical": false,
-      "summary": "10 倍列表长度下访问次数不增长。"
-    },
-    {
-      "id": "hidden/rejects-invalid-window",
-      "kind": "hidden",
-      "group": "boundary",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的非法窗口。"
-    },
-    {
-      "id": "hidden/beyond-end-returns-empty-items",
-      "kind": "hidden",
-      "group": "regression",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的越界窗口。"
-    },
-    {
       "id": "public/browser-renders-only-visible-rows",
       "kind": "public",
       "group": "behavior",
@@ -171,34 +131,82 @@
     {
       "id": "hidden/dom-reuses-overlapping-window-rows",
       "kind": "hidden",
-      "group": "resources",
+      "group": "behavior",
       "weight": 1,
       "critical": false,
-      "summary": "窗口移动时重用重叠行的DOM节点。"
+      "summary": "dom reuses overlapping window rows"
     },
     {
       "id": "hidden/dom-ignores-offscreen-and-unchanged-patches",
       "kind": "hidden",
-      "group": "resources",
+      "group": "behavior",
       "weight": 1,
       "critical": false,
-      "summary": "无变化或窗口外补丁不产生DOM变更。"
+      "summary": "dom ignores offscreen and unchanged patches"
     },
     {
       "id": "hidden/browser-text-is-literal-and-updates-persist",
       "kind": "hidden",
-      "group": "boundary",
+      "group": "state",
       "weight": 1,
       "critical": false,
-      "summary": "ID作为纯文本，窗口切换保留已更新值。"
+      "summary": "browser text is literal and updates persist"
     },
     {
       "id": "hidden/browser-invalid-window-and-listener-cleanup",
       "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "browser invalid window and listener cleanup"
+    },
+    {
+      "id": "hidden/window-is-truncated-to-list-end-at-every-offset",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "window is truncated to list end at every offset"
+    },
+    {
+      "id": "hidden/patch-matches-by-id-and-preserves-order",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "patch matches by id and preserves order"
+    },
+    {
+      "id": "hidden/patch-outside-window-or-absent-leaves-window-untouched",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "patch outside window or absent leaves window untouched"
+    },
+    {
+      "id": "hidden/access-count-is-bounded-and-independent-of-length",
+      "kind": "hidden",
       "group": "regression",
       "weight": 1,
       "critical": false,
-      "summary": "错误窗口不破坏当前状态，销毁移除监听。"
+      "summary": "access count is bounded and independent of length"
+    },
+    {
+      "id": "hidden/invalid-window-throws-rangeerror-without-side-effects",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "invalid window throws rangeerror without side effects"
+    },
+    {
+      "id": "hidden/input-rows-are-never-mutated",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "input rows are never mutated"
     }
   ]
 }

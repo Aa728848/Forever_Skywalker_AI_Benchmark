@@ -38,21 +38,17 @@ export class Coordinator {
   commit(value: string): Promise<string> {
     if (this.#applied.includes(value)) return Promise.resolve(value);
     const undo: Array<() => void> = [];
-    const failure = order
-      .map(name => {
-        const layer = this.#layers[name];
-        try {
-          layer.apply(value);
-          undo.push(() => { layer.revert(value); });
-          return null;
-        } catch (error) {
-          return new CommitError(name, error);
-        }
-      })
-      .find(error => error !== null);
-    if (failure !== undefined && failure !== null) {
-      for (const revert of undo.reverse()) revert();
-      return Promise.reject(failure);
+    // 必须按固定顺序逐层应用并**遇错即停**：map 不会短路，
+    // 会在首层失败后继续应用后续层，把未应用的层也纳入回滚集合。
+    for (const name of order) {
+      const layer = this.#layers[name];
+      try {
+        layer.apply(value);
+        undo.push(() => { layer.revert(value); });
+      } catch (error) {
+        for (const revert of undo.reverse()) revert();
+        return Promise.reject(new CommitError(name, error));
+      }
     }
     this.#applied.push(value);
     return Promise.resolve(value);

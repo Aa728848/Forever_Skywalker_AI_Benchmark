@@ -28,7 +28,7 @@
   },
   {
     "id": "FE-02",
-    "version": "0.1.0",
+    "version": "0.3.0",
     "title": "异步请求乱序与取消",
     "domain": "前端交互",
     "difficulty": "medium",
@@ -218,7 +218,7 @@
   },
   {
     "id": "API-01",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "title": "请求校验与错误契约",
     "domain": "后端与服务协议",
     "difficulty": "easy",
@@ -272,7 +272,7 @@
   },
   {
     "id": "API-03",
-    "version": "0.1.1",
+    "version": "0.2.0",
     "title": "SSE 序列恢复与背压",
     "domain": "后端与服务协议",
     "difficulty": "hard",
@@ -299,7 +299,7 @@
   },
   {
     "id": "API-04",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "title": "持久任务队列：并发领取、租约隔离与崩溃恢复",
     "domain": "后端与服务协议",
     "difficulty": "extreme",
@@ -381,7 +381,7 @@
   },
   {
     "id": "CACHE-03",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "title": "失效期间的在途旧结果",
     "domain": "缓存",
     "difficulty": "hard",
@@ -438,7 +438,7 @@
   },
   {
     "id": "BND-01",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "title": "CLI 参数与零值语义",
     "domain": "参数与边界解析",
     "difficulty": "easy",
@@ -496,7 +496,7 @@
   },
   {
     "id": "BND-03",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "title": "跨字节块的 Unicode 与流解析",
     "domain": "参数与边界解析",
     "difficulty": "hard",
@@ -554,7 +554,7 @@
   },
   {
     "id": "THR-01",
-    "version": "0.1.1",
+    "version": "0.2.0",
     "title": "真实工作线程的分发与汇总",
     "domain": "多线程",
     "difficulty": "easy",
@@ -666,7 +666,7 @@
   },
   {
     "id": "CONC-01",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "title": "取消与超时传播",
     "domain": "异步并发",
     "difficulty": "easy",
@@ -694,7 +694,7 @@
   },
   {
     "id": "CONC-02",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "title": "并发令牌刷新与注销竞争",
     "domain": "异步并发",
     "difficulty": "medium",
@@ -722,7 +722,7 @@
   },
   {
     "id": "CONC-03",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "title": "多资源锁顺序和饥饿控制",
     "domain": "异步并发",
     "difficulty": "hard",
@@ -778,7 +778,7 @@
   },
   {
     "id": "ARCH-01",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "title": "浏览器与宿主依赖边界",
     "domain": "耦合与解耦",
     "difficulty": "easy",
@@ -805,7 +805,7 @@
   },
   {
     "id": "ARCH-02",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "title": "Provider 元数据与运行时拆分",
     "domain": "耦合与解耦",
     "difficulty": "medium",
@@ -834,7 +834,7 @@
   },
   {
     "id": "ARCH-03",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "title": "替换适配器并保持公共契约",
     "domain": "耦合与解耦",
     "difficulty": "hard",
@@ -864,7 +864,7 @@
   },
   {
     "id": "ARCH-04",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "title": "插件热切换、失败回滚与资源归属",
     "domain": "耦合与解耦",
     "difficulty": "extreme",
@@ -893,7 +893,7 @@
   },
   {
     "id": "GRAPH-01",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "title": "树遍历终止与叶节点",
     "domain": "递归与图算法",
     "difficulty": "easy",
@@ -921,7 +921,7 @@
   },
   {
     "id": "GRAPH-02",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "title": "图去重、环与确定性排序",
     "domain": "递归与图算法",
     "difficulty": "medium",
@@ -1006,7 +1006,7 @@
   },
   {
     "id": "LIFE-01",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "title": "订阅与定时器释放",
     "domain": "生命周期",
     "difficulty": "easy",
@@ -1035,7 +1035,7 @@
   },
   {
     "id": "LIFE-02",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "title": "流结束、超时和迟到回调",
     "domain": "生命周期",
     "difficulty": "medium",
@@ -1066,7 +1066,7 @@
   },
   {
     "id": "LIFE-03",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "title": "启动、停止和重启竞争",
     "domain": "生命周期",
     "difficulty": "hard",
@@ -1097,7 +1097,7 @@
   },
   {
     "id": "LIFE-04",
-    "version": "0.1.1",
+    "version": "0.3.0",
     "title": "子进程故障、回收和验收重入隔离",
     "domain": "生命周期",
     "difficulty": "extreme",
@@ -1126,7 +1126,7 @@
   },
   {
     "id": "PERF-01",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "title": "消除重复解析并保持结果",
     "domain": "性能优化",
     "difficulty": "easy",
@@ -1154,7 +1154,7 @@
   },
   {
     "id": "PERF-02",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "title": "长列表局部更新与渲染范围",
     "domain": "性能优化",
     "difficulty": "medium",
@@ -1241,7 +1241,7 @@
   },
   {
     "id": "STATE-01",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "title": "原子写入与损坏检测",
     "domain": "持久化与故障恢复",
     "difficulty": "easy",
@@ -1270,7 +1270,7 @@
   },
   {
     "id": "STATE-02",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "title": "状态迁移与旧版本契约",
     "domain": "持久化与故障恢复",
     "difficulty": "medium",
@@ -1299,7 +1299,7 @@
   },
   {
     "id": "STATE-03",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "title": "检查点恢复和不可重复入账",
     "domain": "持久化与故障恢复",
     "difficulty": "hard",
@@ -1329,7 +1329,7 @@
   },
   {
     "id": "STATE-04",
-    "version": "0.1.1",
+    "version": "0.2.0",
     "title": "UI、服务、缓存的故障后一致性",
     "domain": "持久化与故障恢复",
     "difficulty": "extreme",

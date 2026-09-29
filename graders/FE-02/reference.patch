@@ -2,7 +2,7 @@ diff --git a/starter/src/coordinator.ts b/starter/src/coordinator.ts
 index 357caab..2a00218 100644
 --- a/starter/src/coordinator.ts
 +++ b/starter/src/coordinator.ts
-@@ -29,22 +29,42 @@ export class RequestCoordinator {
+@@ -29,22 +29,47 @@ export class RequestCoordinator {
      return this.#inFlight.size;
    }
  
@@ -33,10 +33,15 @@ index 357caab..2a00218 100644
 -    // 缺陷：结算后不清理 pending，计数只增不减。
 +    const entry: Entry = { controller, reject: rejectOuter, settled: false };
 +    this.#inFlight.set(key, entry);
-+    this.#port.send(key, payload, controller.signal).then(
-+      value => { if (this.#settle(key, entry)) resolveOuter(value); },
-+      error => { if (this.#settle(key, entry)) rejectOuter(error); },
-+    );
++    // 契约第 4 条：端口同步抛出也必须转成该 promise 的拒绝，不得冒泡到调用方。
++    try {
++      this.#port.send(key, payload, controller.signal).then(
++        value => { if (this.#settle(key, entry)) resolveOuter(value); },
++        error => { if (this.#settle(key, entry)) rejectOuter(error); },
++      );
++    } catch (error) {
++      if (this.#settle(key, entry)) rejectOuter(error);
++    }
      return promise;
    }
  

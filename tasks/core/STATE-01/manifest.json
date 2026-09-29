@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "STATE-01",
-  "taskVersion": "0.2.0",
+  "taskVersion": "0.3.0",
   "title": "原子写入与损坏检测",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -42,14 +42,17 @@
     "referencePatch": "graders/STATE-01/reference.patch",
     "alternative": "graders/STATE-01/alternative",
     "defectDetectors": [
-      "hidden/closed-store-rejects-operations",
-      "hidden/detects-tampered-checksum",
-      "hidden/empty-value-round-trips",
+      "hidden/checksum-must-match-exact-bytes",
+      "hidden/close-is-idempotent-and-final",
+      "hidden/empty-string-is-a-value-not-a-missing-key",
+      "hidden/invalid-json-shapes-use-domain-error",
+      "hidden/many-keys-stay-independent",
+      "hidden/missing-file-and-zero-byte-file-differ",
+      "hidden/overwrite-keeps-only-the-latest-record",
+      "hidden/rename-failure-preserves-record-and-cleans-staging",
       "public/closed-store-rejects-operations",
       "public/detects-tampered-checksum",
-      "public/empty-value-round-trips",
-      "hidden/invalid-json-shapes-use-domain-error",
-      "hidden/rename-failure-preserves-record-and-cleans-staging"
+      "public/empty-value-round-trips"
     ]
   },
   "limits": {
@@ -108,68 +111,84 @@
       "summary": "关闭后读写抛 StoreClosedError。"
     },
     {
-      "id": "hidden/round-trips-values",
-      "kind": "hidden",
-      "group": "behavior",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的往返。"
-    },
-    {
-      "id": "hidden/detects-tampered-checksum",
-      "kind": "hidden",
-      "group": "resources",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的损坏检测。"
-    },
-    {
-      "id": "hidden/empty-value-round-trips",
-      "kind": "hidden",
-      "group": "boundary",
-      "weight": 1,
-      "critical": false,
-      "summary": "空白字符串也按字面保存。"
-    },
-    {
-      "id": "hidden/missing-key-and-invalid-key",
-      "kind": "hidden",
-      "group": "boundary",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的键语义。"
-    },
-    {
-      "id": "hidden/atomic-write-leaves-no-temp-files",
-      "kind": "hidden",
-      "group": "state",
-      "weight": 1,
-      "critical": false,
-      "summary": "多键写入后没有临时残留。"
-    },
-    {
-      "id": "hidden/closed-store-rejects-operations",
-      "kind": "hidden",
-      "group": "regression",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的关闭语义。"
-    },
-    {
       "id": "hidden/invalid-json-shapes-use-domain-error",
       "kind": "hidden",
       "group": "boundary",
-      "weight": 2,
+      "weight": 1,
       "critical": true,
-      "summary": "合法JSON的null、数组与标量也必须用领域错误拒绝。"
+      "summary": "invalid json shapes use domain error"
     },
     {
       "id": "hidden/rename-failure-preserves-record-and-cleans-staging",
       "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "rename failure preserves record and cleans staging"
+    },
+    {
+      "id": "hidden/empty-string-is-a-value-not-a-missing-key",
+      "kind": "hidden",
       "group": "resources",
-      "weight": 2,
+      "weight": 1,
+      "critical": false,
+      "summary": "empty string is a value not a missing key"
+    },
+    {
+      "id": "hidden/checksum-must-match-exact-bytes",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "checksum must match exact bytes"
+    },
+    {
+      "id": "hidden/overwrite-keeps-only-the-latest-record",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "overwrite keeps only the latest record"
+    },
+    {
+      "id": "hidden/unicode-and-multiline-round-trip-exactly",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "unicode and multiline round trip exactly"
+    },
+    {
+      "id": "hidden/invalid-keys-never-escape-the-directory",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
       "critical": true,
-      "summary": "注入真实fs.renameSync失败，旧正式记录保持完整且暂存文件释放。"
+      "summary": "invalid keys never escape the directory"
+    },
+    {
+      "id": "hidden/close-is-idempotent-and-final",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "close is idempotent and final"
+    },
+    {
+      "id": "hidden/many-keys-stay-independent",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "many keys stay independent"
+    },
+    {
+      "id": "hidden/missing-file-and-zero-byte-file-differ",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "missing file and zero byte file differ"
     }
   ]
 }

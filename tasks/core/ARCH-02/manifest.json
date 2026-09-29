@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "ARCH-02",
-  "taskVersion": "0.2.0",
+  "taskVersion": "0.3.0",
   "title": "Provider 元数据与运行时拆分",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -42,14 +42,17 @@
     "referencePatch": "graders/ARCH-02/reference.patch",
     "alternative": "graders/ARCH-02/alternative",
     "defectDetectors": [
-      "hidden/browser-side-skips-node-only",
-      "hidden/keeps-shared-and-matching",
+      "hidden/all-shared-catalog-goes-to-both-runtimes",
+      "hidden/both-outputs-preserve-catalog-order",
+      "hidden/empty-and-single-element-catalogs",
+      "hidden/rejected-and-sync-throwing-loads-are-retryable",
+      "hidden/results-do-not-leak-or-mutate-the-catalog",
+      "hidden/selection-ignores-naming-entirely",
+      "hidden/shared-load-coalesces-across-runtimes",
+      "hidden/unavailable-identity-does-not-leak-cached-module",
       "public/browser-side-skips-node-only",
       "public/keeps-shared-and-matching",
-      "public/metadata-does-not-load-forbidden-runtime",
-      "hidden/shared-load-coalesces-across-runtimes",
-      "hidden/rejected-and-sync-throwing-loads-are-retryable",
-      "hidden/unavailable-identity-does-not-leak-cached-module"
+      "public/metadata-does-not-load-forbidden-runtime"
     ]
   },
   "limits": {
@@ -100,46 +103,6 @@
       "summary": "空目录返回空结果。"
     },
     {
-      "id": "hidden/keeps-shared-and-matching",
-      "kind": "hidden",
-      "group": "behavior",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的 Node 侧拆分。"
-    },
-    {
-      "id": "hidden/browser-side-skips-node-only",
-      "kind": "hidden",
-      "group": "state",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的浏览器侧拆分。"
-    },
-    {
-      "id": "hidden/preserves-catalog-order",
-      "kind": "hidden",
-      "group": "resources",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的顺序。"
-    },
-    {
-      "id": "hidden/rejects-duplicate-and-invalid-metadata",
-      "kind": "hidden",
-      "group": "boundary",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的元数据校验。"
-    },
-    {
-      "id": "hidden/empty-catalog-is-empty-result",
-      "kind": "hidden",
-      "group": "regression",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的空目录。"
-    },
-    {
       "id": "public/metadata-does-not-load-forbidden-runtime",
       "kind": "public",
       "group": "behavior",
@@ -151,25 +114,81 @@
       "id": "hidden/shared-load-coalesces-across-runtimes",
       "kind": "hidden",
       "group": "resources",
-      "weight": 2,
-      "critical": true,
-      "summary": "共享provider的并发加载只执行一次，缓存不跨注册表实例。"
+      "weight": 1,
+      "critical": false,
+      "summary": "shared load coalesces across runtimes"
     },
     {
       "id": "hidden/rejected-and-sync-throwing-loads-are-retryable",
       "kind": "hidden",
-      "group": "state",
-      "weight": 2,
+      "group": "boundary",
+      "weight": 1,
       "critical": true,
-      "summary": "异步拒绝和同步loader抛错保留原始错误并允许下一次重试。"
+      "summary": "rejected and sync throwing loads are retryable"
     },
     {
       "id": "hidden/unavailable-identity-does-not-leak-cached-module",
       "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "unavailable identity does not leak cached module"
+    },
+    {
+      "id": "hidden/selection-ignores-naming-entirely",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "selection ignores naming entirely"
+    },
+    {
+      "id": "hidden/both-outputs-preserve-catalog-order",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "both outputs preserve catalog order"
+    },
+    {
+      "id": "hidden/duplicate-id-is-rejected-regardless-of-runtime",
+      "kind": "hidden",
       "group": "boundary",
-      "weight": 2,
+      "weight": 1,
       "critical": true,
-      "summary": "已缓存node模块仍不可从browser取得，未知id以异步RangeError拒绝。"
+      "summary": "duplicate id is rejected regardless of runtime"
+    },
+    {
+      "id": "hidden/invalid-metadata-is-rejected",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "invalid metadata is rejected"
+    },
+    {
+      "id": "hidden/empty-and-single-element-catalogs",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "empty and single element catalogs"
+    },
+    {
+      "id": "hidden/results-do-not-leak-or-mutate-the-catalog",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "results do not leak or mutate the catalog"
+    },
+    {
+      "id": "hidden/all-shared-catalog-goes-to-both-runtimes",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "all shared catalog goes to both runtimes"
     }
   ]
 }

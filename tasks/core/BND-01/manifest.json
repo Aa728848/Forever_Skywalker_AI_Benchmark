@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "BND-01",
-  "taskVersion": "0.1.0",
+  "taskVersion": "0.2.0",
   "title": "CLI 参数与零值语义",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -42,18 +42,19 @@
     "referencePatch": "graders/BND-01/reference.patch",
     "alternative": "graders/BND-01/alternative",
     "defectDetectors": [
+      "hidden/boolean-toggles-and-rejects-values",
+      "hidden/inline-equals-splits-on-first-only",
+      "hidden/last-occurrence-wins",
+      "hidden/missing-value-is-rejected",
+      "hidden/port-range-and-format",
+      "hidden/unknown-option-reports-its-name",
+      "hidden/zero-and-empty-string-are-literal-values",
       "public/accepts-both-value-forms",
       "public/boolean-switches",
       "public/last-value-wins",
       "public/rejects-missing-value-and-bad-port",
       "public/rejects-unknown-option",
-      "public/zero-and-empty-are-values",
-      "hidden/accepts-both-value-forms",
-      "hidden/boolean-switches",
-      "hidden/last-value-wins",
-      "hidden/rejects-missing-value-and-bad-port",
-      "hidden/rejects-unknown-option",
-      "hidden/zero-and-empty-are-values"
+      "public/zero-and-empty-are-values"
     ]
   },
   "limits": {
@@ -128,68 +129,76 @@
       "summary": "布尔开关与 --no- 前缀，且不接受取值。"
     },
     {
-      "id": "hidden/uses-defaults",
-      "kind": "hidden",
-      "group": "behavior",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的默认值。"
-    },
-    {
-      "id": "hidden/accepts-both-value-forms",
-      "kind": "hidden",
-      "group": "behavior",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的两种写法。"
-    },
-    {
-      "id": "hidden/zero-and-empty-are-values",
-      "kind": "hidden",
-      "group": "boundary",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的零值语义。"
-    },
-    {
-      "id": "hidden/rejects-unknown-option",
-      "kind": "hidden",
-      "group": "boundary",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的未知选项。"
-    },
-    {
-      "id": "hidden/rejects-missing-value-and-bad-port",
-      "kind": "hidden",
-      "group": "boundary",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的取值错误。"
-    },
-    {
-      "id": "hidden/last-value-wins",
+      "id": "hidden/zero-and-empty-string-are-literal-values",
       "kind": "hidden",
       "group": "state",
       "weight": 1,
       "critical": false,
-      "summary": "隐藏样本下的重复选项。"
+      "summary": "zero and empty string are literal values"
     },
     {
-      "id": "hidden/collects-positionals-around-separator",
+      "id": "hidden/unknown-option-reports-its-name",
       "kind": "hidden",
       "group": "regression",
       "weight": 1,
       "critical": false,
-      "summary": "隐藏样本下的位置参数。"
+      "summary": "unknown option reports its name"
     },
     {
-      "id": "hidden/boolean-switches",
+      "id": "hidden/missing-value-is-rejected",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "missing value is rejected"
+    },
+    {
+      "id": "hidden/port-range-and-format",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "port range and format"
+    },
+    {
+      "id": "hidden/boolean-toggles-and-rejects-values",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "boolean toggles and rejects values"
+    },
+    {
+      "id": "hidden/last-occurrence-wins",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "last occurrence wins"
+    },
+    {
+      "id": "hidden/double-dash-stops-option-parsing",
       "kind": "hidden",
       "group": "resources",
       "weight": 1,
       "critical": false,
-      "summary": "隐藏样本下的布尔开关。"
+      "summary": "double dash stops option parsing"
+    },
+    {
+      "id": "hidden/rest-collects-positional-in-order",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "rest collects positional in order"
+    },
+    {
+      "id": "hidden/inline-equals-splits-on-first-only",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "inline equals splits on first only"
     }
   ]
 }

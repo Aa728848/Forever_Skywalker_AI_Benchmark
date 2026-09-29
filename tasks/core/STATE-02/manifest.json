@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "STATE-02",
-  "taskVersion": "0.2.0",
+  "taskVersion": "0.3.0",
   "title": "状态迁移与旧版本契约",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -42,18 +42,18 @@
     "referencePatch": "graders/STATE-02/reference.patch",
     "alternative": "graders/STATE-02/alternative",
     "defectDetectors": [
-      "hidden/migrates-v1-status-names",
-      "hidden/migration-is-idempotent",
-      "hidden/rejects-invalid-snapshots",
-      "hidden/rejects-unknown-version",
+      "hidden/batch-input-and-output-do-not-alias-state",
+      "hidden/migration-is-idempotent-for-every-state",
+      "hidden/mixed-version-batch-preserves-order-and-is-idempotent",
+      "hidden/unsupported-versions-stringify-exactly",
+      "hidden/v1-maps-only-the-frozen-names",
+      "hidden/v2-accepts-only-exact-state-names",
+      "public/batch-failure-preserves-confirmed-snapshot",
+      "public/duplicate-key-is-atomic-domain-error",
       "public/migrates-v1-status-names",
       "public/migration-is-idempotent",
       "public/rejects-invalid-snapshots",
-      "public/rejects-unknown-version",
-      "public/batch-failure-preserves-confirmed-snapshot",
-      "public/duplicate-key-is-atomic-domain-error",
-      "hidden/mixed-version-batch-preserves-order-and-is-idempotent",
-      "hidden/batch-input-and-output-do-not-alias-state"
+      "public/rejects-unknown-version"
     ]
   },
   "limits": {
@@ -104,46 +104,6 @@
       "summary": "迁移幂等。"
     },
     {
-      "id": "hidden/passes-through-v2",
-      "kind": "hidden",
-      "group": "behavior",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的 v2 直通。"
-    },
-    {
-      "id": "hidden/migrates-v1-status-names",
-      "kind": "hidden",
-      "group": "state",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的 v1 映射。"
-    },
-    {
-      "id": "hidden/rejects-unknown-version",
-      "kind": "hidden",
-      "group": "boundary",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的版本校验。"
-    },
-    {
-      "id": "hidden/rejects-invalid-snapshots",
-      "kind": "hidden",
-      "group": "regression",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的结构校验。"
-    },
-    {
-      "id": "hidden/migration-is-idempotent",
-      "kind": "hidden",
-      "group": "resources",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的幂等。"
-    },
-    {
       "id": "public/batch-failure-preserves-confirmed-snapshot",
       "kind": "public",
       "group": "state",
@@ -162,18 +122,58 @@
     {
       "id": "hidden/mixed-version-batch-preserves-order-and-is-idempotent",
       "kind": "hidden",
-      "group": "behavior",
-      "weight": 2,
+      "group": "resources",
+      "weight": 1,
       "critical": true,
-      "summary": "混合历史版本顺序迁移，重新加载当前版本不会改变结果。"
+      "summary": "mixed version batch preserves order and is idempotent"
     },
     {
       "id": "hidden/batch-input-and-output-do-not-alias-state",
       "kind": "hidden",
-      "group": "resources",
-      "weight": 2,
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "batch input and output do not alias state"
+    },
+    {
+      "id": "hidden/v2-accepts-only-exact-state-names",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "v2 accepts only exact state names"
+    },
+    {
+      "id": "hidden/v1-maps-only-the-frozen-names",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "v1 maps only the frozen names"
+    },
+    {
+      "id": "hidden/unsupported-versions-stringify-exactly",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "unsupported versions stringify exactly"
+    },
+    {
+      "id": "hidden/non-object-inputs-are-invalid",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
       "critical": true,
-      "summary": "调用方修改输入或输出快照不能改写确认状态。"
+      "summary": "non object inputs are invalid"
+    },
+    {
+      "id": "hidden/migration-is-idempotent-for-every-state",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "migration is idempotent for every state"
     }
   ]
 }

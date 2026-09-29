@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "BND-03",
-  "taskVersion": "0.2.0",
+  "taskVersion": "0.3.0",
   "title": "跨字节块的 Unicode 与流解析",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -42,16 +42,21 @@
     "referencePatch": "graders/BND-03/reference.patch",
     "alternative": "graders/BND-03/alternative",
     "defectDetectors": [
-      "hidden/decodes-character-split-across-chunks",
-      "hidden/decodes-four-byte-emoji-in-two-parts",
-      "hidden/end-reports-incomplete-sequence",
+      "hidden/caller-buffer-is-not-mutated-or-retained",
+      "hidden/empty-and-ascii-only-pushes",
+      "hidden/end-rejects-incomplete-and-locks-the-stream",
+      "hidden/every-cut-point-decodes-identically",
+      "hidden/invalid-continuation-at-global-sequence-start",
+      "hidden/invalid-sequence-reports-global-start-offset",
+      "hidden/offset-counts-all-received-bytes",
+      "hidden/push-returns-only-newly-completed-characters",
+      "hidden/segmentation-does-not-replay-history",
+      "hidden/terminal-errors-and-borrowed-buffer",
+      "hidden/two-three-and-four-byte-boundaries",
+      "hidden/unicode-scalar-boundaries-and-every-cut",
       "public/decodes-character-split-across-chunks",
       "public/decodes-four-byte-emoji-in-two-parts",
-      "public/end-reports-incomplete-sequence",
-      "hidden/unicode-scalar-boundaries-and-every-cut",
-      "hidden/invalid-continuation-at-global-sequence-start",
-      "hidden/terminal-errors-and-borrowed-buffer",
-      "hidden/segmentation-does-not-replay-history"
+      "public/end-reports-incomplete-sequence"
     ]
   },
   "limits": {
@@ -102,52 +107,76 @@
       "summary": "结束时未完成序列抛 IncompleteSequenceError。"
     },
     {
-      "id": "hidden/decodes-single-chunk",
-      "kind": "hidden",
-      "group": "behavior",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的单块解码。"
-    },
-    {
-      "id": "hidden/decodes-character-split-across-chunks",
-      "kind": "hidden",
-      "group": "resources",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的跨块字符。"
-    },
-    {
-      "id": "hidden/decodes-four-byte-emoji-in-two-parts",
+      "id": "hidden/every-cut-point-decodes-identically",
       "kind": "hidden",
       "group": "state",
       "weight": 1,
       "critical": false,
-      "summary": "隐藏样本下的 emoji。"
+      "summary": "every cut point decodes identically"
     },
     {
-      "id": "hidden/rejects-invalid-bytes",
+      "id": "hidden/push-returns-only-newly-completed-characters",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "push returns only newly completed characters"
+    },
+    {
+      "id": "hidden/invalid-sequence-reports-global-start-offset",
       "kind": "hidden",
       "group": "boundary",
       "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的非法字节。"
+      "critical": true,
+      "summary": "invalid sequence reports global start offset"
     },
     {
-      "id": "hidden/end-reports-incomplete-sequence",
+      "id": "hidden/end-rejects-incomplete-and-locks-the-stream",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "end rejects incomplete and locks the stream"
+    },
+    {
+      "id": "hidden/empty-and-ascii-only-pushes",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "empty and ascii only pushes"
+    },
+    {
+      "id": "hidden/offset-counts-all-received-bytes",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "offset counts all received bytes"
+    },
+    {
+      "id": "hidden/caller-buffer-is-not-mutated-or-retained",
       "kind": "hidden",
       "group": "regression",
       "weight": 1,
       "critical": false,
-      "summary": "隐藏样本下的结束语义。"
+      "summary": "caller buffer is not mutated or retained"
+    },
+    {
+      "id": "hidden/two-three-and-four-byte-boundaries",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "two three and four byte boundaries"
     },
     {
       "id": "hidden/unicode-scalar-boundaries-and-every-cut",
       "kind": "hidden",
-      "group": "regression",
+      "group": "boundary",
       "weight": 1,
       "critical": true,
-      "summary": "Unicode标量边界与任意分块输出一致。"
+      "summary": "unicode scalar boundaries and every cut"
     },
     {
       "id": "hidden/invalid-continuation-at-global-sequence-start",
@@ -155,23 +184,23 @@
       "group": "boundary",
       "weight": 1,
       "critical": true,
-      "summary": "过长、代理区、越界码点和跨块非法后缀偏移。"
+      "summary": "invalid continuation at global sequence start"
     },
     {
       "id": "hidden/terminal-errors-and-borrowed-buffer",
       "kind": "hidden",
-      "group": "state",
+      "group": "behavior",
       "weight": 1,
-      "critical": true,
-      "summary": "输入缓冲不借用，失败后状态终结且总offset准确。"
+      "critical": false,
+      "summary": "terminal errors and borrowed buffer"
     },
     {
       "id": "hidden/segmentation-does-not-replay-history",
       "kind": "hidden",
-      "group": "resources",
+      "group": "behavior",
       "weight": 1,
-      "critical": true,
-      "summary": "连续分块只返回新增文本，不重新发送历史。"
+      "critical": false,
+      "summary": "segmentation does not replay history"
     }
   ]
 }

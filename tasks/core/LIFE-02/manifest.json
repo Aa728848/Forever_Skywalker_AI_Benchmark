@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "LIFE-02",
-  "taskVersion": "0.2.0",
+  "taskVersion": "0.3.0",
   "title": "流结束、超时和迟到回调",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -42,16 +42,18 @@
     "referencePatch": "graders/LIFE-02/reference.patch",
     "alternative": "graders/LIFE-02/alternative",
     "defectDetectors": [
+      "hidden/cancel-freezes-and-reclaims-both-resources",
+      "hidden/end-and-timeout-do-not-cross-contaminate",
+      "hidden/first-terminal-wins-across-all-three",
       "hidden/ignores-events-after-end",
       "hidden/ignores-events-after-error",
+      "hidden/source-start-failure-releases-deadline",
+      "hidden/synchronous-deadline-does-not-open-source",
       "hidden/timeout-freezes-stream",
       "public/ignores-events-after-end",
       "public/ignores-events-after-error",
-      "public/timeout-freezes-stream",
       "public/synchronous-end-releases-late-subscription-handle",
-      "hidden/cancel-freezes-and-reclaims-both-resources",
-      "hidden/synchronous-deadline-does-not-open-source",
-      "hidden/source-start-failure-releases-deadline"
+      "public/timeout-freezes-stream"
     ]
   },
   "limits": {
@@ -102,46 +104,6 @@
       "summary": "summary 是快照。"
     },
     {
-      "id": "hidden/collects-data-until-end",
-      "kind": "hidden",
-      "group": "behavior",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的正常收集。"
-    },
-    {
-      "id": "hidden/ignores-events-after-end",
-      "kind": "hidden",
-      "group": "resources",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的迟到事件。"
-    },
-    {
-      "id": "hidden/ignores-events-after-error",
-      "kind": "hidden",
-      "group": "state",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的错误语义。"
-    },
-    {
-      "id": "hidden/timeout-freezes-stream",
-      "kind": "hidden",
-      "group": "boundary",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的超时。"
-    },
-    {
-      "id": "hidden/summary-is-a-snapshot",
-      "kind": "hidden",
-      "group": "regression",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的快照语义。"
-    },
-    {
       "id": "public/synchronous-end-releases-late-subscription-handle",
       "kind": "public",
       "group": "resources",
@@ -152,26 +114,90 @@
     {
       "id": "hidden/cancel-freezes-and-reclaims-both-resources",
       "kind": "hidden",
-      "group": "state",
-      "weight": 2,
-      "critical": true,
-      "summary": "主动取消后迟到数据/超时不改结果，两个资源仅释放一次。"
+      "group": "boundary",
+      "weight": 1,
+      "critical": false,
+      "summary": "cancel freezes and reclaims both resources"
     },
     {
       "id": "hidden/synchronous-deadline-does-not-open-source",
       "kind": "hidden",
-      "group": "boundary",
-      "weight": 2,
-      "critical": true,
-      "summary": "deadline同步超时直接进入终态，不启动已无用的source。"
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "synchronous deadline does not open source"
     },
     {
       "id": "hidden/source-start-failure-releases-deadline",
       "kind": "hidden",
-      "group": "regression",
-      "weight": 2,
-      "critical": true,
-      "summary": "source启动同步失败时释放已取得的deadline并保留错误。"
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "source start failure releases deadline"
+    },
+    {
+      "id": "hidden/collects-data-until-end",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "collects data until end"
+    },
+    {
+      "id": "hidden/ignores-events-after-end",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "ignores events after end"
+    },
+    {
+      "id": "hidden/ignores-events-after-error",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "ignores events after error"
+    },
+    {
+      "id": "hidden/timeout-freezes-stream",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "timeout freezes stream"
+    },
+    {
+      "id": "hidden/summary-is-a-snapshot",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "summary is a snapshot"
+    },
+    {
+      "id": "hidden/first-terminal-wins-across-all-three",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "first terminal wins across all three"
+    },
+    {
+      "id": "hidden/timeout-ms-defaults-and-is-readable",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "timeout ms defaults and is readable"
+    },
+    {
+      "id": "hidden/end-and-timeout-do-not-cross-contaminate",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "end and timeout do not cross contaminate"
     }
   ]
 }

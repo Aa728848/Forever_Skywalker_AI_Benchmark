@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "CONC-01",
-  "taskVersion": "0.1.0",
+  "taskVersion": "0.2.0",
   "title": "取消与超时传播",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -42,16 +42,18 @@
     "referencePatch": "graders/CONC-01/reference.patch",
     "alternative": "graders/CONC-01/alternative",
     "defectDetectors": [
+      "hidden/cancel-aborts-before-rejecting",
+      "hidden/default-timeout-is-30000-and-explicit-zero-is-honored",
+      "hidden/independent-tasks-do-not-share-timers-or-signals",
+      "hidden/repeated-cancel-is-idempotent",
+      "hidden/sync-throw-does-not-escape-and-clears-timer",
+      "hidden/timeout-aborts-then-rejects-and-is-final",
+      "hidden/timer-cancelled-exactly-once-on-every-outcome",
       "public/cancel-aborts-signal-and-rejects",
       "public/clears-timer-after-settle",
       "public/propagates-work-errors",
       "public/resolves-with-work-result",
-      "public/timeout-rejects-and-aborts",
-      "hidden/cancel-aborts-signal-and-rejects",
-      "hidden/clears-timer-after-settle",
-      "hidden/propagates-work-errors",
-      "hidden/resolves-with-work-result",
-      "hidden/timeout-rejects-and-aborts"
+      "public/timeout-rejects-and-aborts"
     ]
   },
   "limits": {
@@ -102,44 +104,76 @@
       "summary": "工作抛错原样传播并释放定时器。"
     },
     {
-      "id": "hidden/resolves-with-work-result",
+      "id": "hidden/work-receives-fresh-non-aborted-signal",
       "kind": "hidden",
       "group": "behavior",
       "weight": 1,
       "critical": false,
-      "summary": "隐藏样本下的成功路径。"
+      "summary": "work receives fresh non aborted signal"
     },
     {
-      "id": "hidden/cancel-aborts-signal-and-rejects",
+      "id": "hidden/sync-throw-does-not-escape-and-clears-timer",
       "kind": "hidden",
-      "group": "state",
+      "group": "behavior",
       "weight": 1,
       "critical": false,
-      "summary": "隐藏样本下的取消语义。"
+      "summary": "sync throw does not escape and clears timer"
     },
     {
-      "id": "hidden/timeout-rejects-and-aborts",
+      "id": "hidden/cancel-aborts-before-rejecting",
       "kind": "hidden",
       "group": "boundary",
       "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的超时语义。"
+      "critical": true,
+      "summary": "cancel aborts before rejecting"
     },
     {
-      "id": "hidden/clears-timer-after-settle",
-      "kind": "hidden",
-      "group": "resources",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的定时器释放。"
-    },
-    {
-      "id": "hidden/propagates-work-errors",
+      "id": "hidden/repeated-cancel-is-idempotent",
       "kind": "hidden",
       "group": "regression",
       "weight": 1,
       "critical": false,
-      "summary": "同步抛出也会变成拒绝，且结算后取消无副作用。"
+      "summary": "repeated cancel is idempotent"
+    },
+    {
+      "id": "hidden/timeout-aborts-then-rejects-and-is-final",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "timeout aborts then rejects and is final"
+    },
+    {
+      "id": "hidden/default-timeout-is-30000-and-explicit-zero-is-honored",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "default timeout is 30000 and explicit zero is honored"
+    },
+    {
+      "id": "hidden/timer-cancelled-exactly-once-on-every-outcome",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "timer cancelled exactly once on every outcome"
+    },
+    {
+      "id": "hidden/late-work-settlement-cannot-change-result",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "late work settlement cannot change result"
+    },
+    {
+      "id": "hidden/independent-tasks-do-not-share-timers-or-signals",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "independent tasks do not share timers or signals"
     }
   ]
 }

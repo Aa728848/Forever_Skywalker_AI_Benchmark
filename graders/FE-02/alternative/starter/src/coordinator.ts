@@ -57,10 +57,15 @@ export class RequestCoordinator {
       if (current !== undefined && current.generation === generation) this.#inFlight.delete(key);
       return true;
     };
-    this.#port.send(key, payload, controller.signal).then(
-      value => { if (done()) resolveOuter(value); },
-      error => { if (done()) rejectOuter(error); },
-    );
+    // 契约第 4 条：端口同步抛出也必须转成该 promise 的拒绝，不得冒泡到调用方。
+    try {
+      this.#port.send(key, payload, controller.signal).then(
+        value => { if (done()) resolveOuter(value); },
+        error => { if (done()) rejectOuter(error); },
+      );
+    } catch (error) {
+      if (done()) rejectOuter(error);
+    }
     return promise;
   }
 

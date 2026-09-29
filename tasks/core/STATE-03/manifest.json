@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "STATE-03",
-  "taskVersion": "0.2.0",
+  "taskVersion": "0.3.0",
   "title": "检查点恢复和不可重复入账",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -42,19 +42,19 @@
     "referencePatch": "graders/STATE-03/reference.patch",
     "alternative": "graders/STATE-03/alternative",
     "defectDetectors": [
-      "hidden/crash-recovery-replays-journal-once",
-      "hidden/recover-does-not-double-count",
-      "hidden/replays-entries-appended-by-others",
+      "hidden/checkpoint-only-advances-and-matches-journal-length",
+      "hidden/confirmed-prefix-is-append-only",
+      "hidden/entries-appended-by-others-are-replayed-once",
+      "hidden/process-exit-after-journal-append-is-idempotent",
+      "hidden/recover-is-idempotent-across-repeated-calls",
+      "hidden/safe-integer-transaction-validates-before-write",
+      "hidden/seeded-replay-matches-independent-balance",
+      "public/acknowledgement-loss-reconciles-persisted-transaction",
       "public/crash-recovery-replays-journal-once",
       "public/recover-does-not-double-count",
-      "public/replays-entries-appended-by-others",
-      "public/transaction-identity-preserves-original-receipt",
-      "public/acknowledgement-loss-reconciles-persisted-transaction",
       "public/recovery-publishes-only-completely-valid-snapshot",
-      "hidden/safe-integer-transaction-validates-before-write",
-      "hidden/confirmed-prefix-is-append-only",
-      "hidden/process-exit-after-journal-append-is-idempotent",
-      "hidden/seeded-replay-matches-independent-balance"
+      "public/replays-entries-appended-by-others",
+      "public/transaction-identity-preserves-original-receipt"
     ]
   },
   "limits": {
@@ -105,46 +105,6 @@
       "summary": "非法条目抛 LedgerError。"
     },
     {
-      "id": "hidden/applies-entries-and-tracks-checkpoint",
-      "kind": "hidden",
-      "group": "behavior",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的入账。"
-    },
-    {
-      "id": "hidden/recover-does-not-double-count",
-      "kind": "hidden",
-      "group": "state",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的重复恢复。"
-    },
-    {
-      "id": "hidden/crash-recovery-replays-journal-once",
-      "kind": "hidden",
-      "group": "resources",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的重启恢复。"
-    },
-    {
-      "id": "hidden/replays-entries-appended-by-others",
-      "kind": "hidden",
-      "group": "regression",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的外部追加。"
-    },
-    {
-      "id": "hidden/rejects-invalid-journal-entries",
-      "kind": "hidden",
-      "group": "boundary",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的非法条目。"
-    },
-    {
       "id": "public/transaction-identity-preserves-original-receipt",
       "kind": "public",
       "group": "behavior",
@@ -172,41 +132,89 @@
       "id": "hidden/safe-integer-transaction-validates-before-write",
       "kind": "hidden",
       "group": "boundary",
-      "weight": 2,
+      "weight": 1,
       "critical": true,
-      "summary": "无效金额、累计溢出和空白键在任何写入之前拒绝。"
+      "summary": "safe integer transaction validates before write"
     },
     {
       "id": "hidden/confirmed-prefix-is-append-only",
       "kind": "hidden",
-      "group": "regression",
-      "weight": 2,
-      "critical": true,
-      "summary": "已确认日志前缀被改写或截断必须拒绝，保留最后确认快照。"
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "confirmed prefix is append only"
     },
     {
       "id": "hidden/journal-rejection-without-write-retains-error-and-state",
       "kind": "hidden",
-      "group": "resources",
-      "weight": 2,
-      "critical": false,
-      "summary": "写入前失败不泄漏内存账务状态，下一次请求仍可成功。"
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "journal rejection without write retains error and state"
     },
     {
       "id": "hidden/process-exit-after-journal-append-is-idempotent",
       "kind": "hidden",
-      "group": "state",
-      "weight": 2,
+      "group": "boundary",
+      "weight": 1,
       "critical": true,
-      "summary": "真实子进程追加落盘后退出，重启恢复并重试只存在一条交易。"
+      "summary": "process exit after journal append is idempotent"
     },
     {
       "id": "hidden/seeded-replay-matches-independent-balance",
       "kind": "hidden",
       "group": "regression",
-      "weight": 2,
+      "weight": 1,
+      "critical": false,
+      "summary": "seeded replay matches independent balance"
+    },
+    {
+      "id": "hidden/apply-appends-accumulates-and-advances-checkpoint",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "apply appends accumulates and advances checkpoint"
+    },
+    {
+      "id": "hidden/recover-is-idempotent-across-repeated-calls",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
       "critical": true,
-      "summary": "保留种子交易序列随机重启与重复恢复，独立整数oracle核对。"
+      "summary": "recover is idempotent across repeated calls"
+    },
+    {
+      "id": "hidden/restart-on-same-journal-replays-each-entry-once",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "restart on same journal replays each entry once"
+    },
+    {
+      "id": "hidden/entries-appended-by-others-are-replayed-once",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "entries appended by others are replayed once"
+    },
+    {
+      "id": "hidden/invalid-entries-are-rejected-with-the-offending-text",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "invalid entries are rejected with the offending text"
+    },
+    {
+      "id": "hidden/checkpoint-only-advances-and-matches-journal-length",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "checkpoint only advances and matches journal length"
     }
   ]
 }

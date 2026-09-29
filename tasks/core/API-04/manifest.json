@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "API-04",
-  "taskVersion": "0.2.0",
+  "taskVersion": "0.3.0",
   "title": "持久任务队列：并发领取、租约隔离与崩溃恢复",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -42,16 +42,20 @@
     "referencePatch": "graders/API-04/reference.patch",
     "alternative": "graders/API-04/alternative",
     "defectDetectors": [
-      "public/durable-content-conflict",
-      "public/durable-expired-lease-fencing",
-      "public/durable-result-failure-is-atomic",
-      "hidden/durable-crash-submit",
+      "hidden/conflict-and-boundary-inputs-leave-state-untouched",
+      "hidden/durable-competing-claim",
       "hidden/durable-crash-claim",
       "hidden/durable-crash-result",
-      "hidden/durable-competing-claim",
+      "hidden/durable-crash-submit",
+      "hidden/durable-fixed-seed-state-machine",
       "hidden/durable-same-worker-stale-completion",
       "hidden/durable-worker-replay-boundary",
-      "hidden/durable-fixed-seed-state-machine"
+      "hidden/idempotent-completion-and-result-conflict",
+      "hidden/lease-generation-fencing-rejects-stale-completions",
+      "hidden/revision-counts-only-real-changes",
+      "public/durable-content-conflict",
+      "public/durable-expired-lease-fencing",
+      "public/durable-result-failure-is-atomic"
     ]
   },
   "limits": {
@@ -70,28 +74,12 @@
       "summary": "首次提交落盘并返回 taskId。"
     },
     {
-      "id": "hidden/submits-and-records-task-id",
-      "kind": "hidden",
-      "group": "regression",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本：首次提交落盘并返回 taskId。"
-    },
-    {
       "id": "public/repeated-key-returns-same-task-id",
       "kind": "public",
       "group": "regression",
       "weight": 1,
       "critical": false,
       "summary": "同一提交键幂等返回同一 taskId。"
-    },
-    {
-      "id": "hidden/repeated-key-returns-same-task-id",
-      "kind": "hidden",
-      "group": "regression",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本：同一提交键幂等返回同一 taskId。"
     },
     {
       "id": "public/restart-reuses-existing-record",
@@ -102,14 +90,6 @@
       "summary": "重启后复用已有记录，不产生第二条。"
     },
     {
-      "id": "hidden/restart-reuses-existing-record",
-      "kind": "hidden",
-      "group": "regression",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本：重启后复用已有记录，不产生第二条。"
-    },
-    {
       "id": "public/failed-write-leaves-no-partial-record",
       "kind": "public",
       "group": "regression",
@@ -118,44 +98,12 @@
       "summary": "写失败不留半条记录且可重试。"
     },
     {
-      "id": "hidden/failed-write-leaves-no-partial-record",
-      "kind": "hidden",
-      "group": "regression",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本：写失败不留半条记录且可重试。"
-    },
-    {
       "id": "public/distinct-keys-get-distinct-ids-and-empty-key-is-rejected",
       "kind": "public",
       "group": "regression",
       "weight": 1,
       "critical": false,
       "summary": "不同键不同 id，空键被拒。"
-    },
-    {
-      "id": "hidden/distinct-keys-get-distinct-ids-and-empty-key-is-rejected",
-      "kind": "hidden",
-      "group": "regression",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本：不同键不同 id，空键被拒。"
-    },
-    {
-      "id": "hidden/restart-new-key-has-unique-id",
-      "kind": "hidden",
-      "group": "regression",
-      "weight": 1,
-      "critical": false,
-      "summary": "重启后提交不同键不得复用旧 taskId。"
-    },
-    {
-      "id": "hidden/resource-retries-do-not-accumulate",
-      "kind": "hidden",
-      "group": "regression",
-      "weight": 1,
-      "critical": false,
-      "summary": "hidden/resource-retries-do-not-accumulate"
     },
     {
       "id": "public/durable-submit-flow",
@@ -190,84 +138,212 @@
       "summary": "结果阶段抛错时完成状态、结果和修订号同时回滚。"
     },
     {
-      "id": "hidden/durable-crash-submit",
+      "id": "hidden/new-key-identity-is-permanent-and-fifo-ordered",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "new key identity is permanent and fifo ordered"
+    },
+    {
+      "id": "hidden/conflict-and-boundary-inputs-leave-state-untouched",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "conflict and boundary inputs leave state untouched"
+    },
+    {
+      "id": "hidden/lease-generation-fencing-rejects-stale-completions",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "lease generation fencing rejects stale completions"
+    },
+    {
+      "id": "hidden/idempotent-completion-and-result-conflict",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "idempotent completion and result conflict"
+    },
+    {
+      "id": "hidden/revision-counts-only-real-changes",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "revision counts only real changes"
+    },
+    {
+      "id": "hidden/snapshot-is-independent-copy-with-stable-order",
       "kind": "hidden",
       "group": "state",
-      "weight": 2,
+      "weight": 1,
+      "critical": false,
+      "summary": "snapshot is independent copy with stable order"
+    },
+    {
+      "id": "hidden/close-is-idempotent-and-locks-every-method",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
       "critical": true,
-      "summary": "子进程在提交暂存点真实退出，重新打开实际文件不出现半条任务。"
+      "summary": "close is idempotent and locks every method"
+    },
+    {
+      "id": "hidden/run-one-covers-idle-completed-and-superseded",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "run one covers idle completed and superseded"
+    },
+    {
+      "id": "hidden/queue-reuse-does-not-accumulate-state",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "queue reuse does not accumulate state"
+    },
+    {
+      "id": "hidden/durable-crash-submit",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "durable crash submit"
     },
     {
       "id": "hidden/durable-crash-claim",
       "kind": "hidden",
-      "group": "state",
-      "weight": 2,
-      "critical": true,
-      "summary": "子进程领取暂存后退出，未确认领取不遗留租约。"
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "durable crash claim"
     },
     {
       "id": "hidden/durable-crash-result",
       "kind": "hidden",
-      "group": "state",
-      "weight": 2,
-      "critical": true,
-      "summary": "子进程结果暂存后退出，结果与完成状态原子恢复。"
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "durable crash result"
     },
     {
       "id": "hidden/durable-lost-ack-replay",
       "kind": "hidden",
       "group": "behavior",
-      "weight": 2,
-      "critical": true,
-      "summary": "已提交后进程退出造成确认丢失，提交与完成的重放稳定。"
+      "weight": 1,
+      "critical": false,
+      "summary": "durable lost ack replay"
     },
     {
       "id": "hidden/durable-competing-claim",
       "kind": "hidden",
-      "group": "state",
-      "weight": 2,
-      "critical": true,
-      "summary": "真实子进程与另一连接通过管道屏障交错领取，至多一个确认成功。"
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "durable competing claim"
     },
     {
       "id": "hidden/durable-same-worker-stale-completion",
       "kind": "hidden",
       "group": "boundary",
-      "weight": 2,
+      "weight": 1,
       "critical": true,
-      "summary": "同 worker 不同代际、篡改到期时间的 token 不能完成。"
+      "summary": "durable same worker stale completion"
     },
     {
       "id": "hidden/durable-worker-replay-boundary",
       "kind": "hidden",
-      "group": "behavior",
-      "weight": 2,
+      "group": "boundary",
+      "weight": 1,
       "critical": true,
-      "summary": "真实异步执行跨租约重入，允许外部执行两次但只存有效代际结果。"
+      "summary": "durable worker replay boundary"
     },
     {
       "id": "hidden/durable-idempotent-resource-bound",
       "kind": "hidden",
-      "group": "resources",
-      "weight": 2,
+      "group": "boundary",
+      "weight": 1,
       "critical": true,
-      "summary": "重复提交与完成不扩大 SQLite 文件或修订历史。"
+      "summary": "durable idempotent resource bound"
     },
     {
       "id": "hidden/durable-boundaries-and-snapshot",
       "kind": "hidden",
-      "group": "regression",
-      "weight": 2,
+      "group": "boundary",
+      "weight": 1,
       "critical": true,
-      "summary": "边界时间、特殊键、快照隔离、关闭后拒绝操作。"
+      "summary": "durable boundaries and snapshot"
     },
     {
       "id": "hidden/durable-fixed-seed-state-machine",
       "kind": "hidden",
       "group": "state",
-      "weight": 2,
+      "weight": 1,
+      "critical": false,
+      "summary": "durable fixed seed state machine"
+    },
+    {
+      "id": "hidden/submits-and-records-task-id",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "submits and records task id"
+    },
+    {
+      "id": "hidden/repeated-key-returns-same-task-id",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "repeated key returns same task id"
+    },
+    {
+      "id": "hidden/restart-reuses-existing-record",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "restart reuses existing record"
+    },
+    {
+      "id": "hidden/failed-write-leaves-no-partial-record",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "failed write leaves no partial record"
+    },
+    {
+      "id": "hidden/distinct-keys-get-distinct-ids-and-empty-key-is-rejected",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
       "critical": true,
-      "summary": "固定种子状态机与独立预言机逐步比对，并穿插数据库关闭重开。"
+      "summary": "distinct keys get distinct ids and empty key is rejected"
+    },
+    {
+      "id": "hidden/restart-new-key-has-unique-id",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "restart new key has unique id"
+    },
+    {
+      "id": "hidden/resource-retries-do-not-accumulate",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "resource retries do not accumulate"
     }
   ]
 }

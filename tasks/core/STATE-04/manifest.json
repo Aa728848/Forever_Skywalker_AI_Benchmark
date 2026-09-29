@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "STATE-04",
-  "taskVersion": "0.1.1",
+  "taskVersion": "0.2.0",
   "title": "UI、服务、缓存的故障后一致性",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -42,14 +42,16 @@
     "referencePatch": "graders/STATE-04/reference.patch",
     "alternative": "graders/STATE-04/alternative",
     "defectDetectors": [
+      "hidden/cache-ui-interruption-and-duplicate-notifications-converge",
       "hidden/layers-stay-consistent-after-failure",
+      "hidden/never-reverts-a-layer-that-was-not-applied",
+      "hidden/process-exit-after-durable-commit-recovers",
+      "hidden/rollback-order-is-exact-reverse",
       "hidden/rolls-back-every-applied-layer",
       "public/layers-stay-consistent-after-failure",
-      "public/rolls-back-every-applied-layer",
       "public/restart-rebuilds-projections-after-commit",
-      "public/stale-notification-cannot-roll-back-ui",
-      "hidden/process-exit-after-durable-commit-recovers",
-      "hidden/cache-ui-interruption-and-duplicate-notifications-converge"
+      "public/rolls-back-every-applied-layer",
+      "public/stale-notification-cannot-roll-back-ui"
     ]
   },
   "limits": {
@@ -68,28 +70,12 @@
       "summary": "按 service → cache → ui 顺序应用并记录。"
     },
     {
-      "id": "hidden/commits-in-fixed-order",
-      "kind": "hidden",
-      "group": "behavior",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本：按 service → cache → ui 顺序应用并记录。"
-    },
-    {
       "id": "public/rolls-back-every-applied-layer",
       "kind": "public",
       "group": "state",
       "weight": 1,
       "critical": true,
       "summary": "失败时按相反顺序回滚所有已应用层。"
-    },
-    {
-      "id": "hidden/rolls-back-every-applied-layer",
-      "kind": "hidden",
-      "group": "state",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本：失败时按相反顺序回滚所有已应用层。"
     },
     {
       "id": "public/layers-stay-consistent-after-failure",
@@ -100,14 +86,6 @@
       "summary": "失败后三层状态一致，无半成品残留。"
     },
     {
-      "id": "hidden/layers-stay-consistent-after-failure",
-      "kind": "hidden",
-      "group": "state",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本：失败后三层状态一致，无半成品残留。"
-    },
-    {
       "id": "public/reports-failing-layer-and-recovers",
       "kind": "public",
       "group": "boundary",
@@ -116,28 +94,12 @@
       "summary": "错误带失败层名，之后仍可正常提交。"
     },
     {
-      "id": "hidden/reports-failing-layer-and-recovers",
-      "kind": "hidden",
-      "group": "boundary",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本：错误带失败层名，之后仍可正常提交。"
-    },
-    {
       "id": "public/repeated-commit-is-idempotent",
       "kind": "public",
       "group": "regression",
       "weight": 1,
       "critical": false,
       "summary": "重复提交同一个值是幂等的。"
-    },
-    {
-      "id": "hidden/repeated-commit-is-idempotent",
-      "kind": "hidden",
-      "group": "regression",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本：重复提交同一个值是幂等的。"
     },
     {
       "id": "public/restart-rebuilds-projections-after-commit",
@@ -164,20 +126,108 @@
       "summary": "提交前崩溃无半成品，重试正常。"
     },
     {
+      "id": "hidden/commits-in-fixed-order",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": false,
+      "summary": "commits in fixed order"
+    },
+    {
+      "id": "hidden/rolls-back-every-applied-layer",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "rolls back every applied layer"
+    },
+    {
+      "id": "hidden/layers-stay-consistent-after-failure",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "layers stay consistent after failure"
+    },
+    {
+      "id": "hidden/reports-failing-layer-and-recovers",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "reports failing layer and recovers"
+    },
+    {
+      "id": "hidden/repeated-commit-is-idempotent",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "repeated commit is idempotent"
+    },
+    {
+      "id": "hidden/rollback-order-is-exact-reverse",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "rollback order is exact reverse"
+    },
+    {
+      "id": "hidden/never-reverts-a-layer-that-was-not-applied",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "never reverts a layer that was not applied"
+    },
+    {
+      "id": "hidden/failure-at-first-layer-reports-that-layer",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "failure at first layer reports that layer"
+    },
+    {
+      "id": "hidden/applied-records-every-successful-value-in-order",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "applied records every successful value in order"
+    },
+    {
+      "id": "hidden/retry-after-failure-can-succeed",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "retry after failure can succeed"
+    },
+    {
+      "id": "hidden/idempotent-check-does-not-disturb-other-values",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "idempotent check does not disturb other values"
+    },
+    {
       "id": "hidden/process-exit-after-durable-commit-recovers",
       "kind": "hidden",
       "group": "behavior",
       "weight": 1,
-      "critical": true,
-      "summary": "真实进程在持久提交后退出，新进程语义恢复三层一致。"
+      "critical": false,
+      "summary": "process exit after durable commit recovers"
     },
     {
       "id": "hidden/cache-ui-interruption-and-duplicate-notifications-converge",
       "kind": "hidden",
-      "group": "resources",
+      "group": "state",
       "weight": 1,
-      "critical": true,
-      "summary": "缓存/通知中断后收敛，重复恢复不增加交易。"
+      "critical": false,
+      "summary": "cache ui interruption and duplicate notifications converge"
     }
   ]
 }

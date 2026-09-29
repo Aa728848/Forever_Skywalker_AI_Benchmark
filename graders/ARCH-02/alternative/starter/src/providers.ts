@@ -41,21 +41,16 @@ function assertCatalog(catalog: readonly Provider[]): void {
   }
 }
 
-/** 替代实现：一次分区（partition）后按需拼接。 */
+/** 替代实现：单次遍历按目录顺序分流，保持 usable 与 skipped 的原始相对顺序。 */
 export function resolveProviders(catalog: readonly Provider[], runtime: 'browser' | 'node'): ResolvedProviders {
   assertCatalog(catalog);
-  const groups = new Map<Runtime | 'other', Provider[]>([
-    ['shared', []],
-    ['browser', []],
-    ['node', []],
-    ['other', []],
-  ]);
+  // 分桶会丢失目录顺序（shared 与匹配项会被分开再拼接），
+  // 因此这里直接按目录顺序分流。
+  const usable: Provider[] = [];
+  const skipped: string[] = [];
   for (const provider of catalog) {
-    const bucket = provider.runtime === runtime ? runtime : provider.runtime;
-    (groups.get(bucket) ?? groups.get('other')).push(provider);
+    if (provider.runtime === 'shared' || provider.runtime === runtime) usable.push(provider);
+    else skipped.push(provider.id);
   }
-  const usable = [...(groups.get('shared') ?? []), ...(groups.get(runtime) ?? [])];
-  const usableIds = new Set(usable.map(provider => provider.id));
-  const skipped = catalog.filter(provider => !usableIds.has(provider.id)).map(provider => provider.id);
   return { usable, skipped };
 }

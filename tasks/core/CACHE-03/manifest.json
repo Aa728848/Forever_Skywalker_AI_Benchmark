@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "CACHE-03",
-  "taskVersion": "0.2.0",
+  "taskVersion": "0.3.0",
   "title": "失效期间的在途旧结果",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -42,14 +42,15 @@
     "referencePatch": "graders/CACHE-03/reference.patch",
     "alternative": "graders/CACHE-03/alternative",
     "defectDetectors": [
-      "hidden/discards-inflight-result-invalidated-before-settle",
-      "hidden/second-invalidate-during-flight-keeps-latest-request",
-      "public/discards-inflight-result-invalidated-before-settle",
-      "public/second-invalidate-during-flight-keeps-latest-request",
+      "hidden/failed-load-is-not-cached-and-can-be-retried",
       "hidden/multikey-retries-invalidated-cut",
+      "hidden/new-success-survives-late-old-success",
+      "hidden/only-the-last-generation-may-occupy-the-cache",
       "hidden/rejected-current-generation-is-retryable",
+      "hidden/stale-inflight-result-still-reaches-its-caller",
       "hidden/synchronous-source-error-is-a-rejection",
-      "hidden/new-success-survives-late-old-success"
+      "public/discards-inflight-result-invalidated-before-settle",
+      "public/second-invalidate-during-flight-keeps-latest-request"
     ]
   },
   "limits": {
@@ -100,46 +101,6 @@
       "summary": "不同 key 的版本与缓存互相独立。"
     },
     {
-      "id": "hidden/caches-on-miss-and-reuses-hit",
-      "kind": "hidden",
-      "group": "behavior",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的命中复用。"
-    },
-    {
-      "id": "hidden/invalidate-forces-reload",
-      "kind": "hidden",
-      "group": "resources",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的失效重载。"
-    },
-    {
-      "id": "hidden/discards-inflight-result-invalidated-before-settle",
-      "kind": "hidden",
-      "group": "state",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的在途丢弃。"
-    },
-    {
-      "id": "hidden/second-invalidate-during-flight-keeps-latest-request",
-      "kind": "hidden",
-      "group": "state",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的多次失效。"
-    },
-    {
-      "id": "hidden/keys-are-independent",
-      "kind": "hidden",
-      "group": "regression",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的跨 key 独立。"
-    },
-    {
       "id": "public/many-preserves-order-and-coalesces",
       "kind": "public",
       "group": "behavior",
@@ -148,44 +109,92 @@
       "critical": true
     },
     {
-      "id": "hidden/multikey-retries-invalidated-cut",
+      "id": "hidden/hit-returns-the-same-promise-without-reloading",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "hit returns the same promise without reloading"
+    },
+    {
+      "id": "hidden/version-starts-at-zero-and-increments-per-invalidate",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": true,
+      "summary": "version starts at zero and increments per invalidate"
+    },
+    {
+      "id": "hidden/stale-inflight-result-still-reaches-its-caller",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "stale inflight result still reaches its caller"
+    },
+    {
+      "id": "hidden/only-the-last-generation-may-occupy-the-cache",
       "kind": "hidden",
       "group": "state",
-      "summary": "多键读取期间失效重取一致视图",
       "weight": 1,
-      "critical": true
+      "critical": false,
+      "summary": "only the last generation may occupy the cache"
+    },
+    {
+      "id": "hidden/keys-are-independent-and-versions-do-not-leak",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "keys are independent and versions do not leak"
+    },
+    {
+      "id": "hidden/failed-load-is-not-cached-and-can-be-retried",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "failed load is not cached and can be retried"
+    },
+    {
+      "id": "hidden/multikey-retries-invalidated-cut",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "multikey retries invalidated cut"
     },
     {
       "id": "hidden/old-rejection-preserves-new-flight",
       "kind": "hidden",
-      "group": "state",
-      "summary": "旧失败不能清理新在途",
+      "group": "boundary",
       "weight": 1,
-      "critical": true
+      "critical": true,
+      "summary": "old rejection preserves new flight"
     },
     {
       "id": "hidden/rejected-current-generation-is-retryable",
       "kind": "hidden",
-      "group": "regression",
-      "summary": "当前代失败可显式重试",
+      "group": "boundary",
       "weight": 1,
-      "critical": true
+      "critical": true,
+      "summary": "rejected current generation is retryable"
     },
     {
       "id": "hidden/synchronous-source-error-is-a-rejection",
       "kind": "hidden",
       "group": "boundary",
-      "summary": "同步错误转换拒绝",
       "weight": 1,
-      "critical": true
+      "critical": true,
+      "summary": "synchronous source error is a rejection"
     },
     {
       "id": "hidden/new-success-survives-late-old-success",
       "kind": "hidden",
-      "group": "state",
-      "summary": "旧成功晚到不能覆盖新值",
+      "group": "regression",
       "weight": 1,
-      "critical": true
+      "critical": false,
+      "summary": "new success survives late old success"
     }
   ]
 }

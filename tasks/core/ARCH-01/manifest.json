@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "ARCH-01",
-  "taskVersion": "0.1.0",
+  "taskVersion": "0.2.0",
   "title": "浏览器与宿主依赖边界",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -42,10 +42,14 @@
     "referencePatch": "graders/ARCH-01/reference.patch",
     "alternative": "graders/ARCH-01/alternative",
     "defectDetectors": [
-      "hidden/defaults-and-validation",
-      "hidden/does-not-mutate-port",
-      "hidden/no-module-level-cache",
-      "hidden/reads-everything-through-the-port",
+      "hidden/cache-is-per-call-not-per-module",
+      "hidden/endpoint-rejects-every-blank-form",
+      "hidden/mode-accepts-only-exact-prod",
+      "hidden/port-object-is-never-mutated",
+      "hidden/port-wins-over-host-globals",
+      "hidden/retries-range-and-format",
+      "hidden/returned-object-is-frozen-and-detached",
+      "hidden/validation-precedence-and-single-read-per-key",
       "public/defaults-and-validation",
       "public/does-not-mutate-port",
       "public/no-module-level-cache",
@@ -100,44 +104,68 @@
       "summary": "只读端口、不新增字段。"
     },
     {
-      "id": "hidden/reads-everything-through-the-port",
+      "id": "hidden/port-wins-over-host-globals",
       "kind": "hidden",
       "group": "behavior",
       "weight": 1,
       "critical": false,
-      "summary": "隐藏样本下端口优先于环境变量。"
+      "summary": "port wins over host globals"
     },
     {
-      "id": "hidden/no-module-level-cache",
+      "id": "hidden/cache-is-per-call-not-per-module",
       "kind": "hidden",
       "group": "state",
       "weight": 1,
       "critical": false,
-      "summary": "隐藏样本下两次调用看到不同端口值。"
+      "summary": "cache is per call not per module"
     },
     {
-      "id": "hidden/defaults-and-validation",
+      "id": "hidden/mode-accepts-only-exact-prod",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "mode accepts only exact prod"
+    },
+    {
+      "id": "hidden/endpoint-rejects-every-blank-form",
       "kind": "hidden",
       "group": "boundary",
       "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的缺省与校验。"
+      "critical": true,
+      "summary": "endpoint rejects every blank form"
     },
     {
-      "id": "hidden/result-is-frozen",
+      "id": "hidden/retries-range-and-format",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "retries range and format"
+    },
+    {
+      "id": "hidden/validation-precedence-and-single-read-per-key",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "validation precedence and single read per key"
+    },
+    {
+      "id": "hidden/returned-object-is-frozen-and-detached",
       "kind": "hidden",
       "group": "regression",
       "weight": 1,
       "critical": false,
-      "summary": "隐藏样本下的冻结语义。"
+      "summary": "returned object is frozen and detached"
     },
     {
-      "id": "hidden/does-not-mutate-port",
+      "id": "hidden/port-object-is-never-mutated",
       "kind": "hidden",
-      "group": "resources",
+      "group": "regression",
       "weight": 1,
       "critical": false,
-      "summary": "隐藏样本下的只读端口。"
+      "summary": "port object is never mutated"
     }
   ]
 }

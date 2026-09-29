@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "FE-02",
-  "taskVersion": "0.1.0",
+  "taskVersion": "0.3.0",
   "title": "异步请求乱序与取消",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -42,11 +42,15 @@
     "referencePatch": "graders/FE-02/reference.patch",
     "alternative": "graders/FE-02/alternative",
     "defectDetectors": [
-      "hidden/cancel-all-rejects-and-aborts",
-      "hidden/different-keys-are-independent",
-      "hidden/keeps-newest-result-even-out-of-order",
-      "hidden/settles-pending-on-failure",
-      "hidden/supersedes-previous-request",
+      "hidden/cancelAll-aborts-everything-with-superseded-error",
+      "hidden/late-settlements-after-cancelAll-are-ignored",
+      "hidden/pending-returns-to-zero-on-every-outcome",
+      "hidden/port-error-does-not-poison-later-requests",
+      "hidden/signals-are-distinct-per-request-and-never-shared",
+      "hidden/stale-result-can-never-resolve-old-promise",
+      "hidden/supersede-aborts-old-signal-then-rejects",
+      "hidden/three-keys-interleave-without-cross-talk",
+      "hidden/three-rounds-of-supersede-keep-exactly-one-live",
       "public/cancel-all-rejects-and-aborts",
       "public/different-keys-are-independent",
       "public/keeps-newest-result-even-out-of-order",
@@ -102,44 +106,76 @@
       "summary": "cancelAll 中止并拒绝全部挂起请求。"
     },
     {
-      "id": "hidden/supersedes-previous-request",
-      "kind": "hidden",
-      "group": "behavior",
-      "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的取代语义。"
-    },
-    {
-      "id": "hidden/keeps-newest-result-even-out-of-order",
+      "id": "hidden/supersede-aborts-old-signal-then-rejects",
       "kind": "hidden",
       "group": "state",
       "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的乱序结算。"
+      "critical": true,
+      "summary": "supersede aborts old signal then rejects"
     },
     {
-      "id": "hidden/different-keys-are-independent",
+      "id": "hidden/stale-result-can-never-resolve-old-promise",
+      "kind": "hidden",
+      "group": "resources",
+      "weight": 1,
+      "critical": true,
+      "summary": "stale result can never resolve old promise"
+    },
+    {
+      "id": "hidden/pending-returns-to-zero-on-every-outcome",
       "kind": "hidden",
       "group": "regression",
       "weight": 1,
       "critical": false,
-      "summary": "隐藏样本下的多 key 独立。"
+      "summary": "pending returns to zero on every outcome"
     },
     {
-      "id": "hidden/settles-pending-on-failure",
+      "id": "hidden/port-error-does-not-poison-later-requests",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": false,
+      "summary": "port error does not poison later requests"
+    },
+    {
+      "id": "hidden/cancelAll-aborts-everything-with-superseded-error",
       "kind": "hidden",
       "group": "boundary",
       "weight": 1,
-      "critical": false,
-      "summary": "隐藏样本下的失败清理。"
+      "critical": true,
+      "summary": "cancelAll aborts everything with superseded error"
     },
     {
-      "id": "hidden/cancel-all-rejects-and-aborts",
+      "id": "hidden/late-settlements-after-cancelAll-are-ignored",
       "kind": "hidden",
-      "group": "resources",
+      "group": "regression",
       "weight": 1,
       "critical": false,
-      "summary": "隐藏样本下的取消语义。"
+      "summary": "late settlements after cancelAll are ignored"
+    },
+    {
+      "id": "hidden/three-rounds-of-supersede-keep-exactly-one-live",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "three rounds of supersede keep exactly one live"
+    },
+    {
+      "id": "hidden/signals-are-distinct-per-request-and-never-shared",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "signals are distinct per request and never shared"
+    },
+    {
+      "id": "hidden/three-keys-interleave-without-cross-talk",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": false,
+      "summary": "three keys interleave without cross talk"
     }
   ]
 }
