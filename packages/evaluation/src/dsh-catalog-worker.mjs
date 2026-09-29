@@ -10,7 +10,9 @@ import { createRequire, syncBuiltinESMExports } from 'node:module';
 import path, { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-const { modules, dshHome, extraPlugins = [], patchPath = null } = JSON.parse(process.argv[2]);
+// patchPaths 按 DSH 的覆盖顺序排列（profile 层在前、home 层在后）：DSH 真实启动时
+// home 层应用在 profile 层之上，同 id 行的 config 整块替换，因此后来者胜。
+const { modules, dshHome, extraPlugins = [], patchPaths = null } = JSON.parse(process.argv[2]);
 const blocked = () => { throw new Error('local catalog operation is unavailable'); };
 
 // 目录查询不发起任何传输、子进程或监听；订阅渠道插件需要把凭据物化到本次临时
@@ -87,7 +89,7 @@ try {
   // 适配器现在是具名导出模块（导出 apply/inject），不是默认导出的插件对象，
   // 因此按模块命名空间交给 cordis 装载。
   /**
-   * 从 profile 补丁层取出 `llm-pi-ai` 的 config（provider 档案）。
+   * 从一层补丁里取出 `llm-pi-ai` 的 config（provider 档案）。
    *
    * 为什么需要：base bundle 以**休眠**方式挂载 pi-ai——
    *   deepseek-harness/packages/bundle/base/cordis.patch.yml:120
@@ -100,12 +102,21 @@ try {
    * 解析放在 worker 内：这里本就有 DSH 的模块解析上下文（上方 createRequire 锚点），
    * 因此 YAML 解析只有一处实现，不必新增项目依赖，也不会出现两套语义。
    * 任何失败都只是「少补一个供应商」，不影响其它目录。
+   *
+   * 两层是**整块替换**关系，不是深合并：DSH 的 readProfilePatches 按 bundle 层 →
+   * profile 层 → home 层的顺序应用补丁，而同 id 行的 config 覆盖会替换掉整块 config
+   * （docs/user/guide/providers.md:57 明确写了这一点）。因此这里逐层「后来者胜」，
+   * 与 DSH 真实启动时落在插件上的形状一致；若在这里把两个 providers 字典并起来，
+   * 目录会列出真实会话里根本不存在的路由。
+   *
+   * @param path 该层补丁文件路径。
+   * @returns 该层的 pi-ai config，或 null 表示这一层没有可用声明。
    */
-  const piAiConfig = () => {
-    if (patchPath === null) return null;
+  const piAiConfig = (path) => {
+    if (path === null || path === undefined) return null;
     try {
       const yaml = require('js-yaml');
-      const document = yaml.load(fs.readFileSync(patchPath, 'utf8'));
+      const document = yaml.load(fs.readFileSync(path, 'utf8'));
       if (!Array.isArray(document)) return null;
       for (const entry of document) {
         if (entry === null || typeof entry !== 'object' || entry.id !== 'llm-pi-ai') continue;
@@ -117,7 +128,11 @@ try {
       return null;
     } catch { return null; }
   };
-  const piConfig = piAiConfig();
+  // 顺序即覆盖顺序：home 层最后读，因此它整块盖掉 profile 层——与 DSH 启动顺序一致。
+  const piConfig = (patchPaths ?? []).reduce(
+    (winner, path) => piAiConfig(path) ?? winner,
+    null,
+  );
   for (const specifier of [modules.deepseek, modules.pi]) {
     const adapter = await import(pathToFileURL(specifier).href);
     const isPi = specifier === modules.pi;

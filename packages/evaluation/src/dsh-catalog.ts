@@ -275,11 +275,20 @@ async function discoverDshPatchModels(options: DshCatalogOptions): Promise<DshMo
     env.DSH_TELEMETRY_DISABLED = '1';
     env.DSH_HOME = catalogHome;
     const result = await new Promise<string>((resolveOutput, reject) => {
-      // pi-ai 的 provider 档案在 profile 的补丁层里；把**路径**交给 worker 自行解析——
+      // pi-ai 的 provider 档案可能在两层补丁里；把**路径**交给 worker 自行解析——
       // 它本就在 DSH 的模块解析上下文里（另有 createRequire 锚点），
       // 这样 YAML 解析只有一处实现，不引入第二套语义，也不新增项目依赖。
-      const patchPath = join(dshHome, 'profiles', profile, 'cordis.patch.yml');
-      const child = spawn(process.execPath, [fileURLToPath(new URL('./dsh-catalog-worker.mjs', import.meta.url)), JSON.stringify({ modules, dshHome: catalogHome, extraPlugins: plugins.plugins, patchPath })], {
+      //
+      // 两层都要传：DSH 自己把 `$DSH_HOME/cordis.patch.yml`（home 层）应用在**每个**
+      // profile 之上，而本目录此前只读 profile 层，于是「只写在 home 层」的声明在真实
+      // 作答里生效、在这里却不可见——两份读数不一致，比读不到更难排查。
+      // home 层的文件名常量来自 DSH（app-boot/src/profile.ts 的
+      // PROFILE_PATCH_FILENAME），与 profile 层同名，因此这里按位置区分而不是按名字。
+      const patchPaths = [
+        join(dshHome, 'profiles', profile, 'cordis.patch.yml'),
+        join(dshHome, 'cordis.patch.yml'),
+      ];
+      const child = spawn(process.execPath, [fileURLToPath(new URL('./dsh-catalog-worker.mjs', import.meta.url)), JSON.stringify({ modules, dshHome: catalogHome, extraPlugins: plugins.plugins, patchPaths })], {
         cwd: scratch, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
       });
       const chunks: Buffer[] = [];

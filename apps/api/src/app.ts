@@ -16,7 +16,6 @@ import { ReportAccessError, defaultReportsRoot, openReports } from './reports.ts
 import { CleanupError } from './cleanup.ts';
 import { ConfigValidationError, EnvironmentFileConflictError, apiRepositoryRoot, createConfigProvider, type ConfigFieldError } from './config.ts';
 import { LaunchError, createLaunches, listSubmissionCandidates, type LaunchRequest } from './launches.ts';
-import { ProviderError, createProviders, type ProviderProbeRequest, type ProviderProbeResult } from './providers.ts';
 
 export interface AppOptions {
   runRoot?: string;
@@ -55,16 +54,6 @@ export interface AppOptions {
    * 测试把它调长，才能让「两次 GET 之间没有其它写者」成为确定性事实而不是运气。
    */
   launchesSweepMs?: number;
-  /** 项目供应商档案路径；测试指向系统临时目录，绝不写真实 data/。 */
-  providersStorePath?: string;
-  /** DSH 凭据库路径（只读 refs 名字）；测试指向临时目录。 */
-  providersCredentialsPath?: string;
-  /** DSH profile 补丁层路径（export-dsh 的目标）；测试指向临时目录。 */
-  providersProfilePath?: string;
-  /** 供应商出网探测实现；测试注入假端点，绝不联网。 */
-  providersProbe?: (request: ProviderProbeRequest) => Promise<ProviderProbeResult>;
-  /** 供应商探测超时（毫秒）；测试可缩短。 */
-  providersProbeTimeoutMs?: number;
 }
 
 /**
@@ -133,17 +122,6 @@ export function buildApp(databasePath = ':memory:', options: AppOptions = {}) {
     ...(options.launchesHeartbeatMs === undefined ? {} : { heartbeatMs: options.launchesHeartbeatMs }),
     ...(options.launchesConfirmMs === undefined ? {} : { confirmMs: options.launchesConfirmMs }),
     ...(options.launchesRegistrationWaitMs === undefined ? {} : { registrationWaitMs: options.launchesRegistrationWaitMs }),
-  });
-  // 供应商档案：本项目自己的 data/provider-profiles.json；读操作不需要令牌，写操作一律要求。
-  // 目录读取复用配置提供者的同一份实现，因此「供应商」页签与「配置」页签看到的是同一个 DSH 目录。
-  const providers = createProviders({
-    ...(options.providersStorePath === undefined ? {} : { storePath: options.providersStorePath }),
-    ...(options.providersCredentialsPath === undefined ? {} : { credentialsPath: options.providersCredentialsPath }),
-    ...(options.providersProfilePath === undefined ? {} : { dshProfilePath: options.providersProfilePath }),
-    ...(options.providersProbe === undefined ? {} : { probe: options.providersProbe }),
-    ...(options.providersProbeTimeoutMs === undefined ? {} : { probeTimeoutMs: options.providersProbeTimeoutMs }),
-    env: () => config.current(),
-    catalog: () => config.models(),
   });
   // 对账 sweeper：API 启动时先跑一次，之后按固定间隔对账。GET /api/experiments 绝不触发它。
   launches.sweep();
@@ -253,45 +231,6 @@ export function buildApp(databasePath = ':memory:', options: AppOptions = {}) {
     }
   });
 
-
-  // 供应商管理：档案读写、端点探测与可选的 DSH 导出。
-  // GET 只读、不需要令牌（与 /api/config 一致）；写操作一律要求 x-bench-token。
-  // 响应里只有凭据引用名与「已配置 / 未配置」布尔值，永远没有密钥值。
-  const providerFailure = (reply: FastifyReply, error: unknown) => {
-    if (error instanceof ProviderError) {
-      // 字段级错误就地回传，前端按 field 定位；message 只含结构性原因，不含端点或密钥。
-      return reply.code(error.status).send({ error: error.message, ...(error.errors.length === 0 ? {} : { errors: error.errors }) });
-    }
-    return reply.code(500).send({ error: '供应商操作失败：' + (error instanceof Error ? error.message : '未知原因') });
-  };
-  app.get('/api/providers', async (_request, reply) => {
-    try { return await providers.list(); }
-    catch (error) { return providerFailure(reply, error); }
-  });
-  app.post<{ Body: { baseURL?: unknown; api?: unknown; apiKeyEnv?: unknown } }>('/api/providers/probe', async (request, reply) => {
-    // 出网请求需要令牌：它是全项目唯一会向用户填写的地址发起连接的路由。
-    if (!authorized(request.headers['x-bench-token'])) return reply.code(401).send({ error: '探测端点需要有效的 x-bench-token 头。' });
-    try { return await providers.probe(request.body); }
-    catch (error) { return providerFailure(reply, error); }
-  });
-  app.put<{ Params: { id: string }; Body: unknown }>('/api/providers/:id', (request, reply) => {
-    if (!authorized(request.headers['x-bench-token'])) return reply.code(401).send({ error: '保存供应商需要有效的 x-bench-token 头。' });
-    try { return providers.upsert(request.params.id, request.body); }
-    catch (error) { return providerFailure(reply, error); }
-  });
-  app.delete<{ Params: { id: string } }>('/api/providers/:id', (request, reply) => {
-    if (!authorized(request.headers['x-bench-token'])) return reply.code(401).send({ error: '删除供应商需要有效的 x-bench-token 头。' });
-    try { return providers.remove(request.params.id); }
-    catch (error) { return providerFailure(reply, error); }
-  });
-  app.post<{ Params: { id: string }; Body: { confirm?: unknown } }>('/api/providers/:id/export-dsh', (request, reply) => {
-    if (!authorized(request.headers['x-bench-token'])) return reply.code(401).send({ error: '导出到 DSH 需要有效的 x-bench-token 头。' });
-    try {
-      // confirm !== true 时只回传将写入的内容：默认路径绝不触碰用户的 DSH home。
-      const confirm = (request.body as { confirm?: unknown } | null)?.confirm === true;
-      return providers.exportDsh(request.params.id, { confirm });
-    } catch (error) { return providerFailure(reply, error); }
-  });
 
   // 正式运行入口：冻结候选快照并自动触发受控验证，需要来源令牌且只接受提交根目录内的候选。
   app.post<{ Body: RunSubmission }>('/api/runs', { schema: { body: RunSubmissionSchema } }, async (request, reply) => {

@@ -149,11 +149,10 @@ pnpm dev
 
 ## 网页现在能做什么
 
-浏览器打开 <http://127.0.0.1:4317> 后有七个页签：**题目目录**、**评分预览**、**运行记录**、**报告中心**、**发起测评**、**配置**、**供应商**。读操作不需要令牌；发起测评、取消、写配置和提交外部作答需要在页面上填写运行令牌（对应 `.env` 的 `BENCH_RUN_TOKEN`，只写入请求头，不回显、不外传，令牌存在浏览器本地）。
+浏览器打开 <http://127.0.0.1:4317> 后有六个页签：**题目目录**、**评分预览**、**运行记录**、**报告中心**、**发起测评**、**配置**。读操作不需要令牌；发起测评、取消、写配置和提交外部作答需要在页面上填写运行令牌（对应 `.env` 的 `BENCH_RUN_TOKEN`，只写入请求头，不回显、不外传，令牌存在浏览器本地）。
 
 - **报告中心**：只读列出 `BENCH_DSH_REPORT_DIR`（默认 `data\experiments`）下一层的实验报告，展开逐条作答的阶段、阶段统计、进度日志与清理状态，并下载 `report.md`、`experiment.json`、`evidence.json.gz`。进行中的实验每 5 秒自动刷新。**损坏的报告仍然列出**并写明原因，不会被静默隐藏；`launch.log` 按钮保留但明确提示本阶段不产出该产物。
-- **供应商**：管理本项目自己的 pi-ai 供应商档案（新建 / 编辑 / 删除 + 「获取模型」探测）。档案写进项目自己的 `data\provider-profiles.json`，**不改动 DSH 配置**；保存后作答与裁判会话会把它作为额外补丁层加载，模型目录也立即列出。字段是供应商 ID、显示名、协议（OpenAI 兼容 / OpenAI Responses / Anthropic Messages）、端点 baseURL、**凭据引用名**（`apiKeyEnv`，不是密钥本身）；每个模型可填 id、显示名、上下文窗口、输出上限、输入模态（文本 / 图片）与思考等级表（等级名 → 发给端点的拼写，只有 `off` 可以留空表示不发参数）。
-  「获取模型」在服务端出网拉取 `GET {baseURL}/models`（Anthropic 走 `x-api-key` + `anthropic-version: 2023-06-01`），15 秒超时、4 MiB 上限、不落盘、不把密钥写进响应或日志；协议不可探测时如实提示手工填写。「生成 DSH 片段（不写入）」只回传将写入的内容；要点「确认写入（先备份）」才会改 `~/.dsh` 下该 profile 的补丁层，写入前原文件备份为同目录 `.backup-<时间戳>`。**凭据值不经过本项目**：这里只声明引用名，值从进程环境变量或 `~/.dsh/.credentials.yaml` 的 refs 取，界面只显示「已配置 / 未配置」。
+
 - **配置**：分「作答 / 裁判 / 目录与预算」三组修改 `.env`。保存分两步——先看待写清单，确认后才写入；密钥字段只显示「已填写」，值不会回显。**保存后当前进程立即按新值工作，不需要重启 API。** 只读项（`BENCH_RUN_DIR`、`BENCH_DSH_ROOT/HOME/PROFILE`、`BENCH_IMAGE`、`BENCH_IMAGE_DIGEST`、`BENCH_PROFILE`）会在页面上标注原因，写入请求也会真的被拒绝；这些请用 CLI 或环境变量修改后重启服务。
 - **发起测评**：选题目范围、供应商/模型、DSH 预设、思考等级、重复次数、限时与输出上限，页面显示**计划总作答次数**。默认按钮是**「仅预检」**（等价于 `--check`，不启动 DSH、不调用模型）；**「发起真实作答…」需要二次确认**，确认框会再次显示总作答次数并提示会消耗真实额度。发起后由受控 supervisor 持有实验子进程：页面显示进程判定、心跳与租约与退出事实，只有服务端说「进行中」才轮询；取消由 supervisor 代理执行，无法确认终止时会如实报「残留未知」而不是谎报干净。启动记录同时显示**实验自身的结论** `merged.reportOutcome`（取自 `experiment.json`，与进程结论并列、互不顶替）：跑完但有行未通过显示**「已完成（有未通过行）」**，退出码 1 是「有题没做对」的 CI 语义，不再显示成「失败」；`experiment.json` 为 `failed` 仍是失败；仅预检没有实验结论就如实说「未登记」。**残留**只在落定后下结论：运行中不判残留（中性描述「运行中，子进程树 N 个存活进程」，子进程在场属正常状态），已落定且 supervisor 核对过后代才显示「已确认无残留」，其余如实说「残留未知」。**清理这条记录**（归档）只拒绝「仍在运行」与「发现可证明归属的存活进程」两种情形，按钮旁直接写明能不能用及原因；状态未知的记录可以归档，文件移入启动记录根下的 `.trash`、不删除、可手动移回。同一页签下方还能从 `BENCH_SUBMISSIONS_DIR` 的候选目录里提交外部作答。
 
@@ -196,7 +195,7 @@ dsh plugin --profile sdk add file:C:/Users/A/Documents/ChatGPT/dsh-chatgpt-subsc
         port: 0
 ```
 
-同一个补丁层还要给 **pi-ai** 多供应商适配器补 provider 档案，否则该供应商只出现在网页（`web` profile）里，自动作答（`sdk` profile）看不到，模型目录会少一截。两份声明必须同名同模型；完整的 provider 列表以 `profiles\web\cordis.patch.yml` 为准。以 mimo 为例：
+同一台机器上的**所有** profile 共享的供应商声明放在 **home 层补丁** `~\.dsh\cordis.patch.yml`（不是 `profiles\<name>\` 里那份）。DSH 把它应用在每个 profile 之上，本项目的模型目录也按同样顺序读两层，所以只写一处，`web`（网页）与 `sdk`（自动作答）就能选到同一批模型，不会像以前那样各写一份后互相漂移。写在 `profiles\<name>\cordis.patch.yml` 里只对该 profile 生效，且同名时会被 home 层整块盖掉。以 mimo 为例，写在 `~\.dsh\cordis.patch.yml`：
 
 ```yaml
 - id: llm-pi-ai
@@ -221,7 +220,7 @@ dsh plugin --profile sdk add file:C:/Users/A/Documents/ChatGPT/dsh-chatgpt-subsc
 
 凭据只从 `%USERPROFILE%\.dsh\.credentials.yaml` 的 refs 里按 `apiKeyEnv` 解析，补丁层不复制密钥。
 
-手工改 `cordis.patch.yml` 是老路。**新路是不改 DSH 配置**：在网页**供应商**页签里配好供应商，档案落在本项目的 `data\provider-profiles.json`，作答与裁判会话启动时由 `preparePreset()` 把它作为 `--patch` 顺序里**最后**的一层注入（因此与上面这种补丁层同名时以项目档案为准），模型目录同时列出它。只有显式点「确认写入（先备份）」才动 `~/.dsh`。
+本项目仍会**读取** `data\provider-profiles.json`（若你手工写过）：作答与裁判会话启动时由 `preparePreset()` 把它作为 `--patch` 顺序里**最后**的一层注入（因此与 home 层补丁同名时以项目档案为准），模型目录也列出它。网页**供应商**页签已于 2026-09-29 删除，因此**新增**供应商只能在 home 层补丁里写（见上），或手工维护该 JSON 文件。
 
 这样做只影响 `sdk` profile：`web` profile 的清单、`node_modules` 与入口行都不变，网页界面照常使用。装完后 `pnpm start` 的供应商列表里会出现 `codex-chatgpt`（模型 `gpt-6-astra`，思考等级 `low/medium/high/xhigh/max`）。插件是否需要登录、额度是否足够，由 DSH 在运行时判断；模型目录本身不验证这些。
 

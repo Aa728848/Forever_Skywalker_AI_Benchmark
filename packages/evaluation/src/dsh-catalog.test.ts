@@ -350,6 +350,55 @@ describe('profile 补丁层里的 pi-ai provider 档案', () => {
     expect(stepfun).toBeDefined();
     expect(stepfun!.models.map(m => m.id)).toEqual(['step-5-preview']);
   });
+
+  // 回归（2026-09-28）：DSH 把 $DSH_HOME/cordis.patch.yml（home 层）应用在**每个**
+  // profile 之上（app-boot/src/profile-context.ts 的 readProfilePatches 明确排在
+  // profile 层之后），而目录此前只读 profile 层——只写在 home 层的声明在真实作答里
+  // 生效、在这里却查不到。读数与真实行为不一致，比「查不到」更难排查。
+  const providerLayer = (id: string) => [
+    '- id: llm-pi-ai', '  config:', '    providers:', '      ' + id + ':',
+    '        apiKeyEnv: PROBE_KEY', '        models:',
+    '          - id: ' + id + '-model', '            name: ' + id + '-model', '',
+  ].join('\n');
+
+  it.skipIf(realJsYamlDirectory() === null)('只写在 home 层的 llm-pi-ai 档案也出现在目录里', async () => {
+    writeProfile('sdk', []);
+    writeFileSync(join(dshHome, 'settings.yaml'), JSON.stringify({ providers: [] }));
+    writeFileSync(join(dshHome, 'profiles', 'sdk', 'cordis.patch.yml'), '# 本 profile 不声明供应商。\n[]\n');
+    writeFileSync(join(dshHome, 'cordis.patch.yml'), providerLayer('home-only'));
+    const result = await discoverDshModels({ dshRoot, dshHome, profile: 'sdk' });
+    expect(result.providers.find(p => p.id === 'home-only')?.models.map(m => m.id)).toEqual(['home-only-model']);
+  });
+
+  it.skipIf(realJsYamlDirectory() === null)('两层都有时 home 层整块盖掉 profile 层，与 DSH 启动顺序一致', async () => {
+    writeProfile('sdk', []);
+    writeFileSync(join(dshHome, 'settings.yaml'), JSON.stringify({ providers: [] }));
+    writeFileSync(join(dshHome, 'profiles', 'sdk', 'cordis.patch.yml'), providerLayer('profile-only'));
+    // 同 id 行的 config 是整块替换（docs/user/guide/providers.md:57），不是深合并：
+    // 若这里错误地并起两个 providers 字典，目录会列出真实会话里根本不存在的路由。
+    writeFileSync(join(dshHome, 'cordis.patch.yml'), providerLayer('home-wins'));
+    const result = await discoverDshModels({ dshRoot, dshHome, profile: 'sdk' });
+    const ids = result.providers.map(p => p.id);
+    expect(ids).toContain('home-wins');
+    expect(ids).not.toContain('profile-only');
+  });
+
+  it.skipIf(realJsYamlDirectory() === null)('只有 profile 层声明时行为不变', async () => {
+    writeProfile('sdk', []);
+    writeFileSync(join(dshHome, 'settings.yaml'), JSON.stringify({ providers: [] }));
+    writeFileSync(join(dshHome, 'profiles', 'sdk', 'cordis.patch.yml'), providerLayer('profile-only'));
+    const result = await discoverDshModels({ dshRoot, dshHome, profile: 'sdk' });
+    expect(result.providers.map(p => p.id)).toContain('profile-only');
+  });
+
+  it.skipIf(realJsYamlDirectory() === null)('两层都没有声明时 pi-ai 保持休眠，不凭空多出供应商', async () => {
+    writeProfile('sdk', []);
+    writeFileSync(join(dshHome, 'settings.yaml'), JSON.stringify({ providers: [] }));
+    writeFileSync(join(dshHome, 'profiles', 'sdk', 'cordis.patch.yml'), '[]\n');
+    writeFileSync(join(dshHome, 'cordis.patch.yml'), '# 只有无关的行。\n- id: something-else\n  config:\n    enabled: true\n');
+    const result = await discoverDshModels({ dshRoot, dshHome, profile: 'sdk' });
+    expect(result.providers).toEqual([]);
+  });
 });
 
 describe('项目自己的供应商档案并入目录', () => {
