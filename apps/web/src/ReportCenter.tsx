@@ -4,6 +4,7 @@ import {
   type ExperimentDetail, type ExperimentPhaseCounts, type ExperimentRow, type ExperimentSummary,
 } from '@fsa/contracts';
 import { useBenchToken } from './token.ts';
+import { ProgressLog } from './ProgressLog.tsx';
 
 const phaseLabels: Record<ExperimentRow['phase'], string> = {
   pending: '待作答', solving: '作答中', grading: '验证评分中', done: '已完成', 'solver-stopped': '作答中止', error: '出错',
@@ -429,8 +430,7 @@ export function ReportCenter({ onCount }: { onCount?: (count: number) => void })
                     <td>{row.runId && row.attemptId ? row.runId + '/' + row.attemptId : '—'}</td>
                   </tr>; })}</tbody>
                 </table></div>}
-                <h3>进度日志 <small>{shown.progress.length} 条</small></h3>
-                {shown.progress.length === 0 ? <div className="empty">该实验未记录进度日志（0.2.0 报告没有该字段）。</div> : <ol className="timeline">{shown.progress.map((entry, index) => <li key={entry.at + '-' + index}><b>{entry.message}</b><time>{time(entry.at)}</time></li>)}</ol>}
+                <ProgressLog entries={shown.progress} key={shown.id ?? shown.directoryName} />
                 <h3>产物下载</h3>
                 <div className="artifact-grid">{artifactIds.map(id => <div className="artifact" key={id}>
                   <a href={'/api/reports/' + encodeURIComponent(shown.reportId) + '/artifacts/' + id} download>{artifactLabels[id]} ↗</a>

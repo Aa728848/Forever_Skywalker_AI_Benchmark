@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { difficultyLabels, runDetailValidator, runStatusesValidator, suiteReportValidator, type RunDetail, type RunStatus, type SuiteReport } from '@fsa/contracts';
 import { useBenchToken } from './token.ts';
+import { SubmitExternalAnswer } from './SubmitExternalAnswer.tsx';
 
 const scoreText = (value: number | null) => value === null ? '待定' : String(value);
 const modeLabels = { local: '本机诊断', rehearsal: '校准/演练', formal: '正式成绩', pending: '待验证' } as const;
 
-export function RunPanel() {
+export function RunPanel({ tasks = [] }: { tasks?: { id: string; status: string }[] }) {
   const [runs, setRuns] = useState<RunStatus[]>([]);
   const [selection, setSelection] = useState('');
   const [detail, setDetail] = useState<RunDetail | null>(null);
@@ -81,8 +82,8 @@ export function RunPanel() {
   const status = detail?.status;
   const path = status ? `/api/runs/${encodeURIComponent(status.runId)}/${encodeURIComponent(status.attemptId)}` : '';
   return <section>
-    <div className="section-head"><h2>运行记录 <small>{runs.length} 次作答</small></h2><button className="secondary" onClick={() => setRevision(value => value + 1)}>刷新记录</button></div>
-    <p>按冻结快照查看执行、评分与事件。每 5 秒刷新；本机诊断和演练不会显示为正式成绩。</p>
+    <div className="section-head"><h2>提交与记录 <small>{runs.length} 次作答</small></h2><button className="secondary" onClick={() => setRevision(value => value + 1)}>刷新记录</button></div>
+    <p>按冻结快照查看执行、评分与事件。每 5 秒刷新；本机诊断和演练不会显示为正式成绩。提交外部作答也在本页：提交完成后它的执行明细就出现在下面的列表里。</p>
     {error && <div className="error" role="alert">{error}</div>}
     <div className="report-actions"><button className="secondary" disabled={selectedRuns.length === 0} onClick={() => void summarize()}>汇总所选 {selectedRuns.length} 次作答</button><span>每题选择一次；不同环境分开汇总。</span></div>
     {summary && <article className="detail suite-summary"><h3>四级汇总 · {modeLabels[summary.mode]}</h3><div className="checks-table"><table><thead><tr><th>等级</th><th>已完整评分</th><th>均分</th><th>达标</th></tr></thead><tbody>{summary.levels.map(level => <tr key={level.difficulty}><td>{difficultyLabels[level.difficulty]}</td><td>{level.completed} / {level.expected}</td><td>{scoreText(level.score)}</td><td>{level.score === null ? '待定' : level.passed ? '是' : '否'}</td></tr>)}</tbody></table></div><p>核心加权总分：{scoreText(summary.weightedTotal)} /100 · 连续最高等级：{summary.highestConsecutiveLevel ? difficultyLabels[summary.highestConsecutiveLevel] : '尚未取得'}</p><p>集成题：{summary.selected.filter(item => item.track === 'integration').map(item => `${item.taskId} ${scoreText(item.total)}`).join('；') || '未选择'}。未完整测量的等级不重新归一化。</p><a href={`data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(summary, null, 2))}`} download="benchmark-summary.json">下载汇总与作答选择</a></article>}
@@ -129,5 +130,6 @@ export function RunPanel() {
           <footer className="report-meta">候选摘要 {status?.candidateTreeHash}<br />{status?.runId} / {status?.attemptId}</footer>
         </article>
       </div>}
+    <SubmitExternalAnswer tasks={tasks} />
   </section>;
 }

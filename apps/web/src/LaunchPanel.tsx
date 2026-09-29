@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { experimentDetailValidator, experimentListValidator, type ExperimentDetail, type ExperimentRow, type Task } from '@fsa/contracts';
+import { ProgressLog } from './ProgressLog.tsx';
 
 /**
- * 发起测评：把「发起自动测评 / 实时看进度 / 可靠取消」与「提交外部作答」放进一个页签。
+ * 发起测评：把「发起自动测评 / 实时看进度 / 可靠取消」放进一个页签。
+ * 外部作答提交已移到「提交与记录」页签——提交后要看的就是那里，两处分开常让人以为没生效。
  *
  * 页面只与三个 API 打交道：
  * - POST/GET /api/experiments 与 POST /api/experiments/:launchId/cancel（启动、纯读进度、取消）；
- * - POST/GET /api/submissions（外部作答候选与提交，提交复用既有运行入口）；
  * - GET /api/reports（进行中的实验读 experiment.json，逐行阶段与进度日志沿用报告中心的展示）。
  *
  * 展示语义由服务端的 mergeState 决定：页面只显示它给出的结论与残留三态，不自行推断「已完成」「已终止」。
@@ -21,7 +22,6 @@ const fallbackPresets = [['standard', '标准'], ['ptc', 'PTC'], ['minimal', '�
 const presetLabels: Record<string, string> = Object.fromEntries(fallbackPresets);
 const defaultModes = ['default', 'off', 'low', 'medium', 'high', 'max'];
 const difficultyLabels: Record<string, string> = { easy: '简单', medium: '中等', hard: '困难', extreme: '极度困难' };
-const reasonOptions = [['agent-completed', '外部 Agent 已完成'], ['operator-submit', '操作者提交'], ['patch-import', '补丁导入']] as const;
 const phaseLabels: Record<ExperimentRow['phase'], string> = {
   pending: '待作答', solving: '作答中', grading: '验证评分中', done: '已完成', 'solver-stopped': '作答中止', error: '出错',
 };
@@ -47,7 +47,6 @@ interface LaunchView {
   cancelRequested: boolean;
 }
 interface CancelOutcome { action: string; confirmedExit: boolean; text: string; residue: ResidueView; targets: number[] }
-interface Candidate { name: string; directory: string; files: number; modifiedAt: string }
 interface CatalogModel { id: string; name: string; reasoningEfforts: string[] }
 interface CatalogProvider { id: string; name: string; models: CatalogModel[] }
 interface CatalogPreset { id: string; name: string | null; order: number; source: { kind: string; file: string } }
@@ -175,9 +174,6 @@ export function LaunchPanel({ tasks }: { tasks: Task[] }) {
       setCleanupResult({ launchId, ok: false, message: '清理失败：' + (cause instanceof Error ? cause.message : '网络错误。') });
     }
   }
-  const [candidates, setCandidates] = useState<{ root: string | null; candidates: Candidate[]; truncated: boolean; warning: string | null } | null>(null);
-  const [submission, setSubmission] = useState({ candidateDirectory: '', taskId: 'CACHE-02', idempotencyKey: '', reason: 'agent-completed', measure: false });
-  const [submissionResult, setSubmissionResult] = useState('');
   const [revision, setRevision] = useState(0);
   const live = useRef(false);
 
@@ -205,17 +201,12 @@ export function LaunchPanel({ tasks }: { tasks: Task[] }) {
   useEffect(() => {
     const controller = new AbortController();
     async function load() {
-      const [launchResponse, candidateResponse] = await Promise.all([
-        fetch('/api/experiments', { signal: controller.signal }),
-        fetch('/api/submissions', { signal: controller.signal }),
-      ]);
+      const launchResponse = await fetch('/api/experiments', { signal: controller.signal });
       if (!launchResponse.ok) throw new Error('启动记录加载失败（' + launchResponse.status + '）。');
       const value = await launchResponse.json() as { launches: LaunchView[] };
       if (controller.signal.aborted) return;
       setLaunches(value.launches);
       live.current = value.launches.some(item => item.merged.process === 'live');
-      if (candidateResponse.ok) setCandidates(await candidateResponse.json() as { root: string | null; candidates: Candidate[]; truncated: boolean; warning: string | null });
-      else setCandidates({ root: null, candidates: [], truncated: false, warning: '提交候选读取失败（' + candidateResponse.status + '）。' });
       setError('');
     }
     void load().catch((cause: unknown) => {
@@ -322,23 +313,6 @@ export function LaunchPanel({ tasks }: { tasks: Task[] }) {
       setCancelResult({ launchId, outcome: await response.json() as CancelOutcome });
       setRevision(current => current + 1);
     } catch (cause) { setError(cause instanceof Error ? cause.message : '取消失败。'); }
-    finally { setBusy(false); }
-  }
-
-  async function submitExternal() {
-    setBusy(true);
-    setError('');
-    setSubmissionResult('');
-    try {
-      const response = await fetch('/api/submissions', { method: 'POST', headers, body: JSON.stringify({
-        taskId: submission.taskId, candidateDirectory: submission.candidateDirectory,
-        idempotencyKey: submission.idempotencyKey, submittedBy: 'web-operator', reason: submission.reason, measure: submission.measure,
-      }) });
-      if (response.status === 401) { remember(''); throw new Error('提交需要有效令牌。'); }
-      if (!response.ok) throw new Error(await readError(response));
-      const value = await response.json() as { runId: string; attemptId: string; phase: string; classification: string | null };
-      setSubmissionResult('已提交并完成可用验证：' + value.runId + '/' + value.attemptId + ' · 阶段 ' + value.phase + ' · 结论 ' + (value.classification ?? '未评分') + '。');
-    } catch (cause) { setError(cause instanceof Error ? cause.message : '提交失败。'); }
     finally { setBusy(false); }
   }
 
@@ -483,8 +457,7 @@ export function LaunchPanel({ tasks }: { tasks: Task[] }) {
                     <td><span className={'phase ' + phaseClass(row.phase)}>{phaseLabels[row.phase]}</span></td>
                   </tr>)}</tbody>
                 </table></div>
-                <h3>进度日志 <small>{shown.progress.length} 条</small></h3>
-                <ol className="timeline">{shown.progress.map((entry, index) => <li key={entry.at + '-' + index}><b>{entry.message}</b><time>{time(entry.at)}</time></li>)}</ol>
+                <ProgressLog entries={shown.progress} key={shown.id ?? shown.directoryName} />
               </>}
               {current.experiment.exists && shown === null && <p className="empty" role="status">实验目录已建立，正在读取逐条作答与进度…</p>}
             </>}
@@ -518,35 +491,6 @@ export function LaunchPanel({ tasks }: { tasks: Task[] }) {
         </article>
       </div>}
 
-    <h3>提交外部作答</h3>
-    <p>候选来自提交根（BENCH_SUBMISSIONS_DIR）下的子目录；提交复用既有的冻结与可用验证链路，不在这里另写一套。</p>
-    <div className="launch-grid">
-      <div className="launch-field">
-        <label htmlFor="submission-candidate">候选目录</label>
-        <select id="submission-candidate" value={submission.candidateDirectory} onChange={event => setSubmission(current => ({ ...current, candidateDirectory: event.target.value }))}>
-          <option value="">请选择…</option>
-          {(candidates?.candidates ?? []).map(item => <option key={item.name} value={item.name}>{item.name}（{item.files} 项）</option>)}
-        </select>
-        {candidates?.warning && <small>{candidates.warning}</small>}
-        {candidates?.truncated && <small>候选较多，只列出前 200 条。</small>}
-      </div>
-      <div className="launch-field">
-        <label htmlFor="submission-task">题目</label>
-        <select id="submission-task" value={submission.taskId} onChange={event => setSubmission(current => ({ ...current, taskId: event.target.value }))}>
-          {selectable.map(task => <option key={task.id} value={task.id}>{task.id}</option>)}
-        </select>
-        <label htmlFor="submission-key">幂等键（8–200 位字母数字与 _ . : -）</label>
-        <input id="submission-key" value={submission.idempotencyKey} placeholder="external-2026-09-14-0001" onChange={event => setSubmission(current => ({ ...current, idempotencyKey: event.target.value }))} />
-      </div>
-      <div className="launch-field">
-        <label htmlFor="submission-reason">提交原因</label>
-        <select id="submission-reason" value={submission.reason} onChange={event => setSubmission(current => ({ ...current, reason: event.target.value }))}>
-          {reasonOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-        </select>
-        <label className="launch-inline"><input type="checkbox" checked={submission.measure} onChange={event => setSubmission(current => ({ ...current, measure: event.target.checked }))} /> 本次启用性能测量</label>
-        <button className="secondary" disabled={busy || submission.candidateDirectory === '' || submission.idempotencyKey.length < 8} onClick={() => void submitExternal()}>提交外部作答</button>
-      </div>
-    </div>
-    {submissionResult && <div className="notice-inline" role="status">{submissionResult}</div>}
+
   </section>;
 }

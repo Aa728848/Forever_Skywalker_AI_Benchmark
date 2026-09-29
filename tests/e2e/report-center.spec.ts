@@ -384,3 +384,39 @@ test('state=completed 且行全部跑完的报告不得再出现「未完成」�
   await expect(retryButton).toBeDisabled();
   await expect(page.locator('.rows-table tbody')).not.toContainText('未完成');
 });
+
+test('进度日志默认收起：长日志不撑开报告详情，点开才渲染条目', async ({ page }) => {
+  // 一份 120 条的实验：真实上限是 500 条（comparisonProgressLimit），全展开会把「逐条作答」表挤出视野。
+  const many = Array.from({ length: 120 }, (_, index) => ({
+    at: '2026-09-14T00:' + String(Math.floor(index / 60)).padStart(2, '0') + ':' + String(index % 60).padStart(2, '0') + '.000Z',
+    message: 'CACHE-02 · ptc / max · 第 1 次：DSH 作答中 (' + String(index) + ')',
+  }));
+  const document = { ...experimentDocument, id: 'e2e-long-progress', progress: many,
+    settings: { ...experimentDocument.settings, provider: 'e2e-long-provider', model: 'e2e-long-model' } };
+  const name = '2026-09-11T00-00-00-000Z-e2e00005';
+  mkdirSync(join(reportRoot, name), { recursive: true });
+  writeFileSync(join(reportRoot, name, 'experiment.json'), JSON.stringify(document, null, 2) + String.fromCharCode(10));
+
+  await page.goto('/');
+  await page.getByRole('button', { name: /报告中心/ }).click();
+  await page.locator('.report-item').filter({ hasText: 'e2e-long-progress' }).click();
+
+  const log = page.locator('details.progress-log');
+  await expect(log).toHaveCount(1);
+  await expect(log).toContainText('120 条');
+  // 收起时整个实验一条进度条目都不许出现在 DOM 里——是「不渲染」，不是 CSS 隐藏。
+  // 用 DOM 布尔值而不是属性字符串：React 把 open={true} 渲染成 open=""，
+  // 断言属性文本会分不清「空属性的 true」与「属性缺失的 false」。
+  expect(await log.evaluate(node => (node as HTMLDetailsElement).open)).toBe(false);
+  await expect(page.locator('.timeline li')).toHaveCount(0);
+  await expect(log).toContainText('点击展开');
+
+  await log.locator('summary').click();
+  expect(await log.evaluate(node => (node as HTMLDetailsElement).open)).toBe(true);
+  await expect(page.locator('.timeline li')).toHaveCount(120);
+  await expect(page.locator('.timeline')).toContainText('DSH 作答中 (119)');
+
+  // 再点一次收起，条目重新从 DOM 消失。
+  await log.locator('summary').click();
+  await expect(page.locator('.timeline li')).toHaveCount(0);
+});
