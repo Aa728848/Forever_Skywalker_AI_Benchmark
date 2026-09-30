@@ -114,6 +114,18 @@ function optionalScore(value: unknown, label: string): number | null {
   return number;
 }
 
+/**
+ * 心跳投影：字段缺失按无心跳处理，形状不对则视为报告损坏。
+ *
+ * 为什么允许缺失：heartbeat 是后加的字段，本改动之前落盘的实验报告都没有它。
+ * 这些历史报告是既有证据，不能因为读不出来就把整份报告判为不可读。
+ */
+function projectHeartbeat(value: unknown, label: string): { startedAt: string; at: string } | null {
+  if (value === undefined || value === null) return null;
+  const record = requireRecord(value, `${label}的 heartbeat`);
+  return { startedAt: requireText(record.startedAt, `${label}的 heartbeat.startedAt`), at: requireText(record.at, `${label}的 heartbeat.at`) };
+}
+
 /** 去重后的非空字符串数组；CLI 的 presets/modes/taskIds 都是这个形状。 */
 function textArray(value: unknown, label: string): string[] {
   if (!Array.isArray(value) || value.some(item => typeof item !== 'string' || item.length === 0)) throw new Error(`${label}必须是非空字符串数组。`);
@@ -147,6 +159,7 @@ function projectRow(value: unknown, index: number): ExperimentRow {
     phase: phase as ExperimentRow['phase'],
     solver: row.solver ?? null,
     evaluation: row.evaluation ?? null,
+    heartbeat: projectHeartbeat(row.heartbeat, label),
     finishReason: solver === null ? null : optionalText(solver.finishReason, `${label}的 finishReason`),
     durationMs: solver === null ? null : optionalNumber(solver.durationMs),
     classification: status === null ? null : optionalText(status.classification, `${label}的 classification`),

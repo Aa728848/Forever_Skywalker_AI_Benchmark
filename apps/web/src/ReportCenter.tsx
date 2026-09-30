@@ -99,6 +99,27 @@ function pendingReason(row: ExperimentRow): string {
     + '完整原因见本页「实验记录问题」与证据包 evidence.json.gz。';
 }
 
+/**
+ * 进行中行的心跳文案："进行中 · 已 N 分 M 秒"。
+ *
+ * 为什么要这个：一次作答要跑满限时（实测 20 分钟）才返回结果，而这期间报告不再落盘，
+ * 页面每 5 秒轮询到的都是同一份快照。没有它时页面看起来像卡死，有它时
+ * "还在跑" 与 "已经死了" 立刻可区分。
+ *
+ * 计时用**收到这份数据时**的 Date.now()，而不是每次渲染重算：
+ * 轮询间隔 5 秒，误差最多 5 秒，换来的是数字只在轮询时跳动，不会在两次渲染之间乱跳。
+ * 心跳缺失（旧报告）返回 null，页面退回原来的静态文案。
+ */
+function liveElapsed(row: ExperimentRow, now: number): string | null {
+  // 旧报告里没有这个字段（undefined），新报告收尾后是 null——两者都按「无心跳」处理。
+  if (row.heartbeat == null) return null;
+  const started = Date.parse(row.heartbeat.startedAt);
+  if (!Number.isFinite(started)) return null;
+  const seconds = Math.max(0, Math.floor((now - started) / 1000));
+  const minutes = Math.floor(seconds / 60);
+  return seconds < 60 ? seconds + ' 秒' : minutes + ' 分 ' + (seconds % 60) + ' 秒';
+}
+
 function rowState(row: ExperimentRow): RowState {
   if (row.phase === 'done' && typeof row.total === 'number') return { kind: 'settled', text: '作答完成 · 分数已出', reason: null };
   if (row.phase === 'done') return { kind: 'pending', text: '作答完成 · 质量分待定', reason: pendingReason(row) };
@@ -258,6 +279,9 @@ export function ReportCenter({ onCount }: { onCount?: (count: number) => void })
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [revision, setRevision] = useState(0);
+  // 每次成功拉取明细时记录时刻："已进行 N 分钟"以它为基准计算，
+  // 这样数字只随轮询跳动（约每 5 秒一次），不会在两次渲染之间来回跳。
+  const [polledAt, setPolledAt] = useState(() => Date.now());
   const [filter, setFilter] = useState<ReportFilter>('all');
   const [search, setSearch] = useState('');
   // 只有存在进行中的实验时才轮询：已完成的历史报告不重复请求。
@@ -311,6 +335,7 @@ export function ReportCenter({ onCount }: { onCount?: (count: number) => void })
         if (!detailResponse.ok) throw new Error(failureMessage(detailResponse.status, data));
         if (!experimentDetailValidator.Check(data)) throw new Error('报告明细协议不匹配。');
         setDetail(data);
+        setPolledAt(Date.now());
         setFailure(null);
         loadedRef.current = selected.reportId;
       } catch (cause) {
@@ -423,7 +448,11 @@ export function ReportCenter({ onCount }: { onCount?: (count: number) => void })
                     {/* 原因要完整可读：它比别的列长得多，若不换行会把整张表撑得很宽（表格全局 nowrap）。 */}
                     <td style={{ whiteSpace: 'normal', minWidth: '240px' }}>{state.reason ?? '—'}</td>
                     <td>{row.finishReason ?? '—'}</td>
-                    <td>{row.durationMs === null ? '—' : (row.durationMs / 1000).toFixed(1)}</td>
+                    {/* 作答秒数：已跑完用 solver 给的实测值；进行中用心跳算"已进行 N"，
+                        并标出最后心跳距今多久——那一刻停住不动就是真卡住了。 */}
+                    <td>{row.durationMs === null
+                      ? (() => { const live = liveElapsed(row, polledAt); return live === null ? '—' : <span className="live-elapsed">{live}</span>; })()
+                      : (row.durationMs / 1000).toFixed(1)}</td>
                     {/* 「验证结论」只回答验证本身：跑完的行没有结论时写「结论未登记」，绝不能写成像没跑过的样子。 */}
                     <td>{row.classification ?? (row.phase === 'done' ? '结论未登记' : '尚无结论')}</td>
                     <td>{number(row.total)}</td>

@@ -59,6 +59,22 @@ export interface ComparisonEvaluation {
   judgeKey: string | null;
 }
 
+/**
+ * 作答进行中的心跳：让只读出口能显示"已进行 N 分钟"，而不是在 solve() 阻塞的
+ * 整段时间里只看到一个静止的 phase: 'solving'。
+ *
+ * 为什么需要：solve() 一次要跑满 20 分钟限时，期间不会调用 progress()，
+ * 落盘的 experiment.json 因此十几分钟不变，网页每 5 秒轮询到的都是同一份快照——
+ * 实测 k3 那轮 14:42:44 到 15:01:15 之间 mtime 纹丝不动，看起来像卡死。
+ * 这个字段让"还在跑"和"已经死了"在页面上可区分。
+ */
+export interface ComparisonRowHeartbeat {
+  /** 本条作答进入该阶段的时间。 */
+  startedAt: string;
+  /** 最近一次心跳时间；页面用它和当前时刻算出已耗时。 */
+  at: string;
+}
+
 export interface ComparisonRow {
   taskId: string;
   taskVersion: string;
@@ -67,6 +83,8 @@ export interface ComparisonRow {
   repetition: number;
   sessionId: string;
   phase: 'pending' | 'solving' | 'grading' | 'done' | 'solver-stopped' | 'error';
+  /** 仅在 phase 为 solving/grading 时非空；收尾阶段置 null。 */
+  heartbeat: ComparisonRowHeartbeat | null;
   solver: DshRunResult | null;
   evaluation: ComparisonEvaluation | null;
   error: string | null;
@@ -96,6 +114,14 @@ export function dshInitializeTimeoutMs(concurrency: number): number {
 
 /** 只保留最近 500 条进度，超出时丢弃最旧的，避免 experiment.json 随实验时长无界增长。 */
 export const comparisonProgressLimit = 500;
+
+/**
+ * 作答/评分阶段的心跳落盘间隔（毫秒）。
+ *
+ * 取 5 秒是为了与网页的 5 秒轮询周期对齐：每次轮询都能看到跳动的心跳，
+ * 页面上的"已进行 N 分钟"因此是连续增长的，而不是一跳一跳。
+ */
+export const heartbeatIntervalMs = 5000;
 
 export function appendComparisonProgress(report: DshComparisonReport, message: string, at: string = new Date().toISOString()): void {
   report.progress.push({ at, message });
@@ -348,7 +374,7 @@ export async function runDshComparison(options: DshComparisonOptions, services: 
       const combinations = options.presets.flatMap(preset => options.modes.map(mode => ({ preset, mode })));
       if (repetition % 2 === 0) combinations.reverse();
       for (const { preset, mode } of combinations) report.rows.push({ taskId, taskVersion: requireTask(taskId).version, preset, mode, repetition,
-        sessionId: `bench-${randomUUID()}`, phase: 'pending', solver: null, evaluation: null, error: null });
+        sessionId: `bench-${randomUUID()}`, phase: 'pending', heartbeat: null, solver: null, evaluation: null, error: null });
     }
   }
   if (resumed !== null) {
@@ -444,14 +470,38 @@ export async function runDshComparison(options: DshComparisonOptions, services: 
 
   const initializeTimeoutMs = dshInitializeTimeoutMs(options.concurrency ?? 1);
 
+  /**
+   * 心跳落盘：让阻塞中的阶段在只读出口上可见。
+   *
+   * 为什么需要定时器而不是 await 期间的循环：solve()/evaluate() 是一次不可打断的
+   * await，只能靠外部定时器往 report 里写"还在跑"。间隔取 5 秒——与网页轮询周期对齐，
+   * 保证每次轮询都能看到新心跳；同时远小于 20 分钟限时，磁盘写入量可忽略。
+   *
+   * 用 unref 让定时器不阻止进程退出；dispose() 清掉它并把 heartbeat 置 null，
+   * 收尾阶段就不会留下一个已经停止跳动的"进行中"标记。
+   */
+  const startHeartbeat = (row: ComparisonRow): (() => void) => {
+    const startedAt = new Date().toISOString();
+    row.heartbeat = { startedAt, at: startedAt };
+    const timer = setInterval(() => {
+      if (row.heartbeat === null) return;
+      row.heartbeat = { startedAt, at: new Date().toISOString() };
+      persist();
+    }, heartbeatIntervalMs);
+    timer.unref?.();
+    return () => { clearInterval(timer); row.heartbeat = null; };
+  };
+
   /** 处理一条作答：作答 -> 容器验证 -> 裁判评分 -> 落盘。每条 row 只被一个 worker 处理。 */
   const runRow = async (row: ComparisonRow): Promise<void> => {
     const runtimeDirectory = join(scratch.directory, 'runtime', row.sessionId);
     const workspace = join(scratch.directory, 'workspaces', row.sessionId);
+    let stopHeartbeat: (() => void) | null = null;
     try {
       exportWorkspace(row.taskId, workspace);
       row.phase = 'solving'; persist();
       progress(`${row.taskId} · ${row.preset} / ${row.mode} · 第 ${row.repetition} 次：DSH 作答中`);
+      stopHeartbeat = startHeartbeat(row);
       row.solver = await solve({ dshRoot: options.dshRoot, dshHome: options.dshHome, profile: options.profile,
         agentPreset: row.preset, scratchDirectory: runtimeDirectory,
         workspacePermission: options.workspacePermission,
@@ -459,6 +509,7 @@ export async function runDshComparison(options: DshComparisonOptions, services: 
         maxTokens: options.maxTokens, sessionId: row.sessionId, prompt: comparisonPrompt, timeoutMs: options.timeoutMs, env,
         initializeTimeoutMs,
         ...(services.signal ? { signal: services.signal } : {}) });
+      stopHeartbeat(); stopHeartbeat = null;
       if (row.solver.finishReason !== 'completed') {
         // 取消：真的没有结论，保持未评分并停止派发。
         if (row.solver.finishReason === 'cancelled' || services.signal?.aborted) {
@@ -475,14 +526,18 @@ export async function runDshComparison(options: DshComparisonOptions, services: 
          */
         row.phase = 'grading'; persist();
         progress(`${row.taskId} · ${row.preset} / ${row.mode}：作答未完成（${row.solver.finishReason}），按 0 分验证`);
+        stopHeartbeat = startHeartbeat(row);
         row.evaluation = await evaluate(row.taskId, workspace, row, store);
+        stopHeartbeat(); stopHeartbeat = null;
         row.phase = 'done';
         return;
       }
       if (services.signal?.aborted) { row.phase = 'solver-stopped'; requestStop('cancelled'); return; }
       row.phase = 'grading'; persist();
       progress(`${row.taskId} · ${row.preset} / ${row.mode}：Linux 验证与评分中`);
+      stopHeartbeat = startHeartbeat(row);
       row.evaluation = await evaluate(row.taskId, workspace, row, store);
+      stopHeartbeat(); stopHeartbeat = null;
       if (judgeCleanupError) throw judgeCleanupError;
       row.phase = 'done';
       if (services.signal?.aborted) { requestStop('cancelled'); return; }
@@ -528,6 +583,9 @@ export async function runDshComparison(options: DshComparisonOptions, services: 
       row.phase = 'error'; row.error = message;
       progress(`${row.taskId} · ${row.preset} / ${row.mode}：该题失败（${message.slice(0, 80)}），已跳过并继续`);
     } finally {
+      // 兜底停表：异常路径（取消、漂移、单题失败）不会走到上面那两处 stopHeartbeat。
+      // 定时器必须在这里清掉，否则它会一直持有 row 引用并让 unref 失效前的进程不退出。
+      stopHeartbeat?.();
       // 失败作答也保留代码证据；只有报告成功落盘后才删除工作副本。
       if (cleanupAllowed && existsSync(workspace)) {
         try {

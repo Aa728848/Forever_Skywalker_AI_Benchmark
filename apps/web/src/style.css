@@ -681,6 +681,18 @@ select { padding-right: 8px; }
 .phase.stopped { background: var(--warn-soft); border-color: var(--warn-line); color: var(--warn); }
 .phase.error { background: var(--danger-soft); border-color: var(--danger-line); color: var(--danger); }
 
+/* 进行中的作答耗时：等宽数字让每 5 秒一次的跳动不左右抖动。 */
+.live-elapsed {
+  font-variant-numeric: tabular-nums;
+  color: var(--info);
+  font-weight: 600;
+}
+.live-elapsed::before {
+  content: '进行中 · 已 ';
+  font-weight: 400;
+  opacity: 0.75;
+}
+
 .badge.easy { background: var(--ok-soft); border-color: var(--ok-line); color: var(--ok); }
 .badge.medium { background: var(--info-soft); border-color: var(--info-line); color: var(--info); }
 .badge.hard { background: var(--warn-soft); border-color: var(--warn-line); color: var(--warn); }

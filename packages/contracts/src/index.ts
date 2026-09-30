@@ -552,6 +552,20 @@ export const ExperimentRowSchema = Type.Object({
   ]),
   solver: Type.Unknown(),
   evaluation: Type.Unknown(),
+  /**
+   * 进行中阶段的心跳（solving/grading 时非空）：startedAt 是进入该阶段的时刻，
+   * at 是最近一次落盘。页面用两者显示"已进行 N 分钟"，
+   * 让长时间静默的作答看起来在动，而不是像卡死。收尾阶段为 null。
+   *
+   * 刻意**可选**（Optional）：本字段是后加的，改动之前落盘的实验报告里没有它。
+   * 必填会让那些既有报告在前端校验处整份判为「协议不匹配」——
+   * 一条新展示字段不该让历史证据全部打不开。缺字段按「无心跳」处理，
+   * 页面退回静态文案即可。
+   */
+  heartbeat: Type.Optional(Type.Union([
+    Type.Object({ startedAt: text, at: text }, { additionalProperties: false }),
+    Type.Null(),
+  ])),
   finishReason: Type.Union([text, Type.Null()]),
   durationMs: Type.Union([Type.Number({ minimum: 0 }), Type.Null()]),
   classification: Type.Union([text, Type.Null()]),

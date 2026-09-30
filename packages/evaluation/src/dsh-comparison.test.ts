@@ -8,7 +8,7 @@ import { readRunStatus, verifySubmission } from '@fsa/executor';
 import { applyReferencePatch, readManifest } from '@fsa/tasks';
 import { inspectRunSelection } from './suite.ts';
 import { DshCleanupError, type DshRunOptions, type DshRunResult } from './dsh.ts';
-import { appendComparisonProgress, comparisonGroups, comparisonProgressLimit, renderComparison, runDshComparison, type DshComparisonOptions, type DshComparisonReport } from './dsh-comparison.ts';
+import { appendComparisonProgress, comparisonGroups, comparisonProgressLimit, heartbeatIntervalMs, renderComparison, runDshComparison, type DshComparisonOptions, type DshComparisonReport } from './dsh-comparison.ts';
 
 function setup() {
   const scratch = mkdtempSync(join(tmpdir(), 'fsa-dsh-comparison-test-'));
@@ -424,3 +424,40 @@ it('最后一次评分返回时已取消，保留分数但不能把实验误标�
     expect(JSON.parse(readFileSync(join(context.options.outputDirectory, 'experiment.json'), 'utf8')).state).toBe('cancelled');
   } finally { context.clean(); }
 }, 30_000);
+it('作答阻塞期间持续落盘心跳，收尾后心跳清空——让"还在跑"在只读出口上可见', async () => {
+  const context = setup();
+  // 每条作答在飞时各自看到的心跳快照；结束后所有行都必须没有心跳。
+  const beatsWhileSolving: boolean[][] = [];
+  try {
+    const report = await runDshComparison({ ...context.options, repeats: 1 }, {
+      env: {},
+      // 用一个比心跳间隔长的阻塞作答，期间反复读盘，模拟网页每 5 秒轮询。
+      async solve(options) {
+        const file = join(context.options.outputDirectory, 'experiment.json');
+        const seen: boolean[] = [];
+        for (let tick = 0; tick < 3; tick += 1) {
+          await new Promise(done => setTimeout(done, heartbeatIntervalMs + 120));
+          const snapshot = JSON.parse(readFileSync(file, 'utf8')) as { rows: { sessionId: string; heartbeat: { at: string } | null }[] };
+          const mine = snapshot.rows.find(row => row.sessionId === options.sessionId);
+          seen.push(mine !== undefined && mine.heartbeat !== null);
+        }
+        beatsWhileSolving.push(seen);
+        return solverResult(options);
+      },
+      async evaluate(taskId, workspace, _row, store) {
+        const outcome = await verifySubmission({ store, taskId, candidateDirectory: workspace,
+          envelope: createEnvelope(taskId, workspace), submittedBy: 'heartbeat-test', profile: 'local' });
+        const { runId, attemptId } = outcome.submission.attempt;
+        const identity = inspectRunSelection(store, [{ runId, attemptId }]);
+        return { status: readRunStatus(store, runId, attemptId), environmentKey: identity.environmentKey, judgeKey: identity.judgeKey };
+      },
+    });
+    // 每条作答在飞的整段时间里，每次读盘都必须看到心跳，否则页面那 20 分钟毫无变化。
+    expect(beatsWhileSolving.length).toBeGreaterThan(0);
+    expect(beatsWhileSolving.every(seen => seen.length === 3 && seen.every(Boolean))).toBe(true);
+    // 收尾后心跳必须清空：否则报告会永远显示一个早已停跳的"进行中"。
+    expect(report.rows.every(row => row.heartbeat === null)).toBe(true);
+    const onDisk = JSON.parse(readFileSync(join(context.options.outputDirectory, 'experiment.json'), 'utf8')) as { rows: { heartbeat: unknown }[] };
+    expect(onDisk.rows.every(row => row.heartbeat === null)).toBe(true);
+  } finally { context.clean(); }
+}, 90_000);

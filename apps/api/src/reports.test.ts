@@ -332,3 +332,23 @@ describe('报告中心（只读出口）', () => {
     expect(readFileSync(join(root, '2026-09-14T00-00-00-000Z-good1', 'report.md'), 'utf8')).toBe('# DSH 模式对比\n\nfixture report\n');
   });
 });
+
+it('心跳是后加字段：没有它的既有报告照样能读，且不判协议不匹配', async () => {
+  const root = scratch();
+  // 刻意不写 heartbeat：这正是本字段加入之前落盘的实验形状。
+  writeExperiment(root, '2026-09-14T01-00-00-000Z-nohb', { rows: [{
+    taskId: 'CACHE-02', taskVersion: '0.3.0', preset: 'standard', mode: 'off', repetition: 1, sessionId: 'session-legacy', phase: 'done',
+    solver: { finishReason: 'completed', durationMs: 1234 },
+    evaluation: { status: { classification: 'passed', runId: 'run-legacy', attemptId: 'attempt-legacy', scoring: { total: 88 } } },
+  }] });
+  const app = await openApp(root);
+  try {
+    const list = (await app.inject('/api/reports')).json();
+    expect(list[0].status).toBe('ok');
+    const detail = (await app.inject('/api/reports/' + list[0].reportId)).json();
+    expect(detail.status).toBe('ok');
+    // 缺字段按「无心跳」投影成 null，而不是让整份报告在前端校验处打不开。
+    expect(detail.rows[0].heartbeat).toBeNull();
+    expect(detail.rows[0].total).toBe(88);
+  } finally { await app.close(); }
+}, 20_000);
