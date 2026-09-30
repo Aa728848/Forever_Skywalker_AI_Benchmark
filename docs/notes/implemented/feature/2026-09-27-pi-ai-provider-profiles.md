@@ -52,12 +52,12 @@ DSH 的 base bundle 把 pi-ai 适配器以**休眠**方式挂载：
 ## Consequences
 
 - 任何通过 pi-ai 声明的供应商（stepfun、minimax-cn 等）只要写在**任意一层**补丁里，
-  就会被列进模型目录；不再需要改本项目代码。**推荐写在 home 层**（`$DSH_HOME/cordis.patch.yml`）：
-  DSH 把它应用在每个 profile 之上，本项目的目录也按同样顺序读两层，因此「网页能选到的模型」
-  与「自动作答能选到的模型」在结构上就不会漂移。仍写在 profile 层只对该 profile 生效。
-- 本机当前状态：pi-ai 档案只存在于 home 层一处（stepfun、minimax-cn），
-  `profiles/sdk` 与 `profiles/web` 的补丁层都不再声明。实测两个 profile 的目录完全一致，
-  各 10 个供应商、28 个模型。
+  就会被列进模型目录；不再需要改本项目代码。**必须写在 profile 层**
+  （`$DSH_HOME/profiles/<name>/cordis.patch.yml`）：`web` 与 `sdk` 各写一份并保持一致，
+  「网页能选到的模型」与「自动作答能选到的模型」才不会漂移。
+- **不要写在 home 层**（`$DSH_HOME/cordis.patch.yml`）：见下方「交付态更正」。
+- 本机当前状态：pi-ai 档案写在 `profiles/web` 与 `profiles/sdk` 两处（各含 stepfun），
+  home 层是合法空序列 `[]`。实测两个 profile 的目录完全一致，各 9 个供应商，且都含 stepfun。
 - 目录仍只做本地读取：不启动 profile、不调用模型、不发起网络请求、不读凭据文件。
 - 未声明 provider 档案时行为与之前完全相同（pi-ai 保持休眠）。
 
@@ -83,6 +83,36 @@ DSH 的 base bundle 把 pi-ai 适配器以**休眠**方式挂载：
   端口被正在运行的 DSH 网页占用。用迁移前备份重建 home 复现同样失败，证明这是既有限制，
   不是本次迁移造成的。
 - `pnpm check` exit 0（379 项）；`pnpm test:e2e` 9 项通过。
+
+## 交付态更正（2026-10-01）：provider 档案搬回 profile 层
+
+2026-09-29 曾把档案集中到 home 层，理由是「一份不漂移」。该理由在本项目里**从一开始就不成立**：
+本项目的模型目录（`packages/evaluation/src/dsh-catalog.ts:287-290`）早在 2026-09-28 就同时传了
+profile 层与 home 层两个路径，不需要搬家也能读到。搬家只带来了副作用——**DSH 网页设置从此改不了供应商**。
+
+机制（已用 `applyEntryPatches` 复现，非推测）：
+
+1. 补丁的 `config` 是**整块替换**而非深合并（`vendor/include/src/index.ts` 的 `applyEntryPatches`；
+   DSH 文档 `providers.md:57` 亦明示）。
+2. 层序是 profile 层 → home 层 → `--patch`（`app-boot/src/profile-context.ts:63-74`），
+   同 id 行**后来者胜**，所以 home 层那行永远盖掉 profile 层那行。
+3. 设置界面只写 profile 层一个文件：`config-editor` 的 `documentPath` 就是
+   `profileContext.patchPath`（`packages/boot/config-editor/src/index.ts:34`）。
+4. 于是设置页保存时，合成结果与用户意图不一致，`config-editor` 直接抛
+   `Configuration for "llm-pi-ai" is overridden by a home patch or command-line overlay`（同文件 :140）。
+
+复现对照（同一个 `probe-one` 新供应商）：
+
+| 档案位置 | UI 保存后实际生效 |
+| --- | --- |
+| home 层 | `[stepfun]` — 新增被丢弃 |
+| profile 层 | `[stepfun, probe-one]` — 正常 |
+
+因此档案搬回 `profiles/web` 与 `profiles/sdk`，home 层留空序列并写明原因。**本项目代码零改动**：
+目录读两层，作答注入的是 `--patch` 最后一层，都不受影响。
+
+代价：两份可能漂移。缓解靠三处——两个文件里互相点名的「必须保持一致」注释、目录里
+`source: "dsh-patch"` 的来源标注，以及 `pnpm dsh:doctor` 的只读体检。
 
 ## 本机配置改动（不属于仓库）
 

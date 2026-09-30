@@ -196,7 +196,9 @@ dsh plugin --profile sdk add file:C:/Users/A/Documents/ChatGPT/dsh-chatgpt-subsc
         port: 0
 ```
 
-同一台机器上的**所有** profile 共享的供应商声明放在 **home 层补丁** `~\.dsh\cordis.patch.yml`（不是 `profiles\<name>\` 里那份）。DSH 把它应用在每个 profile 之上，本项目的模型目录也按同样顺序读两层，所以只写一处，`web`（网页）与 `sdk`（自动作答）就能选到同一批模型，不会像以前那样各写一份后互相漂移。写在 `profiles\<name>\cordis.patch.yml` 里只对该 profile 生效，且同名时会被 home 层整块盖掉。以 mimo 为例，写在 `~\.dsh\cordis.patch.yml`：
+供应商声明写在**各 profile 自己的补丁层** `~\.dsh\profiles\<name>\cordis.patch.yml`：`web`（网页）与 `sdk`（自动作答）各写一份，两份保持一致。本项目的模型目录按「profile 层 → home 层」的顺序读两层，因此两处声明它都能看到。
+
+**不要**把 `- id: llm-pi-ai` 挪到 home 层 `~\.dsh\cordis.patch.yml`。补丁的 `config` 是**整块替换**而非深合并，且 home 层排在 profile 层之后，会盖掉 profile 层那一行；DSH 设置界面只写 profile 层那一个文件，于是这一行在设置页的任何保存都会被丢弃并报 `overridden by a home patch or command-line overlay`——网页上将无法增删改供应商。以 mimo 为例，写在 `~\.dsh\profiles\sdk\cordis.patch.yml` 与 `~\.dsh\profiles\web\cordis.patch.yml`：
 
 ```yaml
 - id: llm-pi-ai
@@ -221,7 +223,7 @@ dsh plugin --profile sdk add file:C:/Users/A/Documents/ChatGPT/dsh-chatgpt-subsc
 
 凭据只从 `%USERPROFILE%\.dsh\.credentials.yaml` 的 refs 里按 `apiKeyEnv` 解析，补丁层不复制密钥。
 
-本项目仍会**读取** `data\provider-profiles.json`（若你手工写过）：作答与裁判会话启动时由 `preparePreset()` 把它作为 `--patch` 顺序里**最后**的一层注入（因此与 home 层补丁同名时以项目档案为准），模型目录也列出它。网页**供应商**页签已于 2026-09-29 删除，因此**新增**供应商只能在 home 层补丁里写（见上），或手工维护该 JSON 文件。
+本项目仍会**读取** `data\provider-profiles.json`（若你手工写过）：作答与裁判会话启动时由 `preparePreset()` 把它作为 `--patch` 顺序里**最后**的一层注入（因此与两层补丁同名时以项目档案为准），模型目录也列出它。网页**供应商**页签已于 2026-09-29 删除，因此**新增**供应商要么在 DSH 设置 → 模型里直接加（会写进该 profile 的补丁层），要么手工维护该 JSON 文件。
 
 这样做只影响 `sdk` profile：`web` profile 的清单、`node_modules` 与入口行都不变，网页界面照常使用。装完后 `pnpm start` 的供应商列表里会出现 `codex-chatgpt`（模型 `gpt-6-astra`，思考等级 `low/medium/high/xhigh/max`）。插件是否需要登录、额度是否足够，由 DSH 在运行时判断；模型目录本身不验证这些。
 
