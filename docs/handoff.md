@@ -1,5 +1,25 @@
 # 开发交接与执行手册
 
+## 2026-10-17 DSH 0.2.1-rc.2 同步：无需改代码，预设内容变更需换新实验
+
+DSH 从 0.1.7-rc.2 升级到 0.2.1-rc.2。本轮**没有任何代码改动**——四个耦合点全部保持兼容，证据如下。
+
+**体检**：`pnpm dsh:doctor` 九条资产路径与全部关键包解析均 OK，唯一 FAIL 是不变的 sdk profile 不含 web-app bundle（自动作答路径不需要，实测预设仍能挂载）。
+
+**未漂移的三处**：预设注册表入口仍为 `packages/preset/agent-preset-registry/lib/index.js`，其 Config 仍只有 `default`；评分会话依赖的 `packages/preset/persona` 源码**零改动**（只有 README/locale），故自建评分预设形状不受影响；迁移平面注释标记 `── the agent plane moves behind agent presets` 仍在。被插入的模块名（`@deepseek-ai/dsh-tool-subagent/model-selection-settings`、`dsh-cordis-host-runner`、`dsh-tool-cordis/host`、`dsh-agent-preset`、`dsh-llm-pi-ai`）在 0.2.1 下全部解析到。
+
+**镜像常量**（本项目在 `dsh.ts` 里复制了 DSH 的枚举）：`SUPPORTED_THINKING_FORMATS`（11 项）、`THINKING_LEVELS`（7 项）、`MODALITIES`（text/image）与 0.2.1 完全一致，无需同步。
+
+**实测挂载**（必须实测，不能推断）：用真实 `runDsh` 逐个挂载 standard/ptc/minimal/cordis 及 reviewOnly 评分路径，五次均得到 `observedPresets` 等于请求值（standard、ptc、minimal、cordis、minimal）——轮询 list() 再 mount() 的桥接在新版仍成立。探针故意用不存在的模型并请求 `reasoningEffort: 'default'`，在挂载之后、首个模型请求之前失败，因此**模型调用为 0**；`finishReason` 为 `error` 是预期的探针结果，不代表预设失败。
+
+**必须注意的语义变化**：`packages/bundle/web-app/presets/*.patch.yml` 的内容变了，而本项目把 DSH 自带预设资产原样作为补丁层交付，因此同一预设名在两个 DSH 版本下**不是同一实验条件**：persona 去掉了 `suffix: Your working directory is {{cwd}}.`，ptc 新增 `time-context` 与 `tool-schedule` 行、删除 `tool-subagent-codex`/`tool-subagent-claude-code`，plan-mode 提示词改写。既有报告的 `presetFingerprint` 与本版不一致，跨版本数据不可直接比较。防护是既有的：`comparisonGroups` 对 DSH 版本或预设指纹漂移报 `drift`，`--experiment-id` 续跑遇到配置不一致直接拒绝；升级后的新一轮必须用新的 `--experiment-id`。
+
+**验证**：`pnpm dsh:doctor` 通过（1 项不变 FAIL）；`pnpm check` exit 0（**414 项**测试、28 个文件、类型检查、55 题目录一致性、Web 构建全部通过），没有任何测试需要因本次升级修改。`pnpm dsh:compare --check` 因本机 Docker 未运行而无法执行（容器运行时不可用），与本 DSH 版本无关，容器相关验收待 Docker 启动后补做。
+
+**顺带观察**：过程中 `apps/api/src/launches.test.ts` 的「supervisor 已死且没有可证明归属的存活进程时不谎报已确认无残留」在全量并发下失败过一次，单独运行与随后重跑全量均通过；该用例只驱动假的 supervisor、与 DSH 无关，按测试隔离问题记录，本次未改动。
+
+**未做**：未调用真实作答或裁判模型，评分与发布校准继续待定；未重建固定 Linux 镜像（镜像与本项目耦合无关，按约定不重建）。
+
 ## 2026-09-27 消除「质量分待定」：评审轮次互相独立、按维取可用轮次
 
 四份真实报告（deepseek / stepfun / Google / MiniMax，各 55 题）里出现 **4 条待定**，用户要求

@@ -25,7 +25,7 @@ pnpm dsh:compare --preset ptc --model <模型ID> --reasoning high --output "C:\U
 
 ## 首次使用与配置
 
-本机已发现 `C:/Users/A/Documents/deepseek-harness` 的 SDK/CLI 0.1.5-rc.1 构建。DSH home 默认使用环境中的 `DSH_HOME`，否则使用用户目录的 `.dsh`；由 DSH 自己读取供应商配置，本项目不读取或复制其中密钥。可在本项目 `.env` 设置：
+本机已发现 `C:/Users/A/Documents/deepseek-harness` 的 SDK/CLI 0.2.1-rc.2 构建。DSH home 默认使用环境中的 `DSH_HOME`，否则使用用户目录的 `.dsh`；由 DSH 自己读取供应商配置，本项目不读取或复制其中密钥。可在本项目 `.env` 设置：
 
 ```dotenv
 BENCH_DSH_ROOT=C:/Users/A/Documents/deepseek-harness
