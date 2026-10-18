@@ -3,8 +3,26 @@ import { experimentDetailValidator, experimentListValidator, type ExperimentDeta
 import { LiveStream } from './LiveStream.tsx';
 import { ProgressLog } from './ProgressLog.tsx';
 
-/** 并行度上限。与 @fsa/evaluation 的 validateComparison 保持一致（那里是唯一校验权威）。 */
-const maxConcurrency = 16;
+/**
+ * 表单数字框的取值范围。**校验权威是 @fsa/evaluation 的 validateComparison**，
+ * 这里只是把它镜像到控件上，让用户点不到非法值。改约束时两处必须一起改：
+ * 曾经把后端并行度上限从 8 提到 16 却漏了这里，界面上限一直是 8。
+ *
+ * 注意单位差异：表单用分钟，validateComparison 接收毫秒，所以这里写成分钟上限
+ * （24 小时 = 1440 分钟对应那边的 86_400_000）。
+ */
+const limits = { repeats: 20, minutes: 1440, concurrency: 16 } as const;
+
+/**
+ * 把数字框的原始字符串夹进 [1, max]。
+ * 输入框可以被清空或粘贴非法值：Number('') 是 0、乱贴是 NaN，都要落回 1，
+ * 否则表单会带着 0 或 NaN 提交给只接受正整数的 validateComparison。
+ */
+function clamp(raw: string, max: number): number {
+  const value = Math.floor(Number(raw));
+  if (!Number.isSafeInteger(value)) return 1;
+  return Math.min(max, Math.max(1, value));
+}
 
 /**
  * 发起测评：把「发起自动测评 / 实时看进度 / 可靠取消」放进一个页签。
@@ -376,15 +394,18 @@ export function LaunchPanel({ tasks }: { tasks: Task[] }) {
           <label key={value}><input type="checkbox" checked={form.modes.includes(value)} onChange={() => toggle('modes', value)} /> {value}</label>)}</div>
       </div>
       <div className="launch-field">
-        <label htmlFor="launch-repeats">重复次数（1–20）</label>
-        <input id="launch-repeats" type="number" min={1} max={20} value={form.repeats} onChange={event => edit({ repeats: Number(event.target.value) })} />
-        <label htmlFor="launch-minutes">每次限时（分钟）</label>
-        <input id="launch-minutes" type="number" min={1} max={1440} value={form.timeoutMinutes} onChange={event => edit({ timeoutMinutes: Number(event.target.value) })} />
+        <label htmlFor="launch-repeats">重复次数（1–{limits.repeats}）</label>
+        <input id="launch-repeats" type="number" min={1} max={limits.repeats} value={form.repeats}
+          onChange={event => edit({ repeats: clamp(event.target.value, limits.repeats) })} />
+        <label htmlFor="launch-minutes">每次限时（分钟，1–{limits.minutes}）</label>
+        <input id="launch-minutes" type="number" min={1} max={limits.minutes} value={form.timeoutMinutes}
+          onChange={event => edit({ timeoutMinutes: clamp(event.target.value, limits.minutes) })} />
         <label htmlFor="launch-tokens">每次请求输出上限</label>
-        <input id="launch-tokens" type="number" min={1} value={form.maxTokens} onChange={event => edit({ maxTokens: Number(event.target.value) })} />
-        <label htmlFor="launch-concurrency">并行度（1–{maxConcurrency}）</label>
-        <input id="launch-concurrency" type="number" min={1} max={maxConcurrency} value={form.concurrency}
-          onChange={event => edit({ concurrency: Math.min(maxConcurrency, Math.max(1, Number(event.target.value) || 1)) })} />
+        <input id="launch-tokens" type="number" min={1} value={form.maxTokens}
+          onChange={event => edit({ maxTokens: clamp(event.target.value, Number.MAX_SAFE_INTEGER) })} />
+        <label htmlFor="launch-concurrency">并行度（1–{limits.concurrency}）</label>
+        <input id="launch-concurrency" type="number" min={1} max={limits.concurrency} value={form.concurrency}
+          onChange={event => edit({ concurrency: clamp(event.target.value, limits.concurrency) })} />
       </div>
       <div className="launch-field">
         <label htmlFor="launch-output">报告根</label>
