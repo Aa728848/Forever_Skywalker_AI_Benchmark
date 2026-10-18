@@ -4,14 +4,17 @@ import { exportWorkspace, applyReferencePatch, readManifest } from '../../packag
 
 test('筛选题目；提交与记录页签同页提供提交入口，评分预览页签已不存在', async ({ page }, testInfo) => {
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'TTL 与有界淘汰', exact: true })).toBeVisible();
+  await expect(page.locator('.detail h2')).toContainText('多工作区实时视图一致性与资源预算');
   await page.getByRole('textbox', { name: '搜索题目' }).fill('CACHE-');
-  await expect(page.locator('.task-row')).toHaveCount(4);
-  await page.getByLabel('难度', { exact: true }).selectOption('hard');
   await expect(page.locator('.task-row')).toHaveCount(1);
-  await expect(page.getByRole('heading', { name: '失效期间的在途旧结果', exact: true })).toBeVisible();
+  await page.getByLabel('难度', { exact: true }).selectOption('extreme');
+  await expect(page.locator('.task-row')).toHaveCount(0);
+  await page.getByLabel('难度', { exact: true }).selectOption('medium');
+  await expect(page.locator('.task-row')).toHaveCount(1);
+  await expect(page.locator('.detail h2')).toContainText('并发冷启动、持久化和版本隔离');
   await page.getByLabel('难度', { exact: true }).selectOption('all');
   await page.getByRole('textbox', { name: '搜索题目' }).fill('');
+  await expect(page.locator('.task-row')).toHaveCount(16);
   await page.screenshot({ path: testInfo.outputPath('catalog-desktop.png'), fullPage: true });
 
   // 评分预览展示的是 examples/assessment.json 的固定样例分，不是任何真实作答的结论，已删除。
@@ -19,11 +22,11 @@ test('筛选题目；提交与记录页签同页提供提交入口，评分预�
   await expect(page.getByRole('button', { name: '生成示例评分' })).toHaveCount(0);
 
   // 外部作答提交与运行记录同页：提交后要看的正是它的执行明细。
-  await page.getByRole('button', { name: /提交与记录/ }).click();
+  await page.getByRole('button', { name: '提交与记录', exact: true }).click();
   await expect(page.getByRole('heading', { name: '提交与记录' })).toBeVisible();
   await expect(page.getByRole('heading', { name: '提交外部作答' })).toBeVisible();
   await expect(page.getByLabel('候选目录')).toBeVisible();
-  await expect(page.getByLabel('题目')).toBeVisible();
+  await expect(page.getByLabel('题目', { exact: true })).toBeVisible();
   // 没有令牌时提交按钮仍可点，但服务端会拒绝——断言的是入口确实可用而不是被藏起来。
   await expect(page.getByRole('button', { name: '提交外部作答' })).toBeVisible();
 
@@ -46,7 +49,7 @@ test('真实提交后显示待定质量、执行证据和不补齐缺测的四�
   const duplicate = await request.post('http://127.0.0.1:4318/api/summaries', { data: [selected, selected] });
   expect(duplicate.status()).toBe(400);
   await page.goto('/');
-  await page.getByRole('button', { name: /提交与记录/ }).click();
+  await page.getByRole('button', { name: '提交与记录', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'CACHE-04 · 执行报告' })).toBeVisible();
   await expect(page.locator('.score-hero strong')).toContainText('待定');
   await expect(page.locator('.timeline')).toContainText('score.finalized');

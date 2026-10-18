@@ -1,7 +1,10 @@
 import { StrictMode, useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import {
+  Activity, ArrowRight, Boxes, Diamond, FileText, LayoutGrid, ListChecks, Play, Settings,
+} from 'lucide-react';
 import { difficultyLabels, tasksValidator, type Task } from '@fsa/contracts';
-import './style.css';
+import './design.css';
 import { RunPanel } from './RunPanel.tsx';
 import { ReportCenter } from './ReportCenter.tsx';
 import { ConfigPanel } from './ConfigPanel.tsx';
@@ -13,25 +16,35 @@ async function request(path: string, init?: RequestInit): Promise<unknown> {
   return response.json() as Promise<unknown>;
 }
 
+type Tab = 'catalog' | 'runs' | 'experiments' | 'launch' | 'config';
+
+/** 导航项：图标一律 Lucide，含义写在 aria-label 与浮出提示里，不靠符号字形。 */
+const navigation: ReadonlyArray<{ id: Tab; label: string; icon: typeof LayoutGrid; heading: string; lead: string }> = [
+  { id: 'catalog', label: '题目目录', icon: LayoutGrid, heading: '让工程能力，经得起验证。', lead: '从七个真实项目提炼的工程任务：固定契约、隐藏检查、可复核的执行证据。' },
+  { id: 'runs', label: '提交与记录', icon: ListChecks, heading: '每一次作答，都留下证据。', lead: '冻结候选快照，受控执行公开与隐藏检查，按结果给出可用验证分。' },
+  { id: 'experiments', label: '报告中心', icon: FileText, heading: '每一项结论，都有据可查。', lead: '自动测评落盘的实验报告：逐条作答、标准通过情况、证据产物。' },
+  { id: 'launch', label: '发起测评', icon: Play, heading: '发起一次可复核的自动测评。', lead: '选择题目、预设与思考等级，由受控 supervisor 托管整轮作答。' },
+  { id: 'config', label: '配置', icon: Settings, heading: '每一次运行，都按你的配置。', lead: '运行档案、裁判模型与访问令牌。保存后即时生效，不需重启。' },
+];
+
 function App() {
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [tab, setTab] = useState<'catalog' | 'runs' | 'experiments' | 'launch' | 'config'>('catalog');
+  const [tab, setTab] = useState<Tab>('catalog');
   const [difficulty, setDifficulty] = useState('all');
   const [domain, setDomain] = useState('all');
   const [track, setTrack] = useState('all');
   const [search, setSearch] = useState('');
-  const [selected, setSelected] = useState('CACHE-01');
+  const [selected, setSelected] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [reload, setReload] = useState(0);
   const [experiments, setExperiments] = useState(0);
-  // 稳定回调：报告中心只回报实验数量，不因此触发额外请求。
   const countExperiments = useCallback((count: number) => setExperiments(count), []);
+
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
     setError('');
-    // 只取题库：评分预览页签已删除，previews 仍被评分核心的测试当作固定输入，API 侧不动。
     void request('/api/tasks', { signal: controller.signal })
       .then((taskData) => {
         if (!tasksValidator.Check(taskData)) throw new Error('题库协议不匹配。');
@@ -40,39 +53,127 @@ function App() {
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [reload]);
+
   const filtered = tasks.filter(task =>
     (difficulty === 'all' || task.difficulty === difficulty) && (domain === 'all' || task.domain === domain) && (track === 'all' || task.track === track)
     && `${task.id} ${task.title} ${task.sources.join(' ')}`.toLowerCase().includes(search.toLowerCase()));
   const current = filtered.find(task => task.id === selected) ?? filtered[0];
   const packaged = tasks.filter(task => task.status !== 'designed').length;
+  const coreCount = tasks.filter(task => task.track === 'core').length;
+  const integrationCount = tasks.filter(task => task.track === 'integration').length;
   const taskState = { designed: '设计规格', 'fixture-ready': '题目包已验证', calibrating: '校准中', ready: '已发布' } as const;
+  const active = navigation.find(item => item.id === tab) ?? navigation[0]!;
+
   return <div className="shell">
     <aside className="sidebar">
-      <a className="brand" href="/"><span className="brand-mark">F<span>✦</span></span><span>FOREVER<br /><b>SKYWALKER</b></span></a>
-      <div className="side-label">AI ENGINEERING BENCHMARK</div>
+      <a className="brand" href="/" aria-label="Forever Skywalker 首页">
+        <span className="brand-mark">F</span>
+      </a>
       <nav aria-label="主导航">
-        <button className={tab === 'catalog' ? 'nav active' : 'nav'} onClick={() => setTab('catalog')}><span>▦</span> 题目目录 <small>55</small></button>
-        <button className={tab === 'runs' ? 'nav active' : 'nav'} onClick={() => setTab('runs')}><span>◷</span> 提交与记录</button>
-        <button className={tab === 'experiments' ? 'nav active' : 'nav'} onClick={() => setTab('experiments')}><span>◈</span> 报告中心 <small>{experiments}</small></button>
-        <button className={tab === 'launch' ? 'nav active' : 'nav'} onClick={() => setTab('launch')}><span>▷</span> 发起测评</button>
-        <button className={tab === 'config' ? 'nav active' : 'nav'} onClick={() => setTab('config')}><span>⚙</span> 配置</button>
+        {navigation.map(item => {
+          const Icon = item.icon;
+          return <button key={item.id} className={tab === item.id ? 'nav active' : 'nav'} data-label={item.label}
+            aria-label={item.label} aria-current={tab === item.id ? 'page' : undefined} onClick={() => setTab(item.id)}>
+            <Icon aria-hidden="true" />
+            {item.id === 'catalog' && tasks.length > 0 && <small>{tasks.length}</small>}
+            {item.id === 'experiments' && experiments > 0 && <small>{experiments}</small>}
+          </button>;
+        })}
       </nav>
-      <div className="side-footer"><span className="status-dot" /> {packaged} / 55 题目包已验证<p>真实场景 · 四级评测<br />可用验证与代码质量各占 50%</p></div>
+      <div className="side-footer"><span className="status-dot" aria-hidden="true" />{packaged}/{tasks.length || 0}</div>
     </aside>
+
     <main>
-      <header className="topbar"><span>工作台 <span className="slash">/</span> {tab === 'catalog' ? '测试集设计' : tab === 'experiments' ? '自动测评报告' : tab === 'launch' ? '发起自动测评' : tab === 'config' ? '运行配置' : '报告与证据'}</span><span className="pill">本地工作区</span></header>
+      <header className="topbar">
+        <Activity size={14} aria-hidden="true" />
+        <span>工作台<span className="slash">/</span>{active.label}</span>
+        <span className="pill">本地工作区</span>
+      </header>
       <div className="content">
-        <section className="heading"><div><div className="eyebrow">FOREVER SKYWALKER / BENCHMARK</div><h1>{tab === 'catalog' ? '让工程能力，经得起验证。' : tab === 'launch' ? '发起一次可复核的自动测评。' : tab === 'config' ? '每一次运行，都按你的配置。' : '每一项评分，都有据可查。'}</h1><p>从真实项目出发，评估复杂工程任务的可用性与代码质量。</p></div></section>
-        <div className="notice"><b>{packaged} / 55 题目包已验证</b><span>难度为设计标签，尚未通过真实模型作答校准。题目包、反例检出与容器实跑分别验收；缺少客观或评审证据时总分待定。</span></div>
-        {error && <div className="error" role="alert">{error} <button onClick={() => setReload(value => value + 1)}>重新加载</button></div>}
-        <section className="stats" aria-label="题库概况">{[['55', '设计题目', '来自 7 个真实项目'], ['48', '核心题目', '12 个能力域 × 4 个难度'], ['7', '原仓库集成题', '独立报告 · 固定源码版本'], ['50 / 50', '评分比例', '可用验证 / 代码质量']].map(([value, label, caption]) => <article key={label}><span>{label}</span><strong>{value}</strong><small>{caption}</small></article>)}</section>
-        {loading && tab !== 'config' && tab !== 'launch' ? <div className="empty" role="status">正在加载题库与报告…</div> : tab === 'config' ? <ConfigPanel /> : tab === 'launch' ? <LaunchPanel tasks={tasks} /> : tab === 'runs' ? <RunPanel tasks={tasks} /> : tab === 'experiments' ? <ReportCenter onCount={countExperiments} /> : tab === 'catalog' ? <>
-          <section className="section-head"><h2>题目目录 <small>{filtered.length} 道</small></h2><span>简单 → 中等 → 困难 → 极度困难</span></section>
-          <div className="filters"><input aria-label="搜索题目" placeholder="搜索题目、编号或来源项目…" value={search} onChange={event => setSearch(event.target.value)} /><select aria-label="难度" value={difficulty} onChange={event => setDifficulty(event.target.value)}><option value="all">全部难度</option>{Object.entries(difficultyLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select><select aria-label="能力域" value={domain} onChange={event => setDomain(event.target.value)}><option value="all">全部能力域</option>{[...new Set(tasks.map(task => task.domain))].map(value => <option key={value}>{value}</option>)}</select><select aria-label="题型" value={track} onChange={event => setTrack(event.target.value)}><option value="all">全部题型</option><option value="core">核心题</option><option value="integration">集成题</option></select></div>
-          <div className="catalog-grid"><div className="task-list">{filtered.length === 0 ? <div className="empty">没有符合筛选条件的题目。</div> : filtered.map(task => <button key={task.id} aria-pressed={current?.id === task.id} className={`task-row ${current?.id === task.id ? 'selected' : ''}`} onClick={() => setSelected(task.id)}><span className="task-icon">{task.track === 'core' ? '◇' : '▧'}</span><span className="task-name"><span className="task-id">{task.id} · {task.domain}</span><b>{task.title}</b><small>{task.sources.join(' / ')}</small></span><span className={`badge ${task.difficulty}`}>{difficultyLabels[task.difficulty]}</span><span className="arrow">›</span></button>)}</div>
-          {current && <article className="detail"><div className="detail-top"><span className="eyebrow">{current.id}</span><span className="pill">{taskState[current.status]} · {current.version}</span></div><h2>{current.title}</h2><p>{current.problem}</p><h3>验收不变量</h3><ol>{current.acceptance.map(item => <li key={item}>{item}</li>)}</ol><h3>验证方法</h3><p>{current.oracle}</p><div className="detail-footer"><span>{current.track === 'core' ? '核心题 · 纳入分级总分' : '集成题 · 独立报告'}</span><b>可用 50 + 代码 50</b></div></article>}</div>
-        </> : null} 
-        <footer className="page-footer">FOREVER SKYWALKER <span>固定行为契约 · 保留执行证据 · 可复核的评分</span></footer>
+        <section className="heading">
+          <div className="eyebrow">Forever Skywalker / Benchmark</div>
+          <h1>{active.heading}</h1>
+          <p>{active.lead}</p>
+        </section>
+
+        {tab === 'catalog' && !loading && <div className="notice">
+          <b>{packaged} / {tasks.length} 题目包已验证</b>
+          <span>难度按实测通过率分层，尚未经真实模型校准。缺少客观或评审证据时总分保持待定。</span>
+        </div>}
+
+        {error && <div className="error" role="alert">{error} <button className="link" onClick={() => setReload(value => value + 1)}>重新加载</button></div>}
+
+        {tab === 'catalog' && !loading && <section className="stats" aria-label="题库概况">
+          {[
+            [String(tasks.length), '设计题目', '来自 7 个真实项目'],
+            [String(coreCount), '核心题目', '12 个能力域各一道深度题'],
+            [String(integrationCount), '原仓库集成题', '独立报告 · 固定源码版本'],
+            ['50 / 50', '评分比例', '可用验证 / 代码质量'],
+          ].map(([value, label, caption]) => <article key={label}>
+            <span>{label}</span><strong>{value}</strong><small>{caption}</small>
+          </article>)}
+        </section>}
+
+        {loading && tab !== 'config' && tab !== 'launch' ? <div className="empty" role="status">正在加载题库与报告…</div>
+          : tab === 'config' ? <ConfigPanel />
+          : tab === 'launch' ? <LaunchPanel tasks={tasks} />
+          : tab === 'runs' ? <RunPanel tasks={tasks} />
+          : tab === 'experiments' ? <ReportCenter onCount={countExperiments} />
+          : tab === 'catalog' ? <>
+            <section className="section-head"><h2>题目目录 <small>{filtered.length} 道</small></h2><span>按难度分层</span></section>
+            <div className="filters">
+              <input aria-label="搜索题目" placeholder="搜索题目、编号或来源项目…" value={search} onChange={event => setSearch(event.target.value)} />
+              <select aria-label="难度" value={difficulty} onChange={event => setDifficulty(event.target.value)}>
+                <option value="all">全部难度</option>
+                {Object.entries(difficultyLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+              </select>
+              <select aria-label="能力域" value={domain} onChange={event => setDomain(event.target.value)}>
+                <option value="all">全部能力域</option>
+                {[...new Set(tasks.map(task => task.domain))].map(value => <option key={value}>{value}</option>)}
+              </select>
+              <select aria-label="题型" value={track} onChange={event => setTrack(event.target.value)}>
+                <option value="all">全部题型</option><option value="core">核心题</option><option value="integration">集成题</option>
+              </select>
+            </div>
+            <div className="catalog-grid">
+              <div className="task-list">
+                {filtered.length === 0 ? <div className="empty">没有符合筛选条件的题目。</div> : filtered.map(task => {
+                  const Icon = task.track === 'core' ? Diamond : Boxes;
+                  return <button key={task.id} aria-pressed={current?.id === task.id}
+                    className={`task-row ${current?.id === task.id ? 'selected' : ''}`} onClick={() => setSelected(task.id)}>
+                    <span className="task-icon"><Icon aria-hidden="true" /></span>
+                    <span className="task-name">
+                      <span className="task-id">{task.id} · {task.domain}</span>
+                      <b>{task.title}</b>
+                      <small>{task.sources.join(' / ')}</small>
+                    </span>
+                    <span className={`badge ${task.difficulty}`}>{difficultyLabels[task.difficulty]}</span>
+                    <ArrowRight className="arrow" size={15} aria-hidden="true" />
+                  </button>;
+                })}
+              </div>
+              {current && <article className="detail">
+                <div className="detail-top">
+                  <span className="eyebrow">{current.id}</span>
+                  <span className="pill">{taskState[current.status]} · {current.version}</span>
+                </div>
+                <h2>{current.title}</h2>
+                <p>{current.problem}</p>
+                <h3>验收不变量</h3>
+                <ol>{current.acceptance.map(item => <li key={item}>{item}</li>)}</ol>
+                <h3>验证方法</h3>
+                <p>{current.oracle}</p>
+                <div className="detail-footer">
+                  <span>{current.track === 'core' ? '核心题 · 纳入分级总分' : '集成题 · 独立报告'}</span>
+                  <b>可用 50 + 代码 50</b>
+                </div>
+              </article>}
+            </div>
+          </> : null}
+
+        <footer className="page-footer">
+          Forever Skywalker <span>固定行为契约 · 保留执行证据 · 可复核的评分</span>
+        </footer>
       </div>
     </main>
   </div>;

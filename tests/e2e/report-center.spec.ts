@@ -112,7 +112,7 @@ test('报告中心列出实验、展开行级阶段与进度，下载四个产�
   // 在点击页签的同时记录明细请求：列表默认选中第一条，挂载后立即取明细。
   const [firstDetail] = await Promise.all([
     page.waitForResponse(response => response.url().includes('/api/reports/') && !response.url().includes('/artifacts/')),
-    page.getByRole('button', { name: /报告中心/ }).click(),
+    page.getByRole('button', { name: '报告中心', exact: true }).click(),
   ]);
   expect(firstDetail.status()).toBe(200);
   await expect(page.getByRole('heading', { name: /报告中心/ })).toBeVisible();
@@ -310,7 +310,7 @@ test('行全部跑完、只有分数待定的报告：续跑按钮只说「待�
   writeFileSync(join(reportRoot, pendingOnlyName, 'report.md'), '# DSH 模式对比\n\n一条待定\n');
 
   await page.goto('/');
-  await page.getByRole('button', { name: /报告中心/ }).click();
+  await page.getByRole('button', { name: '报告中心', exact: true }).click();
   await page.locator('.experiment-item').filter({ hasText: 'e2e-pending-only-experiment' }).click();
   await expect(page.getByRole('heading', { name: 'e2e-pending-only-experiment' })).toBeVisible();
 
@@ -354,7 +354,7 @@ test('state=completed 且行全部跑完的报告不得再出现「未完成」�
   writeFileSync(join(reportRoot, allDoneName, 'report.md'), '# DSH 模式对比\n\n全部跑完\n');
 
   await page.goto('/');
-  await page.getByRole('button', { name: /报告中心/ }).click();
+  await page.getByRole('button', { name: '报告中心', exact: true }).click();
   await page.locator('.experiment-item').filter({ hasText: 'e2e-alldone-experiment' }).click();
   await expect(page.getByRole('heading', { name: 'e2e-alldone-experiment' })).toBeVisible();
 
@@ -398,7 +398,7 @@ test('进度日志默认收起：长日志不撑开报告详情，点开才渲�
   writeFileSync(join(reportRoot, name, 'experiment.json'), JSON.stringify(document, null, 2) + String.fromCharCode(10));
 
   await page.goto('/');
-  await page.getByRole('button', { name: /报告中心/ }).click();
+  await page.getByRole('button', { name: '报告中心', exact: true }).click();
   await page.locator('.report-item').filter({ hasText: 'e2e-long-progress' }).click();
 
   const log = page.locator('details.progress-log');

@@ -3,9 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "scripts": { "dev": "vite --host 127.0.0.1 --port 4317 --strictPort", "build": "vite build" },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 4317 --strictPort",
+    "build": "vite build"
+  },
   "dependencies": {
     "@fsa/contracts": "workspace:*",
+    "lucide-react": "^1.59.0",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },

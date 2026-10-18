@@ -120,7 +120,7 @@ test('点「取消这次测评」真的取消：请求不带 JSON 头，启动�
   // 回归形状的客户端证据：取消请求必须没有 content-type（旧代码发的是 application/json 且无请求体）。
   const cancelRequest = page.waitForRequest(candidate => candidate.method() === 'POST' && candidate.url().includes('/cancel'));
   await page.goto('/');
-  await page.getByRole('button', { name: /发起测评/ }).click();
+  await page.getByRole('button', { name: '发起测评', exact: true }).click();
   await expect(page.getByRole('heading', { name: /发起测评/ })).toBeVisible();
   // 页面用 localStorage 里的 x-bench-token 发取消请求（与配置页签共用一个键）。
   await page.locator('#launch-token').fill(token);

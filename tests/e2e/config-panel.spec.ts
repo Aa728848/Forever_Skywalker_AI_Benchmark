@@ -36,7 +36,7 @@ const configPanel = (page: Page) => page.locator('section').filter({ has: page.l
 
 async function openConfigTab(page: Page): Promise<void> {
   await page.goto('/');
-  await page.getByRole('button', { name: /配置/ }).click();
+  await page.getByRole('button', { name: '配置', exact: true }).click();
   await expect(configPanel(page).locator('.config-grid')).toBeVisible();
 }
 
@@ -92,7 +92,7 @@ test('未输入令牌时写操作被拒绝并提示；输入令牌后写入 .env
 
   // 刷新页面后新值仍在（API 按保存后的快照重算视图）。
   await page.reload();
-  await page.getByRole('button', { name: /配置/ }).click();
+  await page.getByRole('button', { name: '配置', exact: true }).click();
   await expect(page.locator('#config-BENCH_DSH_PRESETS')).toHaveValue('ptc');
   await expect(page.locator('#config-token')).toHaveValue(token);
   await page.screenshot({ path: testInfo.outputPath('config-panel.png'), fullPage: true });
@@ -130,13 +130,13 @@ test('密钥字段只显示已填写/未填写，页面上与响应里都不出�
 
   // 刷新后按「已填写」呈现，且不回显值。
   await page.reload();
-  await page.getByRole('button', { name: /配置/ }).click();
+  await page.getByRole('button', { name: '配置', exact: true }).click();
   await expect(page.locator('#config-BENCH_JUDGE_TOKEN')).toHaveAttribute('placeholder', '已填写（留空表示不修改）');
   await expect(page.locator('#config-BENCH_JUDGE_TOKEN')).toHaveValue('');
   expect(await page.evaluate(() => document.body.innerText)).not.toContain(rotated);
   expect(await page.content()).not.toContain(rotated);
-  await page.getByRole('button', { name: /报告中心/ }).click();
-  await page.getByRole('button', { name: /配置/ }).click();
+  await page.getByRole('button', { name: '报告中心', exact: true }).click();
+  await page.getByRole('button', { name: '配置', exact: true }).click();
   await expect(page.locator('#config-BENCH_JUDGE_TOKEN')).toHaveValue('');
   await page.screenshot({ path: testInfo.outputPath('config-panel-secret.png'), fullPage: true });
 });

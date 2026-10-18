@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { ArrowUpRight } from 'lucide-react';
 import { difficultyLabels, runDetailValidator, runStatusesValidator, suiteReportValidator, type RunDetail, type RunStatus, type SuiteReport } from '@fsa/contracts';
 import { useBenchToken } from './token.ts';
 import { SubmitExternalAnswer } from './SubmitExternalAnswer.tsx';
@@ -102,7 +103,7 @@ export function RunPanel({ tasks = [] }: { tasks?: { id: string; status: string 
           <h3>代码质量分项</h3>{Object.entries({ simplicity: '简洁度', maintainability: '人工可维护性', decoupling: '解耦性' } as const).map(([key, label]) => <div className="metric" key={key}><span>{label}</span><b>{scoreText(detail.score?.dimensions[key as keyof NonNullable<RunDetail['score']>['dimensions']] ?? null)} /100</b></div>)}
           <h3>检查结果</h3><div className="checks-table"><table><thead><tr><th>检查</th><th>状态</th><th>关键项</th></tr></thead><tbody>{detail.execution?.checks.map(check => <tr key={check.id}><td>{check.id}</td><td>{check.status}</td><td>{check.critical ? '是' : '否'}</td></tr>)}</tbody></table></div>
           <h3>执行时间线</h3><ol className="timeline">{detail.events.map(event => <li key={event.id}><b>{event.seq}. {event.type}</b><time>{new Date(event.at).toLocaleString('zh-CN')}</time><span>{event.actor}</span></li>)}</ol>
-          <h3>可复核证据</h3>{status?.artifacts.map(artifact => <div className="evidence" key={artifact.id}><a href={`${path}/artifacts/${encodeURIComponent(artifact.id)}`} download>{artifact.id} ↗</a><p>{artifact.bytes} 字节 · SHA-256 {artifact.sha256.slice(0, 16)}…</p></div>)}
+          <h3>可复核证据</h3>{status?.artifacts.map(artifact => <div className="evidence" key={artifact.id}><a href={`${path}/artifacts/${encodeURIComponent(artifact.id)}`} download>{artifact.id} <ArrowUpRight size={13} aria-hidden="true" style={{ display: 'inline', verticalAlign: '-2px' }} /></a><p>{artifact.bytes} 字节 · SHA-256 {artifact.sha256.slice(0, 16)}…</p></div>)}
           <h3>清理这条记录</h3>
           <div className="cleanup-block">
             <p>清理会把该作答的目录移进运行根下的 <code>.trash</code>，运行记录列表立即不再显示它；文件不会删除，随时可以手动移回。正在执行或重评中的记录会被服务端拒绝。</p>

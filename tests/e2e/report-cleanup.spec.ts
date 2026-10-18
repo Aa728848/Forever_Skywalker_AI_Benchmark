@@ -32,7 +32,7 @@ test.beforeAll(() => {
 
 test('报告中心能清理一份报告：移入回收目录、列表不再显示、文件未删除', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: /报告中心/ }).click();
+  await page.getByRole('button', { name: '报告中心', exact: true }).click();
 
   // 选中刚写入的那份报告。
   await page.getByRole('button', { name: /e2e-cleanup-experiment/ }).first().click();
@@ -68,7 +68,7 @@ test('缺少令牌时清理被拒绝，报告留在原处', async ({ page }) => 
   mkdirSync(join(reportRoot, guarded), { recursive: true });
   writeFileSync(join(reportRoot, guarded, 'experiment.json'), JSON.stringify({ ...document, id: 'e2e-cleanup-guarded' }));
   await page.goto('/');
-  await page.getByRole('button', { name: /报告中心/ }).click();
+  await page.getByRole('button', { name: '报告中心', exact: true }).click();
   await page.getByRole('button', { name: /e2e-cleanup-guarded/ }).first().click();
   await page.getByRole('button', { name: '清理这份报告…' }).click();
   // 故意留空令牌。

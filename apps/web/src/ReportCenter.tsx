@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { ArrowUpRight, RefreshCw, Trash2 } from 'lucide-react';
 import {
   experimentDetailValidator, experimentListValidator,
   type ExperimentDetail, type ExperimentPhaseCounts, type ExperimentRow, type ExperimentSummary,
@@ -363,7 +364,7 @@ export function ReportCenter({ onCount }: { onCount?: (count: number) => void })
   const currentFailure = failure !== null && failure.reportId === currentId ? failure.message : '';
   const hints = shown === null ? [] : consistencyHints(shown);
   return <section>
-    <div className="section-head"><h2>报告中心 <small>{visible.length} / {experiments.length} 个实验</small></h2><button className="secondary" onClick={() => setRevision(value => value + 1)}>刷新报告</button></div>
+    <div className="section-head"><h2>报告中心 <small>{visible.length} / {experiments.length} 个实验</small></h2><button className="secondary" onClick={() => setRevision(value => value + 1)}><RefreshCw size={14} aria-hidden="true" /> 刷新报告</button></div>
     <p>只读展示 CLI 自动测评（pnpm dsh:compare）落盘的实验报告：逐条作答阶段、进度日志与四个产物下载。进行中的实验每 5 秒自动刷新；损坏的报告仍会列出并写明原因。</p>
     <div className="filters">
       <input aria-label="搜索实验" placeholder="搜索实验 id、目录、供应商、模型或预设…" value={search} onChange={event => setSearch(event.target.value)} />
@@ -413,7 +414,7 @@ export function ReportCenter({ onCount }: { onCount?: (count: number) => void })
                     </div>
                   </div>
                   : <div className="report-actions">
-                    <button className="secondary" disabled={cleanupBusy} onClick={() => { setCleanupResult(null); setPendingCleanup(current.reportId); }}>清理这份报告…</button>
+                    <button className="secondary" disabled={cleanupBusy} onClick={() => { setCleanupResult(null); setPendingCleanup(current.reportId); }}><Trash2 size={14} aria-hidden="true" /> 清理这份报告…</button>
                     <span>不会删除文件，只移入回收目录。</span>
                   </div>}
               </div>
@@ -480,7 +481,7 @@ export function ReportCenter({ onCount }: { onCount?: (count: number) => void })
                     <td><span className={'phase ' + phaseClass(row.phase)}>{phaseLabels[row.phase]}</span></td>
                     <td><span className={'state-tag ' + rowStateKind[state.kind]}>{state.text}</span></td>
                     {/* 原因要完整可读：它比别的列长得多，若不换行会把整张表撑得很宽（表格全局 nowrap）。 */}
-                    <td style={{ whiteSpace: 'normal', minWidth: '240px' }}>{state.reason ?? '—'}</td>
+                    <td style={{ whiteSpace: 'normal', minWidth: '180px', maxWidth: '340px', overflowWrap: 'anywhere' }}>{state.reason ?? '—'}</td>
                     <td>{row.finishReason ?? '—'}</td>
                     {/* 作答秒数：已跑完用 solver 给的实测值；进行中用心跳算"已进行 N"，
                         并标出最后心跳距今多久——那一刻停住不动就是真卡住了。 */}
@@ -502,7 +503,7 @@ export function ReportCenter({ onCount }: { onCount?: (count: number) => void })
                 <ProgressLog entries={shown.progress} key={shown.id ?? shown.directoryName} />
                 <h3>产物下载</h3>
                 <div className="artifact-grid">{artifactIds.map(id => <div className="artifact" key={id}>
-                  <a href={'/api/reports/' + encodeURIComponent(shown.reportId) + '/artifacts/' + id} download>{artifactLabels[id]} ↗</a>
+                  <a href={'/api/reports/' + encodeURIComponent(shown.reportId) + '/artifacts/' + id} download>{artifactLabels[id]} <ArrowUpRight size={13} aria-hidden="true" style={{ display: 'inline', verticalAlign: '-2px' }} /></a>
                   <p>{id === 'evidence' ? shown.evidence === null ? '证据未归档（experiment.json 未登记 evidence）。' : shown.evidence.filename + ' · SHA-256 ' + shown.evidence.sha256.slice(0, 16) + '… · ' + shown.evidence.fileCount + ' 个文件' : artifactNotes[id]}</p>
                 </div>)}</div>
                 <h3>续跑这份报告</h3>

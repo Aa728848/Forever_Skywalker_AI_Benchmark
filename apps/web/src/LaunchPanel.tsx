@@ -379,11 +379,11 @@ export function LaunchPanel({ tasks }: { tasks: Task[] }) {
         <input id="launch-minutes" type="number" min={1} max={1440} value={form.timeoutMinutes} onChange={event => edit({ timeoutMinutes: Number(event.target.value) })} />
         <label htmlFor="launch-tokens">每次请求输出上限</label>
         <input id="launch-tokens" type="number" min={1} value={form.maxTokens} onChange={event => edit({ maxTokens: Number(event.target.value) })} />
-        <label htmlFor="launch-concurrency">并行度（1–8）</label>
+        <label htmlFor="launch-concurrency">并行度（1–16）</label>
         <input id="launch-concurrency" type="number" min={1} max={8} value={form.concurrency}
           onChange={event => edit({ concurrency: Math.min(8, Math.max(1, Number(event.target.value) || 1)) })} />
         <small>1 = 串行。大于 1 时同时推进多道题：作答、容器验证与裁判评分重叠进行。
-          实测 55 题串行约 259 分钟（作答 46%、验证与评分 54%），3 路可让两者不再互相等待。
+          实测整轮串行约 259 分钟（作答 46%、验证与评分 54%），提高并行度可让两者不再互相等待。
           每题仍用独立 workspace、独立容器与独立裁判会话，结果与串行可比。</small>
       </div>
       <div className="launch-field">
