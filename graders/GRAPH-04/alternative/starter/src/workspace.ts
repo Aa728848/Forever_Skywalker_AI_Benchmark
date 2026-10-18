@@ -45,12 +45,20 @@ export class DependencyWorkspace {
     this.#candidates.set(ticket, { snapshot, publication });
     return ticket;
   }
+  /** 与参考实现不同：用数组 + 令牌保存订阅者，通知走 forEach。 */
+  #subscribers: { live: boolean; notify: (snapshot: Snapshot) => void }[] = [];
+  subscribe(listener: (snapshot: Snapshot) => void): () => void {
+    const entry = { live: true, notify: listener };
+    this.#subscribers.push(entry);
+    return () => { entry.live = false; };
+  }
   commit(ticket: Prepared): boolean {
     const candidate = this.#candidates.get(ticket);
     if (!candidate || candidate.publication !== this.#publication || ticket.generation !== this.#state.generation) return false;
     this.#published = candidate.snapshot;
     this.#publication++;
     this.#state = { ...this.#state, pending: new Set() };
+    this.#subscribers.forEach(entry => { if (!entry.live) return; try { entry.notify(candidate.snapshot); } catch { /* 订阅者异常不影响发布 */ } });
     return true;
   }
 }

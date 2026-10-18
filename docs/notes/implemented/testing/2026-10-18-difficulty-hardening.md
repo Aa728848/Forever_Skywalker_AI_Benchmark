@@ -54,3 +54,15 @@ THR-04 的教训（同轮）：先做了"票据所有权"，实测发现 #stop �
 - `node scripts/task.ts verify CACHE-04`：六阶段通过，21 项检查（starter 14 项按预声明失败）。
 - `pnpm task:mutants CACHE-04`：4/4 精确检出，含新增的 index-synced-only-on-commit。
 - `pnpm check`：414 项测试、严格类型、目录一致性与构建通过。
+
+## 第三道：GRAPH-04 发布订阅（0.3.0）
+
+同一种复合复杂度手法用在图上：DependencyWorkspace 增加 subscribe()。订阅必须是「跟着已提交的发布走」，而不是「跟着工作走」——这正是会分化实现的地方：把 prepare 完成当成发布通知、或先通知再落状态，都会让订阅者读到错误的视图。
+
+判别力验证：构造「准备完成即通知」的实现，被两条检查检出，参考与替代实现全过。检查本身也修正过一轮——最初只断言监听器收到的参数，无法区分通知与发布状态的先后；改为在监听器内调用 snapshot() 读取**已发布状态**后才具备判别力。这是本轮最重要的方法论收获：**断言要观测发布状态，不能只观测回调参数**。
+
+## Verification（GRAPH-04 0.3.0）
+
+- `node scripts/task.ts verify GRAPH-04`：六阶段通过，20 项检查。
+- `pnpm task:mutants GRAPH-04`：4/4 精确检出。
+- `pnpm check`：414 项测试通过；`pnpm test:e2e` 12/13，唯一失败项 config-panel 是既有测试间 .env 顺序耦合，已用干净 worktree 确认为改动前就存在。

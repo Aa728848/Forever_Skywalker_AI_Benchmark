@@ -228,7 +228,7 @@
   },
   {
     "id": "GRAPH-04",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "title": "依赖图批次更新与诊断快照原子发布",
     "domain": "递归与图算法",
     "difficulty": "medium",

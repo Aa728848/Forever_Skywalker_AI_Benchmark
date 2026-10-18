@@ -1,0 +1,13 @@
+diff --git a/starter/src/workspace.ts b/starter/src/workspace.ts
+index 2e91a16..d332830 100644
+--- a/starter/src/workspace.ts
++++ b/starter/src/workspace.ts
+@@ -70,6 +70,8 @@ export class DependencyWorkspace {
+       else values.delete(id);
+     }
+     const ticket = Object.freeze({ generation, affected: Object.freeze(affected) });
++    // 缺陷：把"准备完成"当成"已发布"通知出去。
++    for (const listener of [...this.#listeners]) { try { listener(immutableSnapshot(generation, graph, values)); } catch { } }
+     this.#tickets.set(ticket, { snapshot: immutableSnapshot(generation, graph, values), publication });
+     return ticket;
+   }

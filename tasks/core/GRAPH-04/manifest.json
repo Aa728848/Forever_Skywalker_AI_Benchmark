@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "GRAPH-04",
-  "taskVersion": "0.2.0",
+  "taskVersion": "0.3.0",
   "title": "依赖图批次更新与诊断快照原子发布",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -50,7 +50,10 @@
       "hidden/unpublished-batches-coalesce-with-tombstones",
       "hidden/old-generation-cannot-publish-or-acknowledge",
       "hidden/frozen-input-and-reader-snapshot-survive-reentrant-edit",
-      "hidden/seeded-churn-matches-independent-full-rebuild"
+      "hidden/seeded-churn-matches-independent-full-rebuild",
+      "hidden/subscribers-see-only-published-snapshots",
+      "hidden/subscriber-reads-the-just-published-state",
+      "hidden/listener-failure-cannot-roll-back-publication"
     ]
   },
   "limits": {
@@ -195,6 +198,30 @@
       "weight": 1,
       "critical": true,
       "summary": "20000节点深环旧接口终止与调用隔离"
+    },
+    {
+      "id": "hidden/subscribers-see-only-published-snapshots",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "只在成功发布后通知，退订后不再通知。"
+    },
+    {
+      "id": "hidden/subscriber-reads-the-just-published-state",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "通知时发布状态必须已生效。"
+    },
+    {
+      "id": "hidden/listener-failure-cannot-roll-back-publication",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": true,
+      "summary": "监听器抛错不回滚发布，其它监听器仍收到。"
     }
   ]
 }

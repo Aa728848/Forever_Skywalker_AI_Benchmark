@@ -25,5 +25,13 @@
       "hidden/old-generation-cannot-publish-or-acknowledge",
       "hidden/frozen-input-and-reader-snapshot-survive-reentrant-edit"
     ]
+  },
+  {
+    "id": "notify-on-apply",
+    "description": "编辑一被接受就通知订阅者，界面看到未确认的中间状态。",
+    "patch": "graders/GRAPH-04/mutants/notify-on-apply.patch",
+    "expectedFailures": [
+      "hidden/subscribers-see-only-published-snapshots"
+    ]
   }
 ]
