@@ -339,6 +339,8 @@ export const RunStatusSchema = Type.Object({
     critical: Type.Boolean(),
   }, { additionalProperties: false }), { maxItems: 200 }),
   missingChecks: Type.Array(checkId, { maxItems: 200 }),
+  /** 该题声明的检查项总数；与 knownFailures 之差即通过数。旧报告没有此字段。 */
+  checksTotal: Type.Optional(Type.Union([Type.Number({ minimum: 0 }), Type.Null()])),
   retryable: Type.Object({
     allowed: Type.Boolean(),
     reason: Type.Union([ExecutionClassificationSchema, Type.Null()]),
@@ -572,6 +574,13 @@ export const ExperimentRowSchema = Type.Object({
   runId: Type.Union([id, Type.Null()]),
   attemptId: Type.Union([id, Type.Null()]),
   total: score,
+  /**
+   * 逐条作答的标准通过情况：checksTotal 是该题声明的检查项总数，
+   * checkFailures 是其中判为失败的 ID，两者之差即通过数。
+   * 刻意可选：改动之前落盘的报告没有这两个字段，缺字段时页面退回只显示总分。
+   */
+  checksTotal: Type.Optional(Type.Union([Type.Number({ minimum: 0 }), Type.Null()])),
+  checkFailures: Type.Optional(Type.Array(checkId, { maxItems: 500 })),
 }, { additionalProperties: false });
 export type ExperimentRow = Type.Static<typeof ExperimentRowSchema>;
 

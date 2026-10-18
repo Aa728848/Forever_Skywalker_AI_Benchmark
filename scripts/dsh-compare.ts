@@ -9,7 +9,7 @@ import { tasks } from '../packages/catalog/src/index.ts';
 import { probeContainerRuntime, requirePinnedImage } from '../packages/executor/src/index.ts';
 import { JudgeUnavailableError } from '../packages/judge/src/index.ts';
 import { dshJudgeOptionsFromEnvironment } from '../packages/evaluation/src/dsh-judge.ts';
-import { runDshComparison, validateComparison, type DshComparisonOptions } from '../packages/evaluation/src/dsh-comparison.ts';
+import { liveEventLine, runDshComparison, validateComparison, type DshComparisonOptions } from '../packages/evaluation/src/dsh-comparison.ts';
 import { checkDshInstallation, checkDshPresetAssets, resolveDshPreset, resolveDshWorkspacePermission } from '../packages/evaluation/src/dsh.ts';
 import { cleanupComparisonScratch, createComparisonScratch } from '../packages/evaluation/src/comparison-artifacts.ts';
 import { defaultLeaseTtlMs } from './experiment-supervisor.ts';
@@ -177,7 +177,15 @@ try {
       const cancel = () => controller.abort(new Error('操作者停止 DSH 模式对比。'));
       process.once('SIGINT', cancel); process.once('SIGTERM', cancel);
       try {
-        const report = await runDshComparison(options, { signal: controller.signal, onProgress: message => console.log(message) });
+        const report = await runDshComparison(options, {
+          signal: controller.signal,
+          onProgress: message => console.log(message),
+          // 作答中的实时片段：只打到终端，不进报告。默认开启；BENCH_STREAM=0 可关掉。
+          ...(process.env.BENCH_STREAM === '0' ? {} : { onEvent: (row, event) => {
+            const line = liveEventLine(row.taskId, row.preset, row.mode, event);
+            if (line !== null) console.log(line);
+          } }),
+        });
         console.log(`实验状态：${report.state}\n报告目录：${options.outputDirectory}\n对比报告：${join(options.outputDirectory, 'report.md')}\n完整记录：${join(options.outputDirectory, 'experiment.json')}\n压缩证据：${join(options.outputDirectory, 'evidence.json.gz')}\n清理：${report.cleanup.state}${report.cleanup.directory ? '，保留路径：' + report.cleanup.directory : ''}`);
         if (report.state !== 'completed' || report.rows.some(row => row.evaluation?.status.classification !== 'passed')) process.exitCode = 1;
       } finally { process.removeListener('SIGINT', cancel); process.removeListener('SIGTERM', cancel); }

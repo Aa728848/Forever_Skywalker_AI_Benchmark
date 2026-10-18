@@ -1,6 +1,6 @@
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { closeSync, mkdirSync, openSync, readFileSync } from 'node:fs';
+import { closeSync, mkdirSync, openSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { controlledTestCommand } from '@fsa/tasks';
 
@@ -144,16 +144,71 @@ export interface ContainerRuntimeOptions {
   readonly command?: string;
   readonly captureDir: string;
   readonly timeoutMs?: number;
+  /** 引擎未就绪时是否尝试拉起 Docker Desktop；默认开启。 */
+  readonly autoStart?: boolean;
+  /** 拉起后等待引擎就绪的最长时间。 */
+  readonly startupTimeoutMs?: number;
 }
 
-/** 探测容器运行时与守护进程；不可用时抛 InfrastructureUnavailableError。 */
+/**
+ * Docker Desktop 在 Windows 上的启动入口；只在这些已知位置存在时使用。
+ * 引擎没起来时自动拉起，避免把「Docker 没开」当成基础设施不可用的死路。
+ */
+function dockerDesktopLauncher(): string | null {
+  if (process.platform !== 'win32') return null;
+  const programFiles = process.env.ProgramFiles ?? 'C:/Program Files';
+  const candidate = join(programFiles, 'Docker', 'Docker', 'Docker Desktop.exe');
+  return existsSync(candidate) ? candidate : null;
+}
+
+/**
+ * 拉起 Docker Desktop 并等待引擎就绪；返回是否在超时内连上。
+ *
+ * 只在「调用方没有指定自定义 runtime」且「本机确实有 Docker Desktop」时才尝试：
+ * 指定的 runtime 是调用方的显式选择（测试、远程守护进程、别的 CLI），
+ * 替它去启动 Docker Desktop 既无意义，也会让「运行时不可用」这个结论迟到两分钟。
+ */
+function startContainerRuntime(command: string, options: ContainerRuntimeOptions): boolean {
+  if (options.command !== undefined && options.command !== 'docker') return false;
+  if (command !== 'docker') return false;
+  const launcher = dockerDesktopLauncher();
+  if (launcher === null) return false;
+  try {
+    const child = spawn(launcher, [], { detached: true, stdio: 'ignore', windowsHide: true });
+    child.unref();
+  } catch { return false; }
+  // 引擎启动通常要十几秒；按 2 秒一次轮询到超时，成功一次即可。
+  const deadline = Date.now() + (options.startupTimeoutMs ?? 120_000);
+  while (Date.now() < deadline) {
+    const probe = captureCommand([command, 'version', '--format', '{{.Server.Version}}'], {
+      timeoutMs: 15_000,
+      captureDir: options.captureDir,
+      label: 'runtime-wait',
+    });
+    if (probe.exitCode === 0 && probe.stdout.trim() !== '') return true;
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 2_000);
+  }
+  return false;
+}
+
+/** 探测容器运行时与守护进程；引擎未启动时先尝试启动，仍不可用则抛 InfrastructureUnavailableError。 */
 export function probeContainerRuntime(options: ContainerRuntimeOptions): ContainerRuntime {
   const command = options.command ?? process.env.BENCH_CONTAINER_RUNTIME ?? 'docker';
-  const probe = captureCommand([command, 'version', '--format', '{{.Server.Version}}'], {
+  const label = 'runtime-probe';
+  let probe = captureCommand([command, 'version', '--format', '{{.Server.Version}}'], {
     timeoutMs: options.timeoutMs ?? 30_000,
     captureDir: options.captureDir,
-    label: 'runtime-probe',
+    label,
   });
+  if (probe.exitCode !== 0 && options.autoStart !== false) {
+    if (startContainerRuntime(command, options)) {
+      probe = captureCommand([command, 'version', '--format', '{{.Server.Version}}'], {
+        timeoutMs: options.timeoutMs ?? 30_000,
+        captureDir: options.captureDir,
+        label: 'runtime-probe-after-start',
+      });
+    }
+  }
   if (probe.exitCode !== 0) {
     const detail = (probe.stderr.trim() || probe.stdout.trim()).split('\n')[0] ?? '';
     throw new InfrastructureUnavailableError('容器运行时不可用（' + command + ' version 退出码 ' + String(probe.exitCode) + '）：' + detail.slice(0, 200));

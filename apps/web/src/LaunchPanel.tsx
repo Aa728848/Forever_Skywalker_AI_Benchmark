@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { experimentDetailValidator, experimentListValidator, type ExperimentDetail, type ExperimentRow, type Task } from '@fsa/contracts';
+import { LiveStream } from './LiveStream.tsx';
 import { ProgressLog } from './ProgressLog.tsx';
 
 /**
@@ -448,6 +449,7 @@ export function LaunchPanel({ tasks }: { tasks: Task[] }) {
               </div>}
               <p className={'state-tag ' + residueKind(current.residue.status, current.merged.process)}>{residueLabel(current.residue.status, current.merged.process)}</p>
               <p>{current.residue.detail}</p>
+              <LiveStream launchId={current.launchId} running={current.merged.process === 'live'} />
               {shown !== null && <>
                 <h3>逐条作答 <small>{shown.rows.length} 条</small></h3>
                 <div className="checks-table rows-table"><table>

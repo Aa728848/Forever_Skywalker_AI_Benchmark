@@ -247,8 +247,8 @@ await new Promise(r => setTimeout(r, Number(process.env.FAKE_SLEEP_MS ?? 300)));
     const at = parallel.args.indexOf('--concurrency');
     expect(at).toBeGreaterThanOrEqual(0);
     expect(parallel.args[at + 1]).toBe('3');
-    // 越界被拒。
-    await expect(launches.launch(launchRequest(h, { concurrency: 9 }))).rejects.toThrow(/并行度/);
+    // 越界被拒：上限与 @fsa/evaluation 的 validateComparison 保持一致（现为 16）。
+    await expect(launches.launch(launchRequest(h, { concurrency: 17 }))).rejects.toThrow(/并行度/);
     await expect(launches.launch(launchRequest(h, { concurrency: 0 }))).rejects.toThrow(/并行度/);
   }, 30_000);
   it('新建路径仍然用 --experiment-id，不受续跑改动影响', async () => {

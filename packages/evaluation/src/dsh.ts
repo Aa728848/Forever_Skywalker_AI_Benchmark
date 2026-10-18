@@ -352,6 +352,12 @@ export interface DshRunOptions {
   initializeTimeoutMs?: number;
   signal?: AbortSignal;
   env?: NodeJS.ProcessEnv;
+  /**
+   * 作答过程中的实时事件回调（思考/输出片段、工具调用等）。
+   * 只用于给操作者看「正在发生什么」，不参与判定：判定仍然只依据落盘的最终结果，
+   * 因此回调抛错或缺失都不改变作答语义。
+   */
+  onEvent?: (event: DshEvent) => void;
 }
 
 export interface DshInstallation {
@@ -381,7 +387,7 @@ export interface DshRunResult {
   cleanupScope: 'sdk-runtime';
 }
 
-interface DshEvent { type: string; data: Record<string, unknown> }
+export interface DshEvent { type: string; data: Record<string, unknown> }
 export interface DshNotification { method: string; params: Record<string, unknown> }
 export interface DshHarness {
   /** SDK 高层 run 会略过首条 prompt 收件前的配置事件；独立订阅保留实际预设事实。 */
@@ -676,7 +682,12 @@ export async function runDsh(options: DshRunOptions, dependencies: DshDependenci
         onNotification(notification) {
           if (notification.method !== 'session.event' || notification.params.sessionId !== options.sessionId) return;
           const event = notification.params.event;
-          if (record(event) && typeof event.type === 'string' && record(event.data)) events.push({ type: event.type, data: event.data });
+          if (record(event) && typeof event.type === 'string' && record(event.data)) {
+            const captured = { type: event.type, data: event.data };
+            events.push(captured);
+            // 实时面板用；回调出错不能影响作答本身，因此在这里吞掉异常。
+            try { options.onEvent?.(captured); } catch { /* 展示失败不影响作答 */ }
+          }
         },
       });
     });

@@ -158,6 +158,10 @@ function scoreSummary(rows: ExperimentRow[]) {
     ? sorted[(sorted.length - 1) / 2]!
     : (sorted[sorted.length / 2 - 1]! + sorted[sorted.length / 2]!) / 2;
   const below = totals.filter(value => value < 70).length;
+  // 标准通过情况：只统计执行器给出了 checksTotal 的行，历史报告没有该字段就不计入。
+  const withChecks = scored.filter(row => typeof row.checksTotal === 'number' && row.checksTotal > 0);
+  const checksTotal = withChecks.reduce((sum, row) => sum + (row.checksTotal ?? 0), 0);
+  const checksFailed = withChecks.reduce((sum, row) => sum + (row.checkFailures?.length ?? 0), 0);
   return {
     scored: scored.length,
     pending,
@@ -167,6 +171,10 @@ function scoreSummary(rows: ExperimentRow[]) {
     minimum: sorted[0] ?? null,
     maximum: sorted.at(-1) ?? null,
     belowThreshold: below,
+    checksRows: withChecks.length,
+    checksTotal,
+    checksFailed,
+    checksPassed: checksTotal - checksFailed,
   };
 }
 
@@ -387,7 +395,30 @@ export function ReportCenter({ onCount }: { onCount?: (count: number) => void })
             <p className="experiment-path">报告目录 {current.directoryName} · 读取于 {time(current.modifiedAt)}</p>
             {current.status === 'unreadable'
               ? <div className="warn broken" role="alert"><b>该实验报告不可读</b><p>{current.error ?? '原因未登记。'}</p><p>列表不会隐藏损坏报告；修复 experiment.json 后点击「刷新报告」即可重新读取。明细请求会返回 422，页面其余部分不受影响。</p><button className="secondary" onClick={() => setRevision(value => value + 1)}>刷新报告</button></div>
-              : currentFailure ? <div className="error" role="alert">{currentFailure}<button onClick={() => setRevision(value => value + 1)}>重新加载明细</button></div>
+              : null}
+            {current.status === 'unreadable' && <>
+              <h3>清理这份报告</h3>
+              <div className="cleanup-block">
+                <p>损坏的报告同样可以清理。清理会把报告目录移进报告根下的 <code>.trash</code>，文件不会删除，随时可以手动移回。</p>
+                <div className="token-bar">
+                  <label htmlFor="report-token-unreadable">运行令牌</label>
+                  <input id="report-token-unreadable" type="password" autoComplete="off" value={token} placeholder="x-bench-token" onChange={event => setToken(event.target.value)} />
+                </div>
+                {pendingCleanup === current.reportId
+                  ? <div className="warn broken" role="alert">
+                    <b>确认清理「{current.id ?? current.directoryName}」？</b>
+                    <div className="report-actions">
+                      <button className="primary" disabled={cleanupBusy} onClick={() => void cleanReport(current.reportId)}>确认清理</button>
+                      <button className="secondary" disabled={cleanupBusy} onClick={() => setPendingCleanup(null)}>取消</button>
+                    </div>
+                  </div>
+                  : <div className="report-actions">
+                    <button className="secondary" disabled={cleanupBusy} onClick={() => { setCleanupResult(null); setPendingCleanup(current.reportId); }}>清理这份报告…</button>
+                    <span>不会删除文件，只移入回收目录。</span>
+                  </div>}
+              </div>
+            </>}
+            {current.status !== 'unreadable' && (currentFailure ? <div className="error" role="alert">{currentFailure}<button onClick={() => setRevision(value => value + 1)}>重新加载明细</button></div>
               : shown === null ? <div className="empty" role="status">正在加载报告明细…</div>
               : <>
                 <div className="meta-grid">
@@ -417,7 +448,10 @@ export function ReportCenter({ onCount }: { onCount?: (count: number) => void })
                       <div><span>中位总分</span><b>{fixed(summary.median)}{summary.median === null ? '' : ' /100'}</b></div>
                       <div><span>最低 / 最高</span><b>{fixed(summary.minimum)} / {fixed(summary.maximum)}</b></div>
                       <div><span>低于 70 分</span><b>{summary.belowThreshold} 条</b></div>
+                      <div><span>标准通过</span><b>{summary.checksRows === 0 ? '未登记' : summary.checksPassed + ' / ' + summary.checksTotal}</b></div>
+                      <div><span>标准未通过</span><b>{summary.checksRows === 0 ? '未登记' : summary.checksFailed + ' 项'}</b></div>
                     </div>
+                    {summary.checksRows > 0 && <p className="field-hint">标准通过按检查项计：通过 {summary.checksPassed} 项、未通过 {summary.checksFailed} 项，覆盖 {summary.checksRows} 条已评分作答。</p>}
                     <p className="field-hint">
                       {summary.scored === 0
                         ? '本次实验没有取得任何完整总分，无法给出平均分。'
@@ -435,7 +469,7 @@ export function ReportCenter({ onCount }: { onCount?: (count: number) => void })
                 {/* 行级状态是三种说法，不是两种：跑完且分数已出 / 跑完但分数待定（写明原因）/ 真的没跑完。
                     「跑完但待定」一旦被叫成「未完成」，一份 state=completed 的报告就会看起来还有没跑完的行。 */}
                 {shown.rows.length === 0 ? <div className="empty">该实验没有作答记录。</div> : <div className="checks-table rows-table"><table>
-                  <thead><tr><th>题目</th><th>预设</th><th>思考等级</th><th>次数</th><th>当前阶段</th><th>行级状态</th><th>待定原因</th><th>结束原因</th><th>作答秒数</th><th>验证结论</th><th>分数</th><th>运行 / 尝试</th></tr></thead>
+                  <thead><tr><th>题目</th><th>预设</th><th>思考等级</th><th>次数</th><th>当前阶段</th><th>行级状态</th><th>待定原因</th><th>结束原因</th><th>作答秒数</th><th>验证结论</th><th>标准通过</th><th>分数</th><th>运行 / 尝试</th></tr></thead>
                   <tbody>{shown.rows.map((row, index) => {
                     const state = rowState(row);
                     return <tr key={row.taskId + '-' + row.preset + '-' + row.mode + '-' + row.repetition + '-' + index}>
@@ -455,6 +489,12 @@ export function ReportCenter({ onCount }: { onCount?: (count: number) => void })
                       : (row.durationMs / 1000).toFixed(1)}</td>
                     {/* 「验证结论」只回答验证本身：跑完的行没有结论时写「结论未登记」，绝不能写成像没跑过的样子。 */}
                     <td>{row.classification ?? (row.phase === 'done' ? '结论未登记' : '尚无结论')}</td>
+                    <td>{(() => {
+                      const total = row.checksTotal;
+                      if (typeof total !== 'number' || total <= 0) return '—';
+                      const failed = row.checkFailures?.length ?? 0;
+                      return <span title={(row.checkFailures ?? []).join('、') || '全部通过'}>{total - failed} / {total}</span>;
+                    })()}</td>
                     <td>{number(row.total)}</td>
                     <td>{row.runId && row.attemptId ? row.runId + '/' + row.attemptId : '—'}</td>
                   </tr>; })}</tbody>
@@ -530,7 +570,7 @@ export function ReportCenter({ onCount }: { onCount?: (count: number) => void })
                     </div>}
                 </div>
                 <footer className="report-meta">实验 {shown.id ?? shown.directoryName} · 状态 {shown.state ?? '未登记'}<br />experiment.json · {shown.rows.length} 条记录 · {shown.progress.length} 条进度</footer>
-              </>}
+              </>)}
           </>}
         </article>
       </div>}

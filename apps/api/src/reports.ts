@@ -137,6 +137,28 @@ function stringArray(value: unknown, label: string): string[] {
   return value as string[];
 }
 
+/**
+ * 从 evaluation.status 里投影标准通过情况。缺席按 undefined 处理（历史报告没有这些字段），
+ * 类型不符则视为报告损坏——不静默补成 0，那会把「不知道」说成「全没通过」。
+ */
+function projectCheckOutcome(status: Record<string, unknown> | null, label: string): { checksTotal?: number | null; checkFailures?: string[] } {
+  if (status === null) return {};
+  const failures = status.knownFailures;
+  const checks = status.checks;
+  if (!Array.isArray(failures) && !Array.isArray(checks)) return {};
+  const ids = Array.isArray(failures)
+    ? failures.flatMap((item, index) => {
+      const record = optionalRecord(item);
+      const id = record === null ? null : optionalText(record.id, `${label}的 knownFailures[${index}].id`);
+      return id === null ? [] : [id];
+    })
+    : [];
+  // 总数由执行器写入 status.checksTotal（旧报告没有该字段，按 null 处理，页面退回只显示总分）。
+  const raw = status.checksTotal;
+  const total = typeof raw === 'number' && Number.isSafeInteger(raw) && raw >= 0 ? raw : null;
+  return { checksTotal: total, checkFailures: ids };
+}
+
 /** 逐条记录只投影出口需要的字段；缺字段或类型不符一律视为报告损坏，不做静默补值。 */
 function projectRow(value: unknown, index: number): ExperimentRow {
   const label = `第 ${index + 1} 条作答记录`;
@@ -166,6 +188,7 @@ function projectRow(value: unknown, index: number): ExperimentRow {
     runId: status === null ? null : optionalText(status.runId, `${label}的 runId`),
     attemptId: status === null ? null : optionalText(status.attemptId, `${label}的 attemptId`),
     total: scoring === null ? null : optionalScore(scoring.total, `${label}的 total`),
+    ...projectCheckOutcome(status, label),
   };
 }
 

@@ -969,6 +969,7 @@ export function readRunStatus(store: RunStore, runId: string, attemptId: string)
     verifiedAt: execution?.finishedAt ?? null,
     knownFailures: checks.filter(check => check.status === 'failed').map(check => ({ id: check.id, kind: check.kind, critical: check.critical })),
     missingChecks: checks.filter(check => check.status === 'not-run').map(check => check.id),
+    checksTotal: execution === null ? null : checks.length,
     retryable: { allowed: retryable, reason: retryable ? classification : null, sameSnapshotOnly: retryable },
     scoring: score === null
       ? { mode: 'pending', functional: null, quality: null, total: null, reason: '尚未取得受控执行结论，总分待定。' }

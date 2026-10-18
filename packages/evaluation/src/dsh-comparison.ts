@@ -7,7 +7,7 @@ import { readRunStatus, verifySubmission } from '@fsa/executor';
 import { createEnvelope, createRunStore, digestTree, type RunStore } from '@fsa/runs';
 import { exportWorkspace } from '@fsa/tasks';
 import { createQualityProvider } from './index.ts';
-import { DshCleanupError, resolveDshWorkspacePermission, runDsh, type DshPreset, type DshRunOptions, type DshRunResult, type DshWorkspacePermission } from './dsh.ts';
+import { DshCleanupError, resolveDshWorkspacePermission, runDsh, type DshEvent, type DshPreset, type DshRunOptions, type DshRunResult, type DshWorkspacePermission } from './dsh.ts';
 import { inspectRunSelection, summarizeRuns } from './suite.ts';
 import { archiveComparisonEvidence, cleanupComparisonScratch, createComparisonScratch, restoreComparisonEvidence } from './comparison-artifacts.ts';
 
@@ -149,6 +149,32 @@ export interface ComparisonServices {
   signal?: AbortSignal;
   env?: NodeJS.ProcessEnv;
   onProgress?: (message: string) => void;
+  /**
+   * 作答过程中的实时事件（思考/输出片段、工具调用）。只用于「作答中」面板的展示，
+   * 不写进 experiment.json：报告是结论载体，不是会话记录，逐 token 落盘会让报告膨胀且无法复读。
+   */
+  onEvent?: (row: ComparisonRow, event: DshEvent) => void;
+}
+
+/**
+ * 把一条 DSH 事件压成一行终端可读的片段；与展示无关的事件返回 null。
+ * 只做裁剪与截断，不改写内容：看到的就是模型吐出的原文。
+ */
+export function liveEventLine(taskId: string, preset: string, mode: string, event: DshEvent): string | null {
+  const prefix = '  ' + taskId + ' · ' + preset + '/' + mode + ' › ';
+  const text = typeof event.data.text === 'string' ? event.data.text
+    : typeof event.data.delta === 'string' ? event.data.delta
+      : typeof event.data.content === 'string' ? event.data.content : null;
+  if (text !== null && text.trim() !== '') {
+    const kind = event.type.includes('thinking') || event.type.includes('reasoning') ? '思考' : '输出';
+    const flat = text.replace(/\s+/g, ' ').trim();
+    return prefix + kind + '：' + (flat.length > 160 ? flat.slice(0, 160) + '…' : flat);
+  }
+  if (event.type.startsWith('tool/')) {
+    const name = typeof event.data.name === 'string' ? event.data.name : typeof event.data.toolName === 'string' ? event.data.toolName : '';
+    return prefix + '工具' + (name === '' ? '' : ' ' + name);
+  }
+  return null;
 }
 
 export function validateComparison(options: DshComparisonOptions): void {
@@ -164,9 +190,10 @@ export function validateComparison(options: DshComparisonOptions): void {
   if (!Number.isSafeInteger(options.repeats) || options.repeats < 1 || options.repeats > 20) throw new Error('重复次数须为 1–20。');
   if (!Number.isSafeInteger(options.maxTokens) || options.maxTokens < 1) throw new Error('每次请求输出上限须为正整数。');
   if (!Number.isSafeInteger(options.timeoutMs) || options.timeoutMs < 1000 || options.timeoutMs > 86_400_000) throw new Error('每次作答时间上限须为 1 秒至 24 小时。');
-  // 上限取 8：再多也只是把同一份模型配额摊得更碎，却让限流与容器争用显著上升。
+  // 上限取 16：题库收缩到 16 题后，一次全量轮次最多就是 16 条作答，
+  // 允许一次全并行才有意义；再高只会摊薄同一份模型配额并加剧限流与容器争用。
   const concurrency = options.concurrency ?? 1;
-  if (!Number.isSafeInteger(concurrency) || concurrency < 1 || concurrency > 8) throw new Error('并行度须为 1–8 的整数。');
+  if (!Number.isSafeInteger(concurrency) || concurrency < 1 || concurrency > 16) throw new Error('并行度须为 1–16 的整数。');
 }
 
 /** 缺测不补零，也不只挑完成作答计算均分。不同实际环境或裁判不合并。 */
@@ -509,6 +536,7 @@ export async function runDshComparison(options: DshComparisonOptions, services: 
         workspace, provider: options.provider, model: options.model, reasoningEffort: row.mode,
         maxTokens: options.maxTokens, sessionId: row.sessionId, prompt: comparisonPrompt, timeoutMs: options.timeoutMs, env,
         initializeTimeoutMs,
+        ...(services.onEvent ? { onEvent: (event) => services.onEvent!(row, event) } : {}),
         ...(services.signal ? { signal: services.signal } : {}) });
       stopHeartbeat(); stopHeartbeat = null;
       if (row.solver.finishReason !== 'completed') {

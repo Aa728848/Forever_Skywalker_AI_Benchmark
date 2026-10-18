@@ -1339,3 +1339,50 @@ ol.timeline > li:last-child { padding-bottom: var(--sp-1); }
   .token-bar input { flex: 1 1 auto; min-width: 0; }
   .page-footer { flex-wrap: wrap; gap: var(--sp-2); }
 }
+
+/* ── 作答中的流式输出面板 ─────────────────────────────────────────────
+   固定高度 + 自身滚动：实时输出可以很长，但它不能把下面的逐条作答表顶出视野。
+   等宽字体保留原始排版，思考与输出片段里的换行、缩进原样可读。 */
+.live-stream {
+  margin: 16px 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--panel);
+  overflow: hidden;
+}
+.live-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--brand-soft);
+  border-bottom: 1px solid var(--brand-line);
+}
+.live-head b { color: var(--brand-strong); font-size: 13px; }
+.live-follow {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--brand-strong);
+  cursor: pointer;
+  user-select: none;
+}
+.live-output {
+  margin: 0;
+  padding: 12px 14px;
+  max-height: 380px;
+  overflow: auto;
+  background: #0f1730;
+  color: #d8e1f7;
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-word;
+  tab-size: 2;
+}
+.live-output::-webkit-scrollbar { width: 10px; height: 10px; }
+.live-output::-webkit-scrollbar-thumb { background: #2c3866; border-radius: 6px; }
+.live-output::-webkit-scrollbar-track { background: #0b1226; }

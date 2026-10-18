@@ -1,5 +1,5 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto';
-import { existsSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import Fastify, { type FastifyReply } from 'fastify';
 import { tasks, requireTask } from '@fsa/catalog';
 import { AssessmentSchema, HumanReviewSchema, RunSelectionSchema, RunSubmissionSchema, type Assessment, type HumanReview, type PreviewReport, type RunSelection, type RunSubmission } from '@fsa/contracts';
@@ -75,6 +75,18 @@ function dropEmptyBodyContentType(request: { headers: Record<string, unknown> })
   const length = request.headers['content-length'];
   const empty = (length === undefined || length === '0') && request.headers['transfer-encoding'] === undefined;
   if (empty) delete request.headers['content-type'];
+}
+
+/**
+ * 读 launch.log 从 offset 起的增量。日志可能还没生成（刚发起），此时按空处理而不是报错。
+ * 单次最多回 64KB，超出的部分留给下一次轮询，避免一次把整份日志塞进响应。
+ */
+function readLaunchStream(logPath: string, offset: number): { offset: number; text: string; eof: boolean } {
+  if (logPath === '' || !existsSync(logPath)) return { offset, text: '', eof: true };
+  const content = readFileSync(logPath);
+  const start = Math.min(offset, content.length);
+  const slice = content.subarray(start, Math.min(content.length, start + 64 * 1024));
+  return { offset: start + slice.length, text: slice.toString('utf8'), eof: start + slice.length >= content.length };
 }
 
 export function buildApp(databasePath = ':memory:', options: AppOptions = {}) {
@@ -321,6 +333,23 @@ export function buildApp(databasePath = ':memory:', options: AppOptions = {}) {
     catch (error) {
       if (error instanceof CleanupError) return reply.code(error.status).send({ error: error.message });
       return reportFailure(reply, error);
+    }
+  });
+  /**
+   * 作答中的实时输出：只读尾部 launch.log。
+   * 日志由 supervisor 以追加方式写入，子进程的 stdout 直接接在里面，
+   * 因此这里读到的就是作答当时打印出来的原文，不是事后重建的摘要。
+   * 按 offset 增量返回，避免前端每 2 秒整份重传。
+   */
+  app.get<{ Params: { launchId: string }; Querystring: { offset?: string } }>('/api/experiments/:launchId/stream', (request, reply) => {
+    try {
+      const view = launches.describe(request.params.launchId);
+      const offset = Number(request.query.offset ?? '0');
+      const tail = readLaunchStream(view.logPath, Number.isSafeInteger(offset) && offset >= 0 ? offset : 0);
+      return { launchId: view.launchId, state: view.state, ...tail };
+    } catch (error) {
+      if (error instanceof LaunchError) return reply.code(error.status).send({ error: error.message });
+      throw error;
     }
   });
   // 自动测评：发起、纯读进度、取消。写操作一律要求 x-bench-token。
