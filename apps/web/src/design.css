@@ -995,12 +995,12 @@ button[aria-busy="true"] { cursor: progress; }
 }
 @media (max-width: 900px) { .submit-block > .launch-grid { grid-template-columns: minmax(0, 1fr); } }
 
-/* 字段区：固定 6 列，列宽随容器等分且永不撑破。
+/* 字段区：固定 7 列，列宽随容器等分且永不撑破。
    auto-fit 会让列数随宽度跳动，同一行的字段高低不一时视觉上就散了。 */
 .launch-grid {
   display: grid;
   gap: var(--s4) var(--s5);
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   align-items: start;
   padding: var(--s5);
   margin: var(--s3) 0;
@@ -1029,21 +1029,12 @@ button[aria-busy="true"] { cursor: progress; }
 }
 .launch-field > label, .launch-field > .launch-label { margin-top: 2px; }
 .launch-field > small { color: var(--ink-4); line-height: 1.5; }
-/* 跨列的说明文字：读起来是一段话，不能挤在 260px 的字段列里换行十来次。 */
-.launch-note {
-  margin: var(--s4) 0 var(--s3);
-  padding: var(--s3) var(--s4);
-  border-left: 2px solid var(--edge-strong);
-  border-radius: 0 var(--r-sm) var(--r-sm) 0;
-  background: rgba(110, 168, 255, .04);
-  color: var(--ink-3);
-  font-size: var(--t-sm);
-  line-height: 1.7;
-  max-width: 92ch;
-}
-/* 报告根是路径输入：占位符比字段宽，给这一列多一倍宽度，避免提示被截断。 */
-/* 报告根要放得下完整路径提示，占两列刚好补满一行 6 列。 */
+/* 两处需要额外宽度，各占两列，合计 7 列正好一行：
+   - 报告根要放得下完整路径提示；
+   - 预设与思考等级是两组复选，单列只有 224px，最长的「标准（standard）」
+     本身就占满 224px，两列布局会被挤成一列。 */
 .launch-field:has(#launch-output) { grid-column: span 2; }
+.launch-field:has(.launch-checklist) { grid-column: span 2; }
 .launch-field > input, .launch-field > select { min-width: 0; width: 100%; }
 .launch-field > input::placeholder { text-overflow: ellipsis; }
 .launch-label, .launch-field > label {
@@ -1054,8 +1045,26 @@ button[aria-busy="true"] { cursor: progress; }
   color: var(--ink-4);
 }
 .launch-inline { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; min-width: 0; }
-.launch-checklist { display: flex; flex-wrap: wrap; gap: var(--s3); min-width: 0; }
-.launch-checklist label { display: inline-flex; align-items: center; gap: 6px; font-size: var(--t-sm); color: var(--ink-2); }
+/* 复选项按内容宽度排成两列：固定等宽栅格会把「标准（standard）」
+   挤成两行，而设得太宽又让每行只剩一项。用 auto-fit 配一个够放最长
+   标签的最小宽度，短标签自动两列、长标签自动单列。 */
+.launch-checklist {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9.5em, 1fr));
+  gap: var(--s2) var(--s3);
+  min-width: 0;
+}
+.launch-checklist label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: var(--t-sm);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.launch-checklist label input[type="checkbox"] { flex: 0 0 auto; }
+.launch-checklist label span, .launch-checklist label { overflow-wrap: anywhere; }
 .planned-answers {
   display: flex;
   align-items: baseline;
@@ -1084,19 +1093,61 @@ button[aria-busy="true"] { cursor: progress; }
 }
 
 /* 配置页 · 分组与字段 */
-.config-grid { display: grid; gap: var(--s4); grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); min-width: 0; }
+/* 三组固定三列。auto-fit 在窄屏会掉成两列、宽屏又拉成四列，
+   同一组字段的宽度来回跳，看着永远不齐。 */
+.config-grid {
+  display: grid;
+  gap: var(--s4);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+  min-width: 0;
+}
+@media (max-width: 1400px) { .config-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 900px) { .config-grid { grid-template-columns: minmax(0, 1fr); } }
+
 .config-group {
   display: grid;
-  gap: var(--s3);
+  gap: var(--s4);
   padding: var(--s5);
   border-radius: var(--r-md);
   border: 1px solid var(--edge);
   background: var(--surface);
   min-width: 0;
+  align-content: start;
 }
-.field-head { display: flex; align-items: baseline; gap: var(--s3); flex-wrap: wrap; min-width: 0; }
-.field-head code { color: var(--cyan); font-size: var(--t-xs); overflow-wrap: anywhere; }
-.field-input { width: 100%; }
+/* 组标题与组说明是一对，不要和下面的字段用同样的间距。
+   padding 覆盖 .detail 的默认内距，让三列卡片的内边距一致。 */
+.config-group > h3 { margin: 0; padding: 0; }
+.config-group > p { margin: 0; max-width: 62ch; }
+
+/* 单个字段：标签行 / 控件 / 提示 三段纵向排开。
+   这条规则在重写设计系统时丢了，.field 退回成 display:block，
+   实测标签底部与输入框顶部间距是 0px——标签、键名、控件全贴在一起。 */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.field + .field { margin-top: var(--s2); }
+.field-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2) var(--s3);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.field-head label { color: var(--ink-2); font-weight: 550; }
+.field-head code {
+  color: var(--cyan);
+  font-size: var(--t-micro);
+  letter-spacing: .04em;
+  overflow-wrap: anywhere;
+}
+/* 控件统一占满字段宽度：默认 select/input 尺寸不一，一列里宽窄交替很乱。 */
+.field > select, .field > input, .field-input > input, .field-input > select { width: 100%; min-width: 0; }
+.field > .field-hint, .field > small { margin: 0; line-height: 1.5; }
+.field-input { display: flex; flex-direction: column; gap: 6px; width: 100%; min-width: 0; }
 .field-error { color: var(--danger); font-size: var(--t-xs); }
 
 /* 模态：配置页的确认对话框 */

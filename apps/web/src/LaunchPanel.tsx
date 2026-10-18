@@ -414,8 +414,6 @@ export function LaunchPanel({ tasks }: { tasks: Task[] }) {
       </div>
     </div>
 
-    <p className="launch-note">1 = 串行。大于 1 时同时推进多道题：作答、容器验证与裁判评分重叠进行。实测整轮串行约 259 分钟（作答 46%、验证与评分 54%），提高并行度可让两者不再互相等待。每题仍用独立 workspace、独立容器与独立裁判会话，结果与串行可比。</p>
-
     <div className="launch-actions">
       <div className="planned-answers" role="status">计划总作答次数 <b>{answers}</b> 次 <small>= {taskCount} 题 × {form.presets.length} 预设 × {form.modes.length} 等级 × {form.repeats} 重复</small></div>
       <button className="primary" disabled={busy || answers === 0} aria-busy={busy} onClick={() => void submit(true)}>仅预检</button>
