@@ -567,15 +567,17 @@ button[aria-busy="true"] { cursor: progress; }
   text-transform: uppercase;
   color: var(--cyan);
 }
-.detail ol { margin: 0; padding-left: 0; list-style: none; display: grid; gap: var(--s3); counter-reset: step; }
-.detail ol li {
+/* 只作用于「验收不变量」这个直接子列表。写成 .detail ol 会连 ProgressLog 的 .timeline
+   一起选中：它的 ::before 会被这里的序号规则顶掉，圆点变成压字的「01」。 */
+.detail > ol { margin: 0; padding-left: 0; list-style: none; display: grid; gap: var(--s3); counter-reset: step; }
+.detail > ol > li {
   position: relative;
   padding-left: var(--s6);
   color: var(--ink-2);
   font-size: var(--t-sm);
   counter-increment: step;
 }
-.detail ol li::before {
+.detail > ol > li::before {
   content: counter(step, decimal-leading-zero);
   position: absolute;
   left: 0; top: 0;
@@ -787,6 +789,10 @@ button[aria-busy="true"] { cursor: progress; }
   color: var(--ink-4);
 }
 .token-bar label { font-family: var(--font-mono); text-transform: uppercase; letter-spacing: .1em; }
+/* 令牌条横跨整行：它是「先填令牌再动表单」的前置条件，夹在字段列里会被挤扁。 */
+.token-bar, .submit-block > .token-bar { grid-column: 1 / -1; }
+.token-bar input { flex: 0 1 260px; min-width: 140px; }
+.token-bar span { flex: 1 1 220px; min-width: 0; color: var(--ink-4); }
 
 .detail-top, .section-head, .report-actions, .launch-actions { display: flex; align-items: center; gap: var(--s3); }
 .report-actions, .launch-actions { flex-wrap: wrap; margin: var(--s3) 0; }
@@ -963,10 +969,11 @@ button[aria-busy="true"] { cursor: progress; }
 .live-elapsed { color: var(--cyan); font-variant-numeric: tabular-nums; }
 
 /* 发起测评 · 表单网格 */
-.launch-grid, .submit-block {
-  display: grid;
-  gap: var(--s3);
-  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+/* 表单容器：只负责卡片的边框与内边距，不再替内容决定列数。
+   把「卡片」和「网格」写在同一条规则里，会让标题、说明段落这些流式内容
+   也被当成网格单元格横向摊开（提交面板就是这样散架的）。列布局交给下面
+   专门的 .launch-grid，它只管真正的字段。 */
+.submit-block {
   padding: var(--s5);
   margin: var(--s3) 0;
   border-radius: var(--r-md);
@@ -974,7 +981,71 @@ button[aria-busy="true"] { cursor: progress; }
   background: var(--surface);
   min-width: 0;
 }
-.launch-field { display: grid; gap: 6px; min-width: 0; }
+.submit-block > h3 { margin: 0 0 var(--s2); }
+.submit-block > p { margin: 0 0 var(--s3); max-width: 78ch; color: var(--ink-3); }
+
+/* 提交面板里的字段区只是三个字段，不需要 5 列；外层卡片已经提供了边框与底色，
+   这里再画一层就是箱套箱。 */
+.submit-block > .launch-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: none;
+}
+@media (max-width: 900px) { .submit-block > .launch-grid { grid-template-columns: minmax(0, 1fr); } }
+
+/* 字段区：固定 6 列，列宽随容器等分且永不撑破。
+   auto-fit 会让列数随宽度跳动，同一行的字段高低不一时视觉上就散了。 */
+.launch-grid {
+  display: grid;
+  gap: var(--s4) var(--s5);
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  align-items: start;
+  padding: var(--s5);
+  margin: var(--s3) 0;
+  border-radius: var(--r-md);
+  border: 1px solid var(--edge);
+  background: var(--surface);
+  min-width: 0;
+}
+@media (max-width: 1180px) { .launch-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 820px) {
+  .launch-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .launch-field:has(#launch-output) { grid-column: 1 / -1; }
+}
+@media (max-width: 560px) {
+  .launch-grid { grid-template-columns: minmax(0, 1fr); }
+  .launch-field:has(#launch-output) { grid-column: auto; }
+}
+/* 字段列只是一个纵向堆栈。不要用 subgrid 去跨列对齐：
+   各列字段数量不同（有的 1 个、有的 4 个），subgrid 会把整列压进父网格的
+   两行里，标签和控件直接叠在一起。 */
+.launch-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.launch-field > label, .launch-field > .launch-label { margin-top: 2px; }
+.launch-field > small { color: var(--ink-4); line-height: 1.5; }
+/* 跨列的说明文字：读起来是一段话，不能挤在 260px 的字段列里换行十来次。 */
+.launch-note {
+  margin: var(--s4) 0 var(--s3);
+  padding: var(--s3) var(--s4);
+  border-left: 2px solid var(--edge-strong);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: rgba(110, 168, 255, .04);
+  color: var(--ink-3);
+  font-size: var(--t-sm);
+  line-height: 1.7;
+  max-width: 92ch;
+}
+/* 报告根是路径输入：占位符比字段宽，给这一列多一倍宽度，避免提示被截断。 */
+/* 报告根要放得下完整路径提示，占两列刚好补满一行 6 列。 */
+.launch-field:has(#launch-output) { grid-column: span 2; }
+.launch-field > input, .launch-field > select { min-width: 0; width: 100%; }
+.launch-field > input::placeholder { text-overflow: ellipsis; }
 .launch-label, .launch-field > label {
   font-family: var(--font-mono);
   font-size: var(--t-micro);

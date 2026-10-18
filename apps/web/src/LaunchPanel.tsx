@@ -382,9 +382,6 @@ export function LaunchPanel({ tasks }: { tasks: Task[] }) {
         <label htmlFor="launch-concurrency">并行度（1–16）</label>
         <input id="launch-concurrency" type="number" min={1} max={8} value={form.concurrency}
           onChange={event => edit({ concurrency: Math.min(8, Math.max(1, Number(event.target.value) || 1)) })} />
-        <small>1 = 串行。大于 1 时同时推进多道题：作答、容器验证与裁判评分重叠进行。
-          实测整轮串行约 259 分钟（作答 46%、验证与评分 54%），提高并行度可让两者不再互相等待。
-          每题仍用独立 workspace、独立容器与独立裁判会话，结果与串行可比。</small>
       </div>
       <div className="launch-field">
         <label htmlFor="launch-output">报告根</label>
@@ -392,6 +389,8 @@ export function LaunchPanel({ tasks }: { tasks: Task[] }) {
         <label className="launch-inline"><input type="checkbox" checked={form.measurePerformance} onChange={event => edit({ measurePerformance: event.target.checked })} /> 启用性能测量（关闭时性能分保持缺失）</label>
       </div>
     </div>
+
+    <p className="launch-note">1 = 串行。大于 1 时同时推进多道题：作答、容器验证与裁判评分重叠进行。实测整轮串行约 259 分钟（作答 46%、验证与评分 54%），提高并行度可让两者不再互相等待。每题仍用独立 workspace、独立容器与独立裁判会话，结果与串行可比。</p>
 
     <div className="launch-actions">
       <div className="planned-answers" role="status">计划总作答次数 <b>{answers}</b> 次 <small>= {taskCount} 题 × {form.presets.length} 预设 × {form.modes.length} 等级 × {form.repeats} 重复</small></div>
