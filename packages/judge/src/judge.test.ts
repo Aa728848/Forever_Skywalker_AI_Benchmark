@@ -10,7 +10,7 @@ import {
 const request: ReviewRequest = {
   runId: 'run-1',
   attemptId: 'attempt-1',
-  taskId: 'CACHE-02',
+  taskId: 'CACHE-04',
   promptVersion: 'review-v1',
   materials: [{ id: 'candidate-1', kind: 'candidate', text: 'export const x = 1;' }],
 };
@@ -61,7 +61,7 @@ describe('适配器预算与判决校验', () => {
   });
 
   it('拒绝与请求不一致或提示版本不符的判决', async () => {
-    const mismatched = JSON.stringify(sampleVerdict({ runId: 'run-2', attemptId: 'attempt-1', taskId: 'CACHE-02' }, scores, ['candidate-1']));
+    const mismatched = JSON.stringify(sampleVerdict({ runId: 'run-2', attemptId: 'attempt-1', taskId: 'CACHE-04' }, scores, ['candidate-1']));
     const judgeA = createJudge(config, 'secret', async () => ({ text: mismatched, inputTokens: 1, outputTokens: 1 }));
     await expect(judgeA.review(request)).rejects.toThrow(/run\/attempt/);
 
@@ -232,7 +232,7 @@ describe('脚本评审', () => {
   it('按顺序返回判决并累计成本，用尽后拒绝', async () => {
     const judge = createScriptedJudge([JSON.stringify(sampleVerdict(request, scores, ['candidate-1']))]);
     const outcome = await judge.review(request);
-    expect(outcome.verdict.taskId).toBe('CACHE-02');
+    expect(outcome.verdict.taskId).toBe('CACHE-04');
     expect(outcome.inputTokens).toBe(100);
     await expect(judge.review(request)).rejects.toThrow(/没有更多响应/);
   });

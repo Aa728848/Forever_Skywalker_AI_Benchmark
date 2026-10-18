@@ -72,7 +72,7 @@ function writeLaunchRecord(childScript: string): void {
     launchId, supervisorToken: 'e2e-cancel-supervisor-token', kind: 'comparison', experimentId: launchId,
     outputRoot: join(process.env.BENCH_E2E_ROOT!, 'experiments'),
     startedAt: new Date().toISOString(), state: 'starting', exitCode: null, logPath: join(launchesRoot, launchId + '.log'),
-    plan: { taskIds: ['CACHE-02'], presets: ['standard'], modes: ['off'], repeats: 1, timeoutMinutes: 20, maxTokens: 16384,
+    plan: { taskIds: ['CACHE-04'], presets: ['standard'], modes: ['off'], repeats: 1, timeoutMinutes: 20, maxTokens: 16384,
       measurePerformance: false, provider: 'e2e-provider', model: 'e2e-model', answers: 1, concurrency: 1 },
     args: [], childScript, childArgs: [], exitPath, cancelPath,
     pid: null, pidStartedAt: null, childPid: null, childStartedAt: null, heartbeatAt: null,

@@ -25,14 +25,14 @@ function evaluation(classification: string | null, runId: string | null, attempt
 }
 
 const rows = [
-  { taskId: 'CACHE-02', taskVersion: '0.3.0', preset: 'standard', mode: 'off', repetition: 1, sessionId: 'e2e-session-1', phase: 'done', solver: solver('completed', 12340), evaluation: evaluation('passed', 'run-e2e-1', 'attempt-e2e-1', 100), error: null },
+  { taskId: 'CACHE-04', taskVersion: '0.3.0', preset: 'standard', mode: 'off', repetition: 1, sessionId: 'e2e-session-1', phase: 'done', solver: solver('completed', 12340), evaluation: evaluation('passed', 'run-e2e-1', 'attempt-e2e-1', 100), error: null },
   // 第 2 条：作答已完成（phase=done、验证结论 passed）但总分待定——它不是「未完成」，
   // 只是独立评审没通过协议校验（与 exp-2026-09-27T05-09-39-576Z-0c9ca2df 里的 LSP-02 同形）。
-  { taskId: 'CACHE-02', taskVersion: '0.3.0', preset: 'standard', mode: 'high', repetition: 1, sessionId: 'e2e-session-2', phase: 'done', solver: solver('completed', 22100),
+  { taskId: 'CACHE-04', taskVersion: '0.3.0', preset: 'standard', mode: 'high', repetition: 1, sessionId: 'e2e-session-2', phase: 'done', solver: solver('completed', 22100),
     evaluation: evaluation('passed', 'run-e2e-2', 'attempt-e2e-2', null, '独立评审未通过协议校验，质量分与总分待定。'), error: null },
-  { taskId: 'CACHE-02', taskVersion: '0.3.0', preset: 'ptc', mode: 'off', repetition: 1, sessionId: 'e2e-session-3', phase: 'grading', solver: solver('completed', 5000), evaluation: null, error: null },
-  { taskId: 'CACHE-02', taskVersion: '0.3.0', preset: 'ptc', mode: 'high', repetition: 1, sessionId: 'e2e-session-4', phase: 'solver-stopped', solver: solver('timeout', 900000), evaluation: null, error: null },
-  { taskId: 'CACHE-02', taskVersion: '0.3.0', preset: 'minimal', mode: 'off', repetition: 1, sessionId: 'e2e-session-5', phase: 'pending', solver: null, evaluation: null, error: null },
+  { taskId: 'CACHE-04', taskVersion: '0.3.0', preset: 'ptc', mode: 'off', repetition: 1, sessionId: 'e2e-session-3', phase: 'grading', solver: solver('completed', 5000), evaluation: null, error: null },
+  { taskId: 'CACHE-04', taskVersion: '0.3.0', preset: 'ptc', mode: 'high', repetition: 1, sessionId: 'e2e-session-4', phase: 'solver-stopped', solver: solver('timeout', 900000), evaluation: null, error: null },
+  { taskId: 'CACHE-04', taskVersion: '0.3.0', preset: 'minimal', mode: 'off', repetition: 1, sessionId: 'e2e-session-5', phase: 'pending', solver: null, evaluation: null, error: null },
 ];
 
 const experimentDocument = {
@@ -42,15 +42,15 @@ const experimentDocument = {
   finishedAt: '2026-09-14T00:10:00.000Z',
   state: 'completed',
   settings: { provider: 'e2e-provider', model: 'e2e-model', presets: ['standard', 'ptc', 'minimal'], modes: ['off', 'high'], repeats: 1,
-    taskIds: ['CACHE-02'], profile: 'e2e-profile', workspacePermission: 'workspace-write', maxTokens: 4096, timeoutMs: 600000,
+    taskIds: ['CACHE-04'], profile: 'e2e-profile', workspacePermission: 'workspace-write', maxTokens: 4096, timeoutMs: 600000,
     dshRoot: '/e2e/dsh', dshHome: '/e2e/home', measurePerformance: false, outputDirectory: '/e2e/out' },
   prompt: 'E2E 夹具提示',
   rows,
   issues: ['E2E 夹具问题：仅用于验证问题区域渲染。'],
   progress: [
-    { at: '2026-09-14T00:00:00.000Z', message: 'CACHE-02 · standard / off · 第 1 次：DSH 作答中' },
-    { at: '2026-09-14T00:01:00.000Z', message: 'CACHE-02 · standard / off：Linux 验证与评分中' },
-    { at: '2026-09-14T00:02:00.000Z', message: 'CACHE-02 · ptc / high · 第 1 次：DSH 作答中' },
+    { at: '2026-09-14T00:00:00.000Z', message: 'CACHE-04 · standard / off · 第 1 次：DSH 作答中' },
+    { at: '2026-09-14T00:01:00.000Z', message: 'CACHE-04 · standard / off：Linux 验证与评分中' },
+    { at: '2026-09-14T00:02:00.000Z', message: 'CACHE-04 · ptc / high · 第 1 次：DSH 作答中' },
   ],
   evidence: { filename: 'evidence.json.gz', sha256: evidenceSha, fileCount: 3 },
   cleanup: { state: 'complete', directory: null, reason: null },
@@ -281,7 +281,7 @@ const allDoneDocument = {
   id: 'e2e-alldone-experiment',
   issues: [],
   rows: [
-    { taskId: 'CACHE-02', taskVersion: '0.3.0', preset: 'standard', mode: 'off', repetition: 1, sessionId: 'e2e-done-1', phase: 'done', solver: solver('completed', 11100), evaluation: evaluation('passed', 'run-e2e-d1', 'attempt-e2e-d1', 100), error: null },
+    { taskId: 'CACHE-04', taskVersion: '0.3.0', preset: 'standard', mode: 'off', repetition: 1, sessionId: 'e2e-done-1', phase: 'done', solver: solver('completed', 11100), evaluation: evaluation('passed', 'run-e2e-d1', 'attempt-e2e-d1', 100), error: null },
     { taskId: 'GRAPH-04', taskVersion: '0.3.0', preset: 'standard', mode: 'off', repetition: 1, sessionId: 'e2e-done-2', phase: 'done', solver: solver('completed', 12300), evaluation: evaluation('passed', 'run-e2e-d2', 'attempt-e2e-d2', 84), error: null },
   ],
 };
@@ -296,11 +296,11 @@ const pendingOnlyDocument = {
   id: 'e2e-pending-only-experiment',
   issues: [],
   rows: [
-    { taskId: 'CACHE-02', taskVersion: '0.3.0', preset: 'standard', mode: 'off', repetition: 1, sessionId: 'e2e-po-1', phase: 'done', solver: solver('completed', 11100), evaluation: evaluation('passed', 'run-e2e-po1', 'attempt-e2e-po1', 100), error: null },
+    { taskId: 'CACHE-04', taskVersion: '0.3.0', preset: 'standard', mode: 'off', repetition: 1, sessionId: 'e2e-po-1', phase: 'done', solver: solver('completed', 11100), evaluation: evaluation('passed', 'run-e2e-po1', 'attempt-e2e-po1', 100), error: null },
     // 评审未通过协议校验：验证结论仍是 passed，只是没有数值总分。
-    { taskId: 'CACHE-02', taskVersion: '0.3.0', preset: 'standard', mode: 'high', repetition: 1, sessionId: 'e2e-po-2', phase: 'done', solver: solver('completed', 22100), evaluation: evaluation('passed', 'run-e2e-po2', 'attempt-e2e-po2', null, '独立评审未通过协议校验，质量分与总分待定。'), error: null },
+    { taskId: 'CACHE-04', taskVersion: '0.3.0', preset: 'standard', mode: 'high', repetition: 1, sessionId: 'e2e-po-2', phase: 'done', solver: solver('completed', 22100), evaluation: evaluation('passed', 'run-e2e-po2', 'attempt-e2e-po2', null, '独立评审未通过协议校验，质量分与总分待定。'), error: null },
     // 连验证结论都没登记的行：它是「跑完了但结论缺失」，不是「没跑」——该列不得写成「未评分」。
-    { taskId: 'CACHE-02', taskVersion: '0.3.0', preset: 'ptc', mode: 'off', repetition: 1, sessionId: 'e2e-po-3', phase: 'done', solver: solver('completed', 3100), evaluation: null, error: null },
+    { taskId: 'CACHE-04', taskVersion: '0.3.0', preset: 'ptc', mode: 'off', repetition: 1, sessionId: 'e2e-po-3', phase: 'done', solver: solver('completed', 3100), evaluation: null, error: null },
   ],
 };
 
@@ -389,7 +389,7 @@ test('进度日志默认收起：长日志不撑开报告详情，点开才渲�
   // 一份 120 条的实验：真实上限是 500 条（comparisonProgressLimit），全展开会把「逐条作答」表挤出视野。
   const many = Array.from({ length: 120 }, (_, index) => ({
     at: '2026-09-14T00:' + String(Math.floor(index / 60)).padStart(2, '0') + ':' + String(index % 60).padStart(2, '0') + '.000Z',
-    message: 'CACHE-02 · ptc / max · 第 1 次：DSH 作答中 (' + String(index) + ')',
+    message: 'CACHE-04 · ptc / max · 第 1 次：DSH 作答中 (' + String(index) + ')',
   }));
   const document = { ...experimentDocument, id: 'e2e-long-progress', progress: many,
     settings: { ...experimentDocument.settings, provider: 'e2e-long-provider', model: 'e2e-long-model' } };

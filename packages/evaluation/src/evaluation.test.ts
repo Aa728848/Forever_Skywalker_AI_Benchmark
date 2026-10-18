@@ -13,14 +13,14 @@ it('裁判长堆栈不破坏已完成的执行记录，首次评分和补评都�
   const scratch = mkdtempSync(join(tmpdir(), 'fsa-evaluation-'));
   try {
     const candidate = join(scratch, 'candidate');
-    exportWorkspace('CACHE-02', candidate);
-    expect(applyReferencePatch(readManifest('CACHE-02'), candidate, join(scratch, 'patch')).exitCode).toBe(0);
+    exportWorkspace('CACHE-04', candidate);
+    expect(applyReferencePatch(readManifest('CACHE-04'), candidate, join(scratch, 'patch')).exitCode).toBe(0);
     const store = createRunStore(join(scratch, 'runs'));
     const message = 'cannot get property "tools" without inject\n' + 'DSH startup stack\n'.repeat(220);
     const judge: JudgeAdapter = { model: 'test', promptVersion: 'review-v1', async review() { throw new Error(message); } };
     const qualityProvider = createQualityProvider({ judge, env: {}, measurePerformance: false });
-    const envelope = createEnvelope('CACHE-02', candidate);
-    const outcome = await verifySubmission({ store, taskId: 'CACHE-02', envelope, candidateDirectory: candidate, submittedBy: 'test', qualityProvider });
+    const envelope = createEnvelope('CACHE-04', candidate);
+    const outcome = await verifySubmission({ store, taskId: 'CACHE-04', envelope, candidateDirectory: candidate, submittedBy: 'test', qualityProvider });
     const selection = { runId: envelope.runId, attemptId: envelope.attemptId };
     expect(readRunStatus(store, selection.runId, selection.attemptId)).toMatchObject({ classification: 'passed', scoring: { functional: 50, quality: null } });
     await reviewCompletedAttempt({ store, ...selection, qualityProvider });
@@ -43,8 +43,8 @@ it('第 1 轮会话失败时仍发起第 2 轮并采用它的判决，不再整�
   const scratch = mkdtempSync(join(tmpdir(), 'fsa-evaluation-round-'));
   try {
     const candidate = join(scratch, 'candidate');
-    exportWorkspace('CACHE-02', candidate);
-    expect(applyReferencePatch(readManifest('CACHE-02'), candidate, join(scratch, 'patch')).exitCode).toBe(0);
+    exportWorkspace('CACHE-04', candidate);
+    expect(applyReferencePatch(readManifest('CACHE-04'), candidate, join(scratch, 'patch')).exitCode).toBe(0);
     const store = createRunStore(join(scratch, 'runs'));
     const rounds: string[] = [];
     const judge: JudgeAdapter = {
@@ -59,8 +59,8 @@ it('第 1 轮会话失败时仍发起第 2 轮并采用它的判决，不再整�
       },
     };
     const qualityProvider = createQualityProvider({ judge, env: {}, measurePerformance: false });
-    const envelope = createEnvelope('CACHE-02', candidate, { idempotencyKey: 'evaluation-round-1-error' });
-    const outcome = await verifySubmission({ store, taskId: 'CACHE-02', envelope, candidateDirectory: candidate, submittedBy: 'test', qualityProvider });
+    const envelope = createEnvelope('CACHE-04', candidate, { idempotencyKey: 'evaluation-round-1-error' });
+    const outcome = await verifySubmission({ store, taskId: 'CACHE-04', envelope, candidateDirectory: candidate, submittedBy: 'test', qualityProvider });
     const directory = join(outcome.submission.directory, 'execution');
     // 承重断言：第 2 轮确实被发起了——这正是旧实现做不到的一步。
     expect(rounds).toEqual(['1', '2']);
@@ -87,8 +87,8 @@ it('第 2 轮判决不符合协议时保留该轮原始响应与字段路径，�
   const scratch = mkdtempSync(join(tmpdir(), 'fsa-evaluation-round-'));
   try {
     const candidate = join(scratch, 'candidate');
-    exportWorkspace('CACHE-02', candidate);
-    expect(applyReferencePatch(readManifest('CACHE-02'), candidate, join(scratch, 'patch')).exitCode).toBe(0);
+    exportWorkspace('CACHE-04', candidate);
+    expect(applyReferencePatch(readManifest('CACHE-04'), candidate, join(scratch, 'patch')).exitCode).toBe(0);
     const store = createRunStore(join(scratch, 'runs'));
     const raw = '{"dimensions":{"simplicity":{"score":80}}}';
     const judge: JudgeAdapter = {
@@ -104,8 +104,8 @@ it('第 2 轮判决不符合协议时保留该轮原始响应与字段路径，�
       },
     };
     const qualityProvider = createQualityProvider({ judge, env: {}, measurePerformance: false });
-    const envelope = createEnvelope('CACHE-02', candidate, { idempotencyKey: 'evaluation-round-error' });
-    const outcome = await verifySubmission({ store, taskId: 'CACHE-02', envelope, candidateDirectory: candidate, submittedBy: 'test', qualityProvider });
+    const envelope = createEnvelope('CACHE-04', candidate, { idempotencyKey: 'evaluation-round-error' });
+    const outcome = await verifySubmission({ store, taskId: 'CACHE-04', envelope, candidateDirectory: candidate, submittedBy: 'test', qualityProvider });
     const directory = join(outcome.submission.directory, 'execution');
     // 失败轮仍然完整留档：原始响应与字段路径可定位，不因「不再作废」而丢掉排障证据。
     const roundError = JSON.parse(readFileSync(join(directory, 'review-round-2-error.json'), 'utf8')) as { roundId: string; rawResponse: string; issues: string[] };
@@ -135,8 +135,8 @@ it('真实执行后使用冻结材料评审，三维齐备即得质量分，显�
   const scratch = mkdtempSync(join(tmpdir(), 'fsa-evaluation-'));
   try {
     const candidate = join(scratch, 'candidate');
-    exportWorkspace('CACHE-02', candidate);
-    expect(applyReferencePatch(readManifest('CACHE-02'), candidate, join(scratch, 'patch')).exitCode).toBe(0);
+    exportWorkspace('CACHE-04', candidate);
+    expect(applyReferencePatch(readManifest('CACHE-04'), candidate, join(scratch, 'patch')).exitCode).toBe(0);
     const store = createRunStore(join(scratch, 'runs'));
     const calls: ReviewRequest[] = [];
     const configuration = { provider: 'test', api: 'chat-completions' as const, model: 'scripted-test', promptVersion: 'review-v1',
@@ -152,8 +152,8 @@ it('真实执行后使用冻结材料评审，三维齐备即得质量分，显�
       },
     };
     const provider = createQualityProvider({ judge, measurePerformance: false, env: { BENCH_JUDGE_TOKEN: 'must-never-be-written' } });
-    const envelope = createEnvelope('CACHE-02', candidate, { idempotencyKey: 'evaluation-test' });
-    const request = { store, taskId: 'CACHE-02', envelope, candidateDirectory: candidate, submittedBy: 'evaluation-test', qualityProvider: provider };
+    const envelope = createEnvelope('CACHE-04', candidate, { idempotencyKey: 'evaluation-test' });
+    const request = { store, taskId: 'CACHE-04', envelope, candidateDirectory: candidate, submittedBy: 'evaluation-test', qualityProvider: provider };
     const first = await verifySubmission(request);
     expect(first.execution.classification).toBe('passed');
     expect(calls).toHaveLength(2);
@@ -242,7 +242,7 @@ it('不同题目的裁判参数不混入同一汇总，统一配置的补评修�
   };
   try {
     const selection: Array<{ runId: string; attemptId: string }> = [];
-    for (const [index, taskId] of ['CACHE-01', 'CACHE-02'].entries()) {
+    for (const [index, taskId] of ['BND-04', 'CACHE-04'].entries()) {
       const candidate = join(scratch, taskId);
       exportWorkspace(taskId, candidate);
       expect(applyReferencePatch(readManifest(taskId), candidate, join(scratch, 'patch-' + taskId)).exitCode).toBe(0);

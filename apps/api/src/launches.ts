@@ -312,7 +312,7 @@ export interface CancelOutcome {
  * ================================================================== */
 
 export interface LaunchRequest {
-  /** 题目范围：one（试一题 CACHE-02）/ all / core / difficulty / manual。 */
+  /** 题目范围：one（试一题 CACHE-04）/ all / core / difficulty / manual。 */
   scope?: string;
   taskIds?: readonly string[];
   difficulty?: string;
@@ -559,7 +559,7 @@ export function defaultLaunchesRoot(repositoryRoot: string = apiRepositoryRoot):
 function resolveScopeTaskIds(request: LaunchRequest): string[] {
   const scope = request.scope ?? 'one';
   const selectable = tasks.filter(task => task.status !== 'designed');
-  if (scope === 'one') return ['CACHE-02'];
+  if (scope === 'one') return ['CACHE-04'];
   if (scope === 'all') return selectable.map(task => task.id);
   if (scope === 'core') return selectable.filter(task => task.track === 'core').map(task => task.id);
   if (scope === 'difficulty') {

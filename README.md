@@ -32,13 +32,13 @@ pnpm dev
 pnpm dsh:compare --model <你在DSH使用的模型ID>
 ```
 
-默认标准预设、CACHE-02、Off/High 各一次，只用于检查流程。`--all` 选择全部55题；`--provider <供应商ID>` 与 `--model <模型ID>` 联合选择模型，同名模型可来自不同供应商。四预设统一思考等级可用 `--presets "standard,ptc,minimal,cordis" --reasoning high`；`--preset ptc` 选择一种，`--output <报告目录>` 指定报告位置。`--check` 仅预检，不调用模型。作答使用本机 DSH SDK，评分使用固定 Linux 容器；裁判另由 `.env` 的 `BENCH_JUDGE_*`（含思考等级）配置。报告和压缩证据保存校验后清理本次独占临时数据，详情见 [DSH 自动对比](docs/dsh-comparison.md)。
+默认标准预设、CACHE-04、Off/High 各一次，只用于检查流程。`--all` 选择全部55题；`--provider <供应商ID>` 与 `--model <模型ID>` 联合选择模型，同名模型可来自不同供应商。四预设统一思考等级可用 `--presets "standard,ptc,minimal,cordis" --reasoning high`；`--preset ptc` 选择一种，`--output <报告目录>` 指定报告位置。`--check` 仅预检，不调用模型。作答使用本机 DSH SDK，评分使用固定 Linux 容器；裁判另由 `.env` 的 `BENCH_JUDGE_*`（含思考等级）配置。报告和压缩证据保存校验后清理本次独占临时数据，详情见 [DSH 自动对比](docs/dsh-comparison.md)。
 
 ```powershell
 pnpm bench list
-pnpm task:export CACHE-02 data/submissions/cache-demo
+pnpm task:export CACHE-04 data/submissions/cache-demo
 # 让 AI 在导出目录中按照 TASK.md 完成修改
-pnpm bench submit CACHE-02 data/submissions/cache-demo --key cache-demo-1 --reason agent-completed --measure
+pnpm bench submit CACHE-04 data/submissions/cache-demo --key cache-demo-1 --reason agent-completed --measure
 pnpm bench runs
 pnpm bench status <runId> <attemptId>
 pnpm bench report <runId> <attemptId> --format markdown
@@ -56,7 +56,7 @@ API 完成入口是 `POST /api/runs`，需配置 BENCH_SUBMISSIONS_DIR、BENCH_R
 ## 验证与环境
 
 ```powershell
-pnpm task:verify CACHE-02
+pnpm task:verify CACHE-04
 pnpm task:mutants API-04
 pnpm task:mutants GRAPH-04
 pnpm trial --all

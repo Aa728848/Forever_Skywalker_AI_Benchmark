@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import sample from '../../../examples/assessment.json';
-import { exportWorkspace } from '../../../packages/tasks/src/index.ts';
+import { exportWorkspace, readManifest } from '../../../packages/tasks/src/index.ts';
 import { buildApp } from './app.ts';
 
 describe('API 与报告持久化', () => {
@@ -41,7 +41,7 @@ describe('API 与报告持久化', () => {
 
 describe('正式运行入口', () => {
   const submission = (candidateDirectory: string) => ({
-    taskId: 'CACHE-02',
+    taskId: 'CACHE-04',
     candidateDirectory,
     idempotencyKey: `api-${Math.random().toString(16).slice(2, 12)}`,
     submittedBy: 'api-test',
@@ -77,7 +77,7 @@ describe('正式运行入口', () => {
       configRoot: directory, configEnv: {},
     });
     try {
-      exportWorkspace('CACHE-02', candidate);
+      exportWorkspace('CACHE-04', candidate);
       expect((await app.inject('/api/health')).json()).toMatchObject({ runEntry: true });
 
       expect((await app.inject({ method: 'POST', url: '/api/runs', payload: submission('cache-02-defect') })).statusCode).toBe(401);
@@ -89,15 +89,14 @@ describe('正式运行入口', () => {
       const created = await app.inject({ method: 'POST', url: '/api/runs', headers: { 'x-bench-token': 'secret-token' }, payload: body });
       expect(created.statusCode).toBe(201);
       const status = created.json();
-      expect(status).toMatchObject({ taskId: 'CACHE-02', phase: 'verified', classification: 'check-failed' });
+      expect(status).toMatchObject({ taskId: 'CACHE-04', phase: 'verified', classification: 'check-failed' });
       // 本用例不配置裁判：三维的评审一侧缺失，质量分与总分保持待定。
       // 该题分类是 check-failed，按用户决定可用验证分直接记 0（不按通过项比例给部分分）；
       // 这条断言同时验证「缺证据不补分」仍然生效——0 来自明确的失败结论，不是补出来的分。
       expect(status.scoring).toMatchObject({ mode: 'local', quality: null, total: null, functional: 0 });
-      expect(status.knownFailures.map((item: { id: string }) => item.id).sort()).toEqual([
-        'public/retry-after-failure', 'public/sync-throw-becomes-rejection',
-        'hidden/no-cache-of-rejected-attempt', 'hidden/retry-then-coalesce-again',
-      ].sort());
+      // 失败项来自 manifest 的预声明检出项，换夹具题时自动跟随。
+      expect(status.knownFailures.map((item: { id: string }) => item.id).sort())
+        .toEqual([...readManifest('CACHE-04').grader.defectDetectors].sort());
 
       const queried = await app.inject(`/api/runs/${status.runId}/${status.attemptId}`);
       expect(queried.statusCode).toBe(200);
@@ -106,8 +105,8 @@ describe('正式运行入口', () => {
       const report = await app.inject(`/api/runs/${status.runId}/${status.attemptId}/report`);
       expect(report.statusCode).toBe(200);
       expect(report.headers['content-type']).toContain('text/markdown');
-      expect(report.body).toContain('# 运行报告 CACHE-02');
-      expect(report.body).toContain('public/retry-after-failure');
+      expect(report.body).toContain('# 运行报告 CACHE-04');
+      expect(report.body).toContain(readManifest('CACHE-04').grader.defectDetectors[0]!);
       expect(report.body).toContain('代码质量：待定');
       expect(report.body).toContain('`public.stdout`');
       expect((await app.inject('/api/runs/run-missing/attempt-missing/report')).statusCode).toBe(404);
@@ -121,14 +120,14 @@ describe('正式运行入口', () => {
       expect((await app.inject({ method: 'POST', url: `/api/runs/${status.runId}/${status.attemptId}/review` })).statusCode).toBe(401);
       expect((await app.inject('/api/runs')).json()).toHaveLength(1);
 
-      const sourcePath = join(candidate, 'starter', 'src', 'keyed-loader.ts');
+      const sourcePath = join(candidate, 'starter', 'src', 'persistent-cache.ts');
       const source = readFileSync(sourcePath, 'utf8');
       writeFileSync(sourcePath, source + '\n// changed after first submission\n');
       expect((await app.inject({ method: 'POST', url: '/api/runs', headers: { 'x-bench-token': 'secret-token' }, payload: body })).statusCode).toBe(409);
       writeFileSync(sourcePath, source);
 
       const outside = join(directory, 'outside');
-      exportWorkspace('CACHE-02', outside);
+      exportWorkspace('CACHE-04', outside);
       symlinkSync(outside, join(submissions, 'escape'), process.platform === 'win32' ? 'junction' : 'dir');
       expect((await app.inject({ method: 'POST', url: '/api/runs', headers: { 'x-bench-token': 'secret-token' }, payload: submission('escape') })).statusCode).toBe(400);
       expect((await app.inject('/api/runs/run-missing/attempt-missing')).statusCode).toBe(404);

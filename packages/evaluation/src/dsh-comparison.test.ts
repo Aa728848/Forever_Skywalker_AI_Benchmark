@@ -14,7 +14,7 @@ function setup() {
   const scratch = mkdtempSync(join(tmpdir(), 'fsa-dsh-comparison-test-'));
   const options: DshComparisonOptions = {
     dshRoot: join(scratch, 'unused-sdk'), dshHome: join(scratch, 'unused-home'), profile: 'sdk', workspacePermission: 'workspace-write',
-    provider: 'scripted', model: 'fixture-test-only', presets: ['standard'], modes: ['off', 'high'], taskIds: ['CACHE-02'], repeats: 2,
+    provider: 'scripted', model: 'fixture-test-only', presets: ['standard'], modes: ['off', 'high'], taskIds: ['CACHE-04'], repeats: 2,
     maxTokens: 1024, timeoutMs: 1000, outputDirectory: join(scratch, 'experiment'),
     image: 'unused-test-image', imageDigest: 'sha256:' + '0'.repeat(64), measurePerformance: false,
   };
@@ -81,8 +81,8 @@ it('独立导出、反转重复顺序，模拟作答经真实验证，并保留�
         expect(options.workspacePermission).toBe('workspace-write');
         expect(existsSync(join(options.workspace, 'TASK.md'))).toBe(true);
         expect(existsSync(join(options.workspace, 'graders'))).toBe(false);
-        initialSources.push(readFileSync(join(options.workspace, 'starter/src/keyed-loader.ts'), 'utf8'));
-        if (options.reasoningEffort === 'high') expect(applyReferencePatch(readManifest('CACHE-02'), options.workspace, join(context.scratch, 'patch')).exitCode).toBe(0);
+        initialSources.push(readFileSync(join(options.workspace, 'starter/src/persistent-cache.ts'), 'utf8'));
+        if (options.reasoningEffort === 'high') expect(applyReferencePatch(readManifest('CACHE-04'), options.workspace, join(context.scratch, 'patch')).exitCode).toBe(0);
         return solverResult(options);
       },
       async evaluate(taskId, workspace, row, store) {
@@ -102,7 +102,7 @@ it('独立导出、反转重复顺序，模拟作答经真实验证，并保留�
     expect(readdirSync(context.options.outputDirectory).sort()).toEqual(['evidence.json.gz', 'experiment.json', 'report.md']);
     const archive = JSON.parse(gunzipSync(readFileSync(join(context.options.outputDirectory, 'evidence.json.gz'))).toString()) as { files: { path: string }[] };
     for (const row of report.rows) expect(archive.files.some(file => file.path.includes(row.evaluation!.status.attemptId) && file.path.endsWith('score.json'))).toBe(true);
-    expect(archive.files.some(file => file.path.startsWith('answers/') && file.path.endsWith('keyed-loader.ts'))).toBe(true);
+    expect(archive.files.some(file => file.path.startsWith('answers/') && file.path.endsWith('persistent-cache.ts'))).toBe(true);
     const groups = comparisonGroups(report).groups;
     expect(groups.find(group => group.mode === 'high')).toMatchObject({ planned: 2, completed: 2, passed: 2, functional: 50, quality: null, total: null });
     expect(groups.find(group => group.mode === 'off')).toMatchObject({ planned: 2, completed: 2, passed: 0, graded: 2, total: null });
@@ -153,8 +153,8 @@ it('进度只追加落盘、最多保留最近 500 条，报告与 Markdown 都�
     });
     expect(report.schemaVersion).toBe('0.3.0');
     // 两道作答（off/high）各产生两条进度，且与 CLI 打印的内容一致。
-    expect(seen).toEqual(['CACHE-02 · standard / off · 第 1 次：DSH 作答中', 'CACHE-02 · standard / off：Linux 验证与评分中',
-      'CACHE-02 · standard / high · 第 1 次：DSH 作答中', 'CACHE-02 · standard / high：Linux 验证与评分中']);
+    expect(seen).toEqual(['CACHE-04 · standard / off · 第 1 次：DSH 作答中', 'CACHE-04 · standard / off：Linux 验证与评分中',
+      'CACHE-04 · standard / high · 第 1 次：DSH 作答中', 'CACHE-04 · standard / high：Linux 验证与评分中']);
     expect(report.progress.map(entry => entry.message)).toEqual(seen);
     expect(report.progress.every(entry => !Number.isNaN(Date.parse(entry.at)))).toBe(true);
     const persisted = JSON.parse(readFileSync(join(context.options.outputDirectory, 'experiment.json'), 'utf8')) as DshComparisonReport;
@@ -179,7 +179,7 @@ it('相同思考等级下不同 DSH 预设分别评分，指定模型透传且�
       async solve(options) {
         expect(options.model).toBe('fixture-test-only'); expect(options.reasoningEffort).toBe('high');
         expect(options.workspacePermission).toBe('workspace-write');
-        if (options.agentPreset === 'ptc') expect(applyReferencePatch(readManifest('CACHE-02'), options.workspace, join(context.scratch, 'patch')).exitCode).toBe(0);
+        if (options.agentPreset === 'ptc') expect(applyReferencePatch(readManifest('CACHE-04'), options.workspace, join(context.scratch, 'patch')).exitCode).toBe(0);
         return { ...solverResult(options), presetFingerprint: options.agentPreset === 'ptc' ? 'ptc-fixture' : 'standard-fixture' };
       },
       async evaluate(taskId, workspace, row, store) {
@@ -283,7 +283,7 @@ it('并行度 N 真的让 N 条作答同时在飞，并缩短墙钟', async () =
     try {
       let inFlight = 0; let peak = 0;
       const started = Date.now();
-      const report = await runDshComparison({ ...context.options, taskIds: ['CACHE-02', 'CACHE-03', 'CACHE-04'], repeats: 1, modes: ['off'], concurrency },
+      const report = await runDshComparison({ ...context.options, taskIds: ['CACHE-04', 'BND-04', 'GRAPH-04'], repeats: 1, modes: ['off'], concurrency },
         { env: {},
           async solve(options) {
             inFlight += 1; peak = Math.max(peak, inFlight);
@@ -355,7 +355,7 @@ it('单题作答失败不中止整轮：其余题照常完成，实验不再 fai
   const context = setup();
   let calls = 0;
   try {
-    const report = await runDshComparison({ ...context.options, taskIds: ['CACHE-02', 'CACHE-03', 'CACHE-04'], repeats: 1, modes: ['off'] },
+    const report = await runDshComparison({ ...context.options, taskIds: ['CACHE-04', 'BND-04', 'GRAPH-04'], repeats: 1, modes: ['off'] },
       { env: {},
         async solve(options) {
           calls += 1;

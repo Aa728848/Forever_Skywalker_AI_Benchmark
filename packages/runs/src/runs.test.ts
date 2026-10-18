@@ -10,13 +10,23 @@ import {
   SubmissionRejectedError, createRunStore, digestTree, readRunEvents, submissionBaseline,
 } from './index.ts';
 
-const taskId = 'CACHE-02';
+const taskId = 'CACHE-04';
 
 /** 与真实链路一致：候选目录就是题目包的导出工作区。 */
 function exportedCandidate(): string {
   const directory = mkdtempSync(join(tmpdir(), 'fsa-candidate-'));
   exportWorkspace(taskId, directory);
   return directory;
+}
+
+/** 导出记录里的文件清单；临时目录用完即删。 */
+function exportedCandidateFiles(): string[] {
+  const directory = mkdtempSync(join(tmpdir(), 'fsa-candidatelist-'));
+  try {
+    return [...exportWorkspace(taskId, directory).files];
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 }
 
 function envelopeFor(candidate: string, overrides: Partial<SubmissionEnvelope> = {}): SubmissionEnvelope {
@@ -95,15 +105,14 @@ describe('提交与冻结', () => {
         expect(outcome.attempt.selfReportedTreeHash).toBe(envelope.candidateTreeHash);
         expect(outcome.attempt.submittedBy).toBe('operator');
         expect(outcome.attempt.excluded).toEqual(['.git', 'node_modules']);
-        expect(outcome.attempt.files.map(file => file.path)).toEqual([
-          'TASK.md', 'package.json', 'public-tests/keyed-loader.test.ts', 'starter/src/keyed-loader.ts',
-        ]);
+        // 文件清单来自导出记录，换夹具题时自动跟随。
+        expect(outcome.attempt.files.map(file => file.path).sort()).toEqual([...exportedCandidateFiles()].sort());
 
         const directory = join(storeRoot, taskId, envelope.runId, envelope.attemptId);
         expect(existsSync(join(directory, 'envelope.json'))).toBe(true);
         expect(existsSync(join(directory, 'freeze.json'))).toBe(true);
         expect(existsSync(join(directory, 'manifest.json'))).toBe(true);
-        expect(existsSync(join(directory, 'candidate', 'starter', 'src', 'keyed-loader.ts'))).toBe(true);
+        expect(existsSync(join(directory, 'candidate', 'TASK.md'))).toBe(true);
 
         const manifest = JSON.parse(readFileSync(join(directory, 'manifest.json'), 'utf8')) as Record<string, any>;
         expect(manifest.candidate.treeHash).toBe(envelope.candidateTreeHash);
@@ -112,7 +121,7 @@ describe('提交与冻结', () => {
         expect(manifest.environment.imageDigest).toBeNull();
         expect(manifest.environment.network).toBe(false);
         expect(manifest.environment.workingDirectory).toBe(`${taskId}/${envelope.runId}/${envelope.attemptId}/workspace`);
-        expect(manifest.task.grader.referencePatch).toBe('graders/CACHE-02/reference.patch');
+        expect(manifest.task.grader.referencePatch).toBe('graders/CACHE-04/reference.patch');
         expect(manifest.envelope.idempotencyKey).toBe(envelope.idempotencyKey);
       } finally {
         rmSync(candidate, { recursive: true, force: true });
@@ -246,7 +255,7 @@ describe('幂等提交记录', () => {
         const store = createRunStore(storeRoot);
         const envelope = envelopeFor(candidate);
         const first = store.submit({ taskId, envelope, candidateDirectory: candidate, submittedBy: 'operator' });
-        writeFileSync(join(candidate, 'starter', 'src', 'keyed-loader.ts'), 'export const fixed = true;\n');
+        writeFileSync(join(candidate, 'starter', 'src', 'persistent-cache.ts'), 'export const fixed = true;\n');
 
         const second = envelopeFor(candidate, { idempotencyKey: envelope.idempotencyKey, runId: envelope.runId, attemptId: envelope.attemptId });
         expect(() => store.submit({ taskId, envelope: second, candidateDirectory: candidate, submittedBy: 'operator' }))
@@ -295,19 +304,19 @@ describe('幂等提交记录', () => {
 describe('冻结之后', () => {
   it('源目录被修改不改变被测对象', () => {
     const candidate = exportedCandidate();
-    const original = readFileSync(join(candidate, 'starter', 'src', 'keyed-loader.ts'), 'utf8');
+    const original = readFileSync(join(candidate, 'starter', 'src', 'persistent-cache.ts'), 'utf8');
     withTemp(storeRoot => {
       try {
         const store = createRunStore(storeRoot);
         const envelope = envelopeFor(candidate);
         const outcome = store.submit({ taskId, envelope, candidateDirectory: candidate, submittedBy: 'operator' });
 
-        writeFileSync(join(candidate, 'starter', 'src', 'keyed-loader.ts'), '// 提交后修改，不应进入被测对象\n');
+        writeFileSync(join(candidate, 'starter', 'src', 'persistent-cache.ts'), '// 提交后修改，不应进入被测对象\n');
         writeFileSync(join(candidate, 'extra.txt'), 'added after freeze\n');
 
         const materialized = store.materialize(envelope.runId, envelope.attemptId, join(storeRoot, 'replay'));
         expect(materialized.treeHash).toBe(outcome.attempt.treeHash);
-        expect(readFileSync(join(materialized.directory, 'starter', 'src', 'keyed-loader.ts'), 'utf8')).toBe(original);
+        expect(readFileSync(join(materialized.directory, 'starter', 'src', 'persistent-cache.ts'), 'utf8')).toBe(original);
         expect(existsSync(join(materialized.directory, 'extra.txt'))).toBe(false);
         expect(store.readAttempt(envelope.runId, envelope.attemptId)?.attempt.treeHash).toBe(outcome.attempt.treeHash);
       } finally {
@@ -323,7 +332,7 @@ describe('冻结之后', () => {
         const store = createRunStore(storeRoot);
         const envelope = envelopeFor(candidate);
         const outcome = store.submit({ taskId, envelope, candidateDirectory: candidate, submittedBy: 'operator' });
-        writeFileSync(join(outcome.directory, 'candidate', 'starter', 'src', 'keyed-loader.ts'), '// tampered\n');
+        writeFileSync(join(outcome.directory, 'candidate', 'starter', 'src', 'persistent-cache.ts'), '// tampered\n');
         expect(() => store.materialize(envelope.runId, envelope.attemptId, join(storeRoot, 'replay')))
           .toThrow(FrozenSnapshotTamperedError);
       } finally {

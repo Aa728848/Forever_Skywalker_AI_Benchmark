@@ -102,11 +102,11 @@ function manifestFixture(criticalId = 'public/behavior'): TaskManifest {
     id: value, kind: 'public' as const, group, weight: 1, critical, summary: '测试检查 ' + value,
   });
   return {
-    schemaVersion: '0.1.0', taskId: 'CACHE-02', taskVersion: '0.1.0', title: '测试题', runtime: 'typescript',
+    schemaVersion: '0.1.0', taskId: 'CACHE-04', taskVersion: '0.1.0', title: '测试题', runtime: 'typescript',
     runtimeRange: 'node >=24.14.1 <25',
     workspace: { entries: [{ from: 'task.md', to: 'TASK.md' }] },
     commands: { public: ['node', 'x'], hidden: ['node', 'y'] },
-    grader: { checks: 'graders/CACHE-02/checks', referencePatch: 'graders/CACHE-02/reference.patch', alternative: 'graders/CACHE-02/alternative', defectDetectors: [id('public/behavior')] },
+    grader: { checks: 'graders/CACHE-04/checks', referencePatch: 'graders/CACHE-04/reference.patch', alternative: 'graders/CACHE-04/alternative', defectDetectors: [id('public/behavior')] },
     limits: { timeoutMs: 60000, memoryMb: 512, cpus: 1, network: false },
     checks: [
       check('public/behavior', 'behavior', criticalId === 'public/behavior'),
@@ -120,7 +120,7 @@ function manifestFixture(criticalId = 'public/behavior'): TaskManifest {
 
 function executionFixture(statuses: Record<string, 'passed' | 'failed' | 'not-run'>, classification: ExecutionResult['classification']): ExecutionResult {
   return {
-    schemaVersion: '0.1.0', runId: 'run-test', attemptId: 'attempt-test', taskId: 'CACHE-02', taskVersion: '0.1.0',
+    schemaVersion: '0.1.0', runId: 'run-test', attemptId: 'attempt-test', taskId: 'CACHE-04', taskVersion: '0.1.0',
     candidateTreeHash: 'a'.repeat(64), classification, isolation: 'none',
     startedAt: '2026-01-01T00:00:00.000Z', finishedAt: '2026-01-01T00:00:01.000Z', durationMs: 1000,
     environment: { profile: 'local', image: null, imageDigest: null, platform: 'test x64', platformVersion: 'v24', candidateRuntimes: ['node'], containerRuntime: null, cpus: 1, totalMemoryMb: 1024, network: false },

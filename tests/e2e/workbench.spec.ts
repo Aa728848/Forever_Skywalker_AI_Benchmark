@@ -35,9 +35,9 @@ test('筛选题目；提交与记录页签同页提供提交入口，评分预�
 test('真实提交后显示待定质量、执行证据和不补齐缺测的四级汇总', async ({ page, request }, testInfo) => {
   const root = process.env.BENCH_E2E_ROOT!;
   const candidate = join(root, 'candidate');
-  exportWorkspace('CACHE-02', candidate);
-  expect(applyReferencePatch(readManifest('CACHE-02'), candidate, join(root, 'patch')).exitCode).toBe(0);
-  const response = await request.post('http://127.0.0.1:4318/api/runs', { headers: { 'x-bench-token': process.env.BENCH_E2E_TOKEN! }, data: { taskId: 'CACHE-02', candidateDirectory: candidate, idempotencyKey: 'browser-flow', submittedBy: 'e2e', reason: 'agent-completed' } });
+  exportWorkspace('CACHE-04', candidate);
+  expect(applyReferencePatch(readManifest('CACHE-04'), candidate, join(root, 'patch')).exitCode).toBe(0);
+  const response = await request.post('http://127.0.0.1:4318/api/runs', { headers: { 'x-bench-token': process.env.BENCH_E2E_TOKEN! }, data: { taskId: 'CACHE-04', candidateDirectory: candidate, idempotencyKey: 'browser-flow', submittedBy: 'e2e', reason: 'agent-completed' } });
   expect(response.status()).toBe(201);
   const status = await response.json();
   expect(status.classification).toBe('passed');
@@ -47,10 +47,10 @@ test('真实提交后显示待定质量、执行证据和不补齐缺测的四�
   expect(duplicate.status()).toBe(400);
   await page.goto('/');
   await page.getByRole('button', { name: /提交与记录/ }).click();
-  await expect(page.getByRole('heading', { name: 'CACHE-02 · 执行报告' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'CACHE-04 · 执行报告' })).toBeVisible();
   await expect(page.locator('.score-hero strong')).toContainText('待定');
   await expect(page.locator('.timeline')).toContainText('score.finalized');
-  await page.getByRole('checkbox', { name: /加入汇总 CACHE-02/ }).check();
+  await page.getByRole('checkbox', { name: /加入汇总 CACHE-04/ }).check();
   await page.getByRole('button', { name: '汇总所选 1 次作答' }).click();
   await expect(page.getByRole('heading', { name: '四级汇总 · 本机诊断' })).toBeVisible();
   await expect(page.locator('.suite-summary')).toContainText('核心加权总分：待定');

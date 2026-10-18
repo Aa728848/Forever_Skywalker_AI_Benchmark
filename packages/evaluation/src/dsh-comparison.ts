@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { requireTask } from '@fsa/catalog';
+import { requireTask, tasks } from '@fsa/catalog';
 import type { RunStatus } from '@fsa/contracts';
 import { readRunStatus, verifySubmission } from '@fsa/executor';
 import { createEnvelope, createRunStore, digestTree, type RunStore } from '@fsa/runs';
@@ -154,7 +154,8 @@ export interface ComparisonServices {
 export function validateComparison(options: DshComparisonOptions): void {
   if (!options.model.trim() || !options.provider.trim() || !options.profile.trim()) throw new Error('需要明确的 DSH 模型、供应商和 SDK profile。');
   resolveDshWorkspacePermission(options.workspacePermission);
-  if (options.taskIds.length < 1 || options.taskIds.length > 55 || new Set(options.taskIds).size !== options.taskIds.length) throw new Error('请选择 1–55 道不重复的题目。');
+  const poolSize = tasks.length;
+  if (options.taskIds.length < 1 || options.taskIds.length > poolSize || new Set(options.taskIds).size !== options.taskIds.length) throw new Error(`请选择 1–${poolSize} 道不重复的题目。`);
   for (const id of options.taskIds) {
     if (requireTask(id).status === 'designed') throw new Error(`${id} 尚未具备题目包。`);
   }

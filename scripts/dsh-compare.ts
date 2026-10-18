@@ -24,7 +24,7 @@ pnpm dsh:compare --model <模型 ID> --check
 
 预设：standard/标准、ptc/PTC、minimal/极简、cordis/创造。与思考等级分别设置。
 --provider 指定 DSH 供应商 ID；与 --model 一起确定目标，同名模型不会跨供应商自动匹配。
-默认标准预设、CACHE-02、off/high、每组一次、每题 20 分钟、每请求输出上限 16384 Token。
+默认标准预设、CACHE-04、off/high、每组一次、每题 20 分钟、每请求输出上限 16384 Token。
 --reasoning 指定一个思考等级；已有 --modes off,high,max 可同时比较多个等级。
 --reasoning default 沿用供应商/模型默认值，省略思考参数；未声明推理等级的模型使用此项。default 不等同 off。
 --workspace-permission read-only|workspace-write|danger-full-access 设置 DSH 工作区文件权限，默认 workspace-write。权限会写入 experiment.json。
@@ -136,7 +136,7 @@ try {
       model: values.model || process.env.BENCH_DSH_MODEL || '',
       // PowerShell 的 pnpm shim 会把未引用的逗号列表作为空格列表传入。
       presets: (values.presets || values.preset || process.env.BENCH_DSH_PRESETS || 'standard').split(/[,\s]+/).filter(Boolean).map(resolveDshPreset),
-      taskIds: values.all ? tasks.filter(task => task.status !== 'designed').map(task => task.id) : (values.tasks ?? 'CACHE-02').split(/[,\s]+/).filter(Boolean),
+      taskIds: values.all ? tasks.filter(task => task.status !== 'designed').map(task => task.id) : (values.tasks ?? 'CACHE-04').split(/[,\s]+/).filter(Boolean),
       modes: (values.modes || values.reasoning || process.env.BENCH_DSH_REASONING_EFFORT || 'off,high').split(/[,\s]+/).filter(Boolean),
       repeats: Number(values.repeat), maxTokens: Number(values['max-tokens']), timeoutMs: Number(values.minutes) * 60_000,
       ...(values.concurrency === undefined ? {} : { concurrency: Number(values.concurrency) }),

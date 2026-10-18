@@ -109,7 +109,7 @@ it('续跑解回既有证据后，run store 能读到历史作答（否则汇总
     // 第一次运行的 run store：写一条真实作答记录。
     const historyFile = join(first.directory, 'evidence', 'runs', 'run-keep', 'attempt-keep', 'attempt.json');
     mkdirSync(dirname(historyFile), { recursive: true });
-    writeFileSync(historyFile, JSON.stringify({ runId: 'run-keep', attemptId: 'attempt-keep', taskId: 'CACHE-02' }));
+    writeFileSync(historyFile, JSON.stringify({ runId: 'run-keep', attemptId: 'attempt-keep', taskId: 'CACHE-04' }));
     const archived = archiveComparisonEvidence(first, output.directory);
     expect(archived.fileCount).toBe(1);
     cleanupComparisonScratch(first);

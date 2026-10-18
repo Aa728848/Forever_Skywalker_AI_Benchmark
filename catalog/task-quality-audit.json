@@ -204,7 +204,7 @@
       "empiricalDiscrimination": null
     },
     {
-      "taskId": "CACHE-02",
+      "taskId": "CACHE-04",
       "track": "core",
       "difficulty": "medium",
       "baselineVersion": "0.1.0",

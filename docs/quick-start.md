@@ -80,7 +80,7 @@ pnpm dsh:compare --provider deepseek-official --model "deepseek-v4-flash" --pres
 pnpm dsh:compare --provider deepseek-official --model "deepseek-v4-flash" --presets "standard,ptc,minimal,cordis" --reasoning high --output "C:\Users\A\Documents\DSH-Reports"
 ```
 
-标准、PTC、极简、创造分别对应 `standard`、`ptc`、`minimal`、`cordis`。加 `--tasks "API-04,GRAPH-04"` 指定题目，`--repeat 3` 指定每种组合重复三次。不填写题目时只用 CACHE-02 检查完整流程，这一题的结果不能代表完整工程水平。
+标准、PTC、极简、创造分别对应 `standard`、`ptc`、`minimal`、`cordis`。加 `--tasks "API-04,GRAPH-04"` 指定题目，`--repeat 3` 指定每种组合重复三次。不填写题目时只用 CACHE-04 检查完整流程，这一题的结果不能代表完整工程水平。
 
 完整测试使用 `--all`，不需要手工列出55个题号。先固定一种预设和一个思考等级：
 
@@ -110,13 +110,13 @@ C:\\Users\\A\\Documents\\ChatGPT\\Forever_Skywalker_AI_Benchmark\\data\\experime
 可以让其它编程 AI 工具做题，再交给本平台评分：
 
 ```powershell
-pnpm task:export CACHE-02 "C:\Users\A\Documents\BenchAnswers\cache-r1"
+pnpm task:export CACHE-04 "C:\Users\A\Documents\BenchAnswers\cache-r1"
 ```
 
 也可以一次导出多道题；每道题会放在批次目录的独立子目录，并生成 `batch-manifest.json`：
 
 ```powershell
-pnpm task:export --tasks CACHE-02,API-04,GRAPH-04 "C:\Users\A\Documents\BenchAnswers\batch-r1"
+pnpm task:export --tasks CACHE-04,API-04,GRAPH-04 "C:\Users\A\Documents\BenchAnswers\batch-r1"
 # 或导出全部已具备题目包的题目
 pnpm task:export --all "C:\Users\A\Documents\BenchAnswers\batch-all"
 ```
@@ -124,7 +124,7 @@ pnpm task:export --all "C:\Users\A\Documents\BenchAnswers\batch-all"
 让编程 AI 打开这个导出目录，按照 `TASK.md` 修改代码。它完成后，回到本评测项目的 PowerShell 提交：
 
 ```powershell
-pnpm bench submit CACHE-02 "C:\Users\A\Documents\BenchAnswers\cache-r1" --key other-agent-cache-r1 --profile linux-container --measure
+pnpm bench submit CACHE-04 "C:\Users\A\Documents\BenchAnswers\cache-r1" --key other-agent-cache-r1 --profile linux-container --measure
 ```
 
 如果需要把某次作答交给外部评分 Agent，可先导出脱敏评审材料：

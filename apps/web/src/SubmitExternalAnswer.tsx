@@ -17,7 +17,7 @@ interface Candidate { name: string; files: number }
 
 export function SubmitExternalAnswer({ tasks }: { tasks: SubmissionTask[] }) {
   const [candidates, setCandidates] = useState<{ root: string | null; candidates: Candidate[]; truncated: boolean; warning: string | null } | null>(null);
-  const [form, setForm] = useState({ candidateDirectory: '', taskId: 'CACHE-02', idempotencyKey: '', reason: 'agent-completed', measure: false });
+  const [form, setForm] = useState({ candidateDirectory: '', taskId: 'CACHE-04', idempotencyKey: '', reason: 'agent-completed', measure: false });
   const [result, setResult] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);

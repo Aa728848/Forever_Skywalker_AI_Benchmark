@@ -8,7 +8,7 @@ import { createEnvelope, createRunStore, digestTree, readRunEvents, submissionBa
 import type { SubmissionEnvelope } from '@fsa/contracts';
 import { classifyExecution, executeAttempt, listRunStatuses, maximumPhaseOutputBytes, readExecutionScore, readRunStatus, reviewCompletedAttempt, runPhase, staticObjectiveFor, verifySubmission } from './index.ts';
 
-const taskId = 'CACHE-02';
+const taskId = 'CACHE-04';
 
 function tempDirectory(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix));
@@ -246,7 +246,7 @@ describe('提交入口自动触发验证', () => {
     const candidate = tempDirectory('fsa-verify-candidate-');
     try {
       exportWorkspace(taskId, candidate);
-      writeFileSync(join(candidate, 'public-tests', 'keyed-loader.test.ts'), "console.log('ok 1 - public/retry-after-failure');\n");
+      writeFileSync(join(candidate, 'public-tests', 'batch.test.ts'), "console.log('ok 1 - public/batch-is-one-atomic-write');\n");
       writeFileSync(join(candidate, 'public-tests', 'injected.test.ts'), "throw new Error('候选追加检查不应执行');\n");
       const envelope = createEnvelope(taskId, candidate);
       const store = createRunStore(storeRoot);
@@ -259,14 +259,14 @@ describe('提交入口自动触发验证', () => {
       expect(first.reusedExecution).toBe(false);
       expect(simultaneous.reusedExecution).toBe(true);
       expect(simultaneous.execution.finishedAt).toBe(first.execution.finishedAt);
-      expect(first.execution.checks.find(check => check.id === 'public/retry-after-failure')?.status).toBe('failed');
+      expect(first.execution.checks.find(check => check.id === 'public/batch-is-one-atomic-write')?.status).toBe('failed');
       expect(existsSync(join(submission.directory, 'execution-2', 'execution.json'))).toBe(true);
       const restarted = createRunStore(storeRoot);
       const again = await verifySubmission({ ...request, store: restarted });
       expect(again.reusedExecution).toBe(true);
       expect(readRunStatus(restarted, envelope.runId, envelope.attemptId).phase).toBe('verified');
       expect(readdirSync(submission.directory).filter(name => name.startsWith('execution'))).toHaveLength(2);
-      // 该候选有一条公开检查失败（上方断言 retry-after-failure 为 failed），
+      // 该候选有一条公开检查失败（上方断言 batch-is-one-atomic-write 为 failed），
       // 因此分类是 check-failed：可用验证分记 0，而不是按通过项给部分分。
       expect(readExecutionScore(submission.directory)?.functional).toBe(0);
     } finally {
@@ -310,9 +310,10 @@ describe('提交入口自动触发验证', () => {
       // 正式评分：可用验证分项由执行结果算出，质量缺失时总分待定
       const score = readExecutionScore(first.submission.directory);
       expect(score).toMatchObject({ mode: 'local', quality: null, total: null, criticalPassed: false, thresholdMet: false });
-      // boundary 只通过 2/5，分类因此是 check-failed：可用验证分记 0（不再按比例给部分分）。
-      // 分组明细仍如实记录通过情况，便于定位是哪几项没过。
-      expect(score?.groups.find(group => group.group === 'boundary')).toMatchObject({ weightPassed: 2, weightTotal: 5 });
+      // 有检查未通过即判 check-failed：可用验证分记 0（不再按比例给部分分）。
+      // 分组明细仍如实记录通过情况，便于定位是哪几项没过；总权重取自 manifest。
+      const boundaryWeight = readManifest(taskId).checks.filter(check => check.group === 'boundary').reduce((sum, check) => sum + check.weight, 0);
+      expect(score?.groups.find(group => group.group === 'boundary')).toMatchObject({ weightTotal: boundaryWeight });
       expect(score?.functional).toBe(0);
       expect(status.scoring).toMatchObject({ mode: 'local', total: null, quality: null });
       expect(status.scoring.functional).toBe(score?.functional);
@@ -460,7 +461,7 @@ describe('静态客观分的运行时适配', () => {
   };
 
   it('typescript 题把三个 static 维度并入客观证据', () => {
-    const manifest = { ...readManifest('CACHE-02'), runtime: 'typescript' as const };
+    const manifest = { ...readManifest('CACHE-04'), runtime: 'typescript' as const };
     const objective = staticObjectiveFor(manifest, report);
     expect(objective).toMatchObject({
       simplicity: { score: 90, kind: 'static', evidence: ['static-report'] },
@@ -470,7 +471,7 @@ describe('静态客观分的运行时适配', () => {
   });
 
   it('非 typescript 题不产出静态客观分，避免用“没有 .ts 文件”的满分冒充质量结论', () => {
-    const manifest = { ...readManifest('CACHE-02'), runtime: 'fsharp' as const };
+    const manifest = { ...readManifest('CACHE-04'), runtime: 'fsharp' as const };
     expect(staticObjectiveFor(manifest, report)).toBeNull();
   });
 });

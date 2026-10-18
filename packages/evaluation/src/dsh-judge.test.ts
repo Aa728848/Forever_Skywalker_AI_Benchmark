@@ -20,7 +20,7 @@ function fixture() {
     BENCH_JUDGE_DSH_PROVIDER: 'deepseek-official', BENCH_JUDGE_DSH_MODEL: 'deepseek-v4-pro', BENCH_JUDGE_DSH_REASONING_EFFORT: 'high' };
   return { root, env };
 }
-const request: ReviewRequest = { runId: 'run-1', attemptId: 'attempt-1', taskId: 'CACHE-02', promptVersion: 'dsh-review-v1', roundId: '1', materials: [
+const request: ReviewRequest = { runId: 'run-1', attemptId: 'attempt-1', taskId: 'CACHE-04', promptVersion: 'dsh-review-v1', roundId: '1', materials: [
   { id: 'task-contract', kind: 'task' as const, text: 'contract' }, { id: 'candidate-1', kind: 'candidate' as const, text: 'source' },
 ] };
 afterEach(() => { for (const root of roots.splice(0)) rmSync(resolve(root), { recursive: true, force: true }); });

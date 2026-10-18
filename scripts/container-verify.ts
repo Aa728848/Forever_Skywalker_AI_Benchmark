@@ -13,7 +13,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const artifacts = join(root, 'data', 'container-acceptance', new Date().toISOString().replace(/[:.]/g, '-'));
 const desktopCli = join(process.env.ProgramFiles ?? 'C:/Program Files', 'Docker', 'Docker', 'resources', 'bin', 'docker.exe');
 const command = process.env.BENCH_CONTAINER_RUNTIME ?? (process.platform === 'win32' && existsSync(desktopCli) ? desktopCli : 'docker');
-const taskTemplate = readManifest('CACHE-02');
+const taskTemplate = readManifest('CACHE-04');
 const liveContainers = new Set<string>();
 const cases: Array<{ id: string; passed: boolean; expected: ExecutionClassification; actual: ExecutionClassification | null; error: string | null; container: string | null }> = [];
 mkdirSync(artifacts, { recursive: true });

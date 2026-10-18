@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { isAbsolute, relative, resolve } from 'node:path';
 import { expect, it } from 'vitest';
+import { tasks as taskCatalog } from '@fsa/catalog';
 import { repositoryRoot } from '../../../packages/tasks/src/index.ts';
 import { displayLaunchCommand, selectLaunchPlan } from './launcher.ts';
 
@@ -25,10 +26,11 @@ it('供应商限定模型与推理能力，多选组合计数和路径原样传�
   const args = plan!.args;
   expect(args.slice(0, 8)).toEqual(['--provider', 'gateway-b', '--model', 'same-model', '--presets', 'standard,ptc,minimal,cordis', '--modes', 'high,off']);
   expect(args[args.indexOf('--workspace-permission') + 1]).toBe('workspace-write');
-  expect(args[args.indexOf('--tasks') + 1]!.split(',')).toHaveLength(24);
+  expect(args[args.indexOf('--tasks') + 1]!.split(',')).toHaveLength(taskCatalog.filter(task => task.track === 'core' && ['hard', 'extreme'].includes(task.difficulty)).length);
   expect(args).toContain('--no-measure'); expect(args.at(-1)).toBe('--check');
   expect(args[args.indexOf('--output') + 1]).toBe(resolve(repositoryRoot, outputPath));
-  expect(context.output.join('\n')).toContain('384 次作答');
+  const levelTasks = taskCatalog.filter(task => task.track === 'core' && ['hard', 'extreme'].includes(task.difficulty)).length;
+  expect(context.output.join('\n')).toContain(`${levelTasks * 4 * 2 * 2} 次作答`);
   expect(displayLaunchCommand(plan!)).toContain("''引号'' $(never-run)");
 });
 
@@ -64,17 +66,17 @@ it('裁判模型入口只返回配置命令，不读取DSH目录也不启动模�
 });
 
 it('外部作答无需DSH目录，明确跳过性能可覆盖.env中的开启设置', async () => {
-  const context = terminal(['submit', 'CACHE-02', 'data/submissions/answer', 'repeatable-key', 'no', 'yes']);
+  const context = terminal(['submit', 'CACHE-04', 'data/submissions/answer', 'repeatable-key', 'no', 'yes']);
   const plan = await selectLaunchPlan(context.io, {}, async () => { throw new Error('不应读取DSH'); });
-  expect(plan).toEqual({ command: 'bench', args: ['submit', 'CACHE-02', resolve(repositoryRoot, 'data/submissions/answer'), '--key', 'repeatable-key', '--profile', 'linux-container', '--no-measure'] });
+  expect(plan).toEqual({ command: 'bench', args: ['submit', 'CACHE-04', resolve(repositoryRoot, 'data/submissions/answer'), '--key', 'repeatable-key', '--profile', 'linux-container', '--no-measure'] });
   const output = execFileSync(process.execPath, ['--import', 'tsx', 'apps/cli/src/main.ts', 'list', '--no-measure'], {
     cwd: repositoryRoot, encoding: 'utf8', env: { ...process.env, BENCH_MEASURE_PERFORMANCE: '1' },
   });
-  expect(output).toContain('CACHE-02');
+  expect(output).toContain('CACHE-04');
 });
 
 it('默认导出到评测仓库外，外部编程AI不会沿Git父目录进入参考答案仓库', async () => {
-  const context = terminal(['export', 'CACHE-02', '', 'yes']);
+  const context = terminal(['export', 'CACHE-04', '', 'yes']);
   const plan = await selectLaunchPlan(context.io, {}, async () => { throw new Error('不应读取DSH'); });
   expect(plan!.command).toBe('task:export');
   const path = plan!.args[1]!;

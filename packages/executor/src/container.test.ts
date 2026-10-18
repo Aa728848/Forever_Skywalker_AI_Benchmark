@@ -34,7 +34,7 @@ describe('容器调用参数', () => {
     image: 'fsa-bench-node24',
     imageDigest: digest,
     workspace: join('C:', 'work', 'candidate'),
-    hiddenChecksDirectory: join('C:', 'repo', 'graders', 'CACHE-02', 'checks'),
+    hiddenChecksDirectory: join('C:', 'repo', 'graders', 'CACHE-04', 'checks'),
     samplerHostPath: join('C:', 'pkg', 'resource-sampler.mjs'),
     argv: buildContainerArgv(['node', '--test', 'public-tests/**/*.test.ts'], 512),
     limits: { cpus: 1, memoryMb: 512, pidsLimit: defaultPidsLimit },
@@ -65,7 +65,7 @@ describe('容器调用参数', () => {
 
   it('工作目录可写、隐藏检查只读挂载且不复制进候选树', () => {
     expect(invocation.argv).toContain(join('C:', 'work', 'candidate') + ':/work');
-    expect(invocation.argv).toContain(join('C:', 'repo', 'graders', 'CACHE-02', 'checks') + ':/work/__checks__:ro');
+    expect(invocation.argv).toContain(join('C:', 'repo', 'graders', 'CACHE-04', 'checks') + ':/work/__checks__:ro');
     expect(invocation.argv.join(' ')).toContain('--workdir /work');
   });
 

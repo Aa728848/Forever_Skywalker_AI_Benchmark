@@ -158,15 +158,15 @@ describe('静态客观分接入评分桥', () => {
     const directory = workspace({ 'src/clean.ts': 'export const value = 1;\n' });
     try {
       const report = analyzeWorkspace(directory, policy);
-      const request: ReviewRequest = { runId: 'run-1', attemptId: 'attempt-1', taskId: 'CACHE-02', promptVersion: 'review-v1', materials: [{ id: 'candidate-1', kind: 'candidate', text: 'export const value = 1;' }] };
+      const request: ReviewRequest = { runId: 'run-1', attemptId: 'attempt-1', taskId: 'CACHE-04', promptVersion: 'review-v1', materials: [{ id: 'candidate-1', kind: 'candidate', text: 'export const value = 1;' }] };
       const judge = createScriptedJudge([JSON.stringify(sampleVerdict(request, { simplicity: 80, maintainability: 80, decoupling: 80 }, ['candidate-1']))]);
       const outcome = await judge.review(request);
       expect(outcome.verdict.dimensions.simplicity.score).toBe(80);
       const manifest = {
-        schemaVersion: '0.1.0', taskId: 'CACHE-02', taskVersion: '0.1.0', title: 'T', runtime: 'typescript', runtimeRange: 'node >=24',
+        schemaVersion: '0.1.0', taskId: 'CACHE-04', taskVersion: '0.1.0', title: 'T', runtime: 'typescript', runtimeRange: 'node >=24',
         workspace: { entries: [{ from: 'task.md', to: 'TASK.md' }] },
         commands: { public: ['node', 'x'], hidden: ['node', 'y'] },
-        grader: { checks: 'graders/CACHE-02/checks', referencePatch: 'graders/CACHE-02/reference.patch', alternative: 'graders/CACHE-02/alternative', defectDetectors: ['public/behavior'] },
+        grader: { checks: 'graders/CACHE-04/checks', referencePatch: 'graders/CACHE-04/reference.patch', alternative: 'graders/CACHE-04/alternative', defectDetectors: ['public/behavior'] },
         limits: { timeoutMs: 60000, memoryMb: 512, cpus: 1, network: false },
         checks: [
           { id: 'public/behavior', kind: 'public', group: 'behavior', weight: 1, critical: true, summary: 'x' },
@@ -177,7 +177,7 @@ describe('静态客观分接入评分桥', () => {
         ],
       } as TaskManifest;
       const execution = {
-        schemaVersion: '0.1.0', runId: 'run-1', attemptId: 'attempt-1', taskId: 'CACHE-02', taskVersion: '0.1.0',
+        schemaVersion: '0.1.0', runId: 'run-1', attemptId: 'attempt-1', taskId: 'CACHE-04', taskVersion: '0.1.0',
         candidateTreeHash: 'a'.repeat(64), classification: 'passed', isolation: 'none',
         startedAt: '2026-01-01T00:00:00.000Z', finishedAt: '2026-01-01T00:00:01.000Z', durationMs: 1,
         environment: { profile: 'local', image: null, imageDigest: null, platform: 'test', platformVersion: 'v24', candidateRuntimes: ['node'], containerRuntime: null, cpus: 1, totalMemoryMb: 1, network: false },

@@ -69,7 +69,7 @@ interface LaunchForm {
 }
 
 const initialForm: LaunchForm = {
-  scope: 'one', difficulty: 'medium', taskIds: ['CACHE-02'], provider: '', model: '',
+  scope: 'one', difficulty: 'medium', taskIds: ['CACHE-04'], provider: '', model: '',
   presets: ['standard'], modes: ['off', 'high'], repeats: 1, timeoutMinutes: 20, maxTokens: 16384,
   concurrency: 1,
   measurePerformance: false, outputRoot: '',
@@ -337,7 +337,7 @@ export function LaunchPanel({ tasks }: { tasks: Task[] }) {
       <div className="launch-field">
         <label htmlFor="launch-scope">题目范围</label>
         <select id="launch-scope" value={form.scope} onChange={event => edit({ scope: event.target.value as LaunchForm['scope'] })}>
-          <option value="one">试一题（CACHE-02）</option>
+          <option value="one">试一题（CACHE-04）</option>
           <option value="all">全部已就绪题目（{selectable.length} 题）</option>
           <option value="core">核心题（{selectable.filter(task => task.track === 'core').length} 题）</option>
           <option value="difficulty">按难度</option>

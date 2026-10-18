@@ -16,7 +16,7 @@ const document = {
   startedAt: '2026-09-15T00:00:00.000Z',
   finishedAt: '2026-09-15T00:05:00.000Z',
   state: 'completed',
-  settings: { provider: 'e2e-provider', model: 'e2e-model', presets: ['standard'], modes: ['high'], repeats: 1, taskIds: ['CACHE-02'] },
+  settings: { provider: 'e2e-provider', model: 'e2e-model', presets: ['standard'], modes: ['high'], repeats: 1, taskIds: ['CACHE-04'] },
   rows: [],
   issues: [],
   progress: [],

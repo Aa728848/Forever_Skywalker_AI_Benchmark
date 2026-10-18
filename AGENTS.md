@@ -11,7 +11,7 @@
 - 题目执行状态在 `catalog/tasks.json` 的 `status` 字段：`designed` → `fixture-ready` → `calibrating` → `ready`；没有题目包就不得标成 `fixture-ready`。
 - 优先功能正确与最小改动，不改动七个来源仓库，不顺带重构。
 - 协议在 `packages/contracts` 维护，评分核心不引入文件、网络或模型调用。
-- 题目元数据在 `catalog/tasks.json` 维护，用 `pnpm catalog:docs` 生成目录；题目包结构见 `tasks/core/CACHE-02/`。
+- 题目元数据在 `catalog/tasks.json` 维护，用 `pnpm catalog:docs` 生成目录；题目包结构见 `tasks/core/CACHE-04/`。
 - 新增题目包用 `node scripts/newtask.ts <规格 JSON>` 生成：写出 task.md/manifest.json/starter/public-tests 与 graders 资产、生成参考补丁、跑三向验证，通过后才把状态推进为 `fixture-ready`。五个功能评分组均需真实检查；预声明缺陷检出项不得根据实跑结果反向改写。
 - 编译/检查通过后收敛，回归测试只覆盖真实风险；不增加浅层覆盖率测试。
 - 评分、协议或行为变动运行相关测试；交付前跑 `pnpm check`，涉及界面或 API 集成再跑 `pnpm test:e2e`；题目包改动跑 `pnpm task:verify <题目 ID>`（或 `node scripts/task.ts verify <ID>`）；试点回归跑 `pnpm trial`；评分链路回归跑 `pnpm score:rehearse`。

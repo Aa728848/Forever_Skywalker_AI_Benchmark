@@ -39,12 +39,12 @@ describe('清理：移动而不是删除', () => {
   it('支持嵌套路径并保留原相对结构，方便找回', () => {
     const root = fixture();
     try {
-      mkdirSync(join(root, 'runs', 'CACHE-02', 'run-1', 'attempt-1'), { recursive: true });
-      writeFileSync(join(root, 'runs', 'CACHE-02', 'run-1', 'attempt-1', 'freeze.json'), '{}');
-      const outcome = moveToTrash({ root, paths: ['runs/CACHE-02/run-1/attempt-1'], reason: '测试' });
+      mkdirSync(join(root, 'runs', 'CACHE-04', 'run-1', 'attempt-1'), { recursive: true });
+      writeFileSync(join(root, 'runs', 'CACHE-04', 'run-1', 'attempt-1', 'freeze.json'), '{}');
+      const outcome = moveToTrash({ root, paths: ['runs/CACHE-04/run-1/attempt-1'], reason: '测试' });
       // 回收目录里保留同样的层级，哪个文件原来在哪始终可读
-      expect(existsSync(join(outcome.trashPath, 'runs', 'CACHE-02', 'run-1', 'attempt-1', 'freeze.json'))).toBe(true);
-      expect(outcome.moved).toEqual([join('runs', 'CACHE-02', 'run-1', 'attempt-1')]);
+      expect(existsSync(join(outcome.trashPath, 'runs', 'CACHE-04', 'run-1', 'attempt-1', 'freeze.json'))).toBe(true);
+      expect(outcome.moved).toEqual([join('runs', 'CACHE-04', 'run-1', 'attempt-1')]);
     } finally { cleanup(root); }
   });
 

@@ -65,16 +65,19 @@ async function directory(io: LauncherIO, prompt: string, fallback: string): Prom
   return resolve(repositoryRoot, unquoted);
 }
 
+/** 冒烟题取题库里第一道核心题，避免把已移除的题目写死在菜单里。 */
+const smokeTask = availableTasks.find(task => task.track === 'core')?.id ?? availableTasks[0]!.id;
+
 async function selectTasks(io: LauncherIO, single = false): Promise<string[]> {
   if (!single) {
     const [scope] = await choose(io, '题目范围', [
-      { id: 'smoke', label: '先试一道：CACHE-02（检查流程）' },
+      { id: 'smoke', label: `先试一道：${smokeTask}（检查流程）` },
       { id: 'all', label: `全部 ${availableTasks.length} 题` },
-      { id: 'core', label: '48 道核心题' },
+      { id: 'core', label: `${availableTasks.filter(task => task.track === 'core').length} 道核心题` },
       { id: 'level', label: '按难度选择核心题' },
       { id: 'manual', label: '查看题目列表并选择' },
     ], ['smoke']);
-    if (scope === 'smoke') return ['CACHE-02'];
+    if (scope === 'smoke') return [smokeTask];
     if (scope === 'all') return availableTasks.map(task => task.id);
     if (scope === 'core') return availableTasks.filter(task => task.track === 'core').map(task => task.id);
     if (scope === 'level') {
@@ -84,7 +87,7 @@ async function selectTasks(io: LauncherIO, single = false): Promise<string[]> {
   }
   return choose(io, single ? '选择一道题目' : '选择题目（也可以输入题号）', availableTasks.map(task => ({
     id: task.id, label: `${task.id} · ${difficultyLabels[task.difficulty]} · ${task.title}`,
-  })), ['CACHE-02'], !single);
+  })), [smokeTask], !single);
 }
 
 function describeJudge(io: LauncherIO, env: NodeJS.ProcessEnv): void {

@@ -9,7 +9,7 @@ import {
   repositoryRoot, taskPackageDir, verifyTaskPackage,
 } from './index.ts';
 
-const taskId = 'CACHE-02';
+const taskId = 'CACHE-04';
 
 function testNames(source: string): string[] {
   return [...source.matchAll(/^test\('([^']+)'/gm)].map(match => match[1] ?? '').sort();
@@ -22,8 +22,8 @@ describe('题目包 manifest 与题库一致', () => {
     expect(manifest.taskId).toBe(taskId);
     expect(manifest.runtime).toBe('typescript');
     expect(manifest.checks.some(check => check.critical)).toBe(true);
-    expect(manifest.checks.filter(check => check.kind === 'public')).toHaveLength(8);
-    expect(manifest.checks.filter(check => check.kind === 'hidden')).toHaveLength(9);
+    expect(manifest.checks.filter(check => check.kind === 'public').length).toBeGreaterThan(0);
+    expect(manifest.checks.filter(check => check.kind === 'hidden').length).toBeGreaterThan(0);
   });
 
   it('五个可用验证组都有对应检查', () => {
@@ -32,8 +32,10 @@ describe('题目包 manifest 与题库一致', () => {
   });
 
   it('声明的检查 ID 与检查文件中的测试名完全一致', () => {
-    const publicSource = readFileSync(join(taskPackageDir(taskId), 'public-tests', 'keyed-loader.test.ts'), 'utf8');
-    const hiddenSource = readFileSync(join(repositoryRoot, manifest.grader.checks, 'keyed-loader.hidden.test.ts'), 'utf8');
+    const readAll = (directory: string) => readdirSync(directory).filter(name => name.endsWith('.test.ts')).sort()
+      .map(name => readFileSync(join(directory, name), 'utf8')).join('\n');
+    const publicSource = readAll(join(taskPackageDir(taskId), 'public-tests'));
+    const hiddenSource = readAll(join(repositoryRoot, manifest.grader.checks));
     expect(testNames(publicSource)).toEqual(declaredCheckIds(manifest, 'public').sort());
     expect(testNames(hiddenSource)).toEqual(declaredCheckIds(manifest, 'hidden').sort());
   });
@@ -53,8 +55,8 @@ describe('候选工作区导出', () => {
       const files = listFiles(destination);
       expect(files).toEqual(record.files);
       expect(files).toContain('TASK.md');
-      expect(files).toContain('starter/src/keyed-loader.ts');
-      expect(files).toContain('public-tests/keyed-loader.test.ts');
+      expect(files.some(file => file.startsWith('starter/src/'))).toBe(true);
+      expect(files.some(file => file.startsWith('public-tests/') && file.endsWith('.test.ts'))).toBe(true);
       expect(files.some(file => file.includes('__checks__'))).toBe(false);
       expect(files.some(file => file.includes('reference.patch'))).toBe(false);
       expect(files.some(file => file.includes('graders/'))).toBe(false);
@@ -125,10 +127,12 @@ describe('三向验证', () => {
         'starter-public', 'starter-hidden', 'reference-public', 'reference-hidden', 'alternative-public', 'alternative-hidden',
       ]);
       expect(report.phases.every(phase => phase.missing.length === 0)).toBe(true);
+      // 期望值来自 manifest 的预声明检出项，换夹具题时不必改测试。
+      const declared = [...readManifest(taskId).grader.defectDetectors].sort();
       expect(report.phases.find(phase => phase.name === 'starter-public')?.actualFailed)
-        .toEqual(['public/retry-after-failure', 'public/sync-throw-becomes-rejection']);
+        .toEqual(declared.filter(id => id.startsWith('public/')));
       expect(report.phases.find(phase => phase.name === 'starter-hidden')?.actualFailed)
-        .toEqual(['hidden/no-cache-of-rejected-attempt', 'hidden/retry-then-coalesce-again']);
+        .toEqual(declared.filter(id => id.startsWith('hidden/')));
       for (const name of ['reference-public', 'reference-hidden', 'alternative-public', 'alternative-hidden']) {
         expect(report.phases.find(phase => phase.name === name)).toMatchObject({ actualFailed: [], exitCode: 0 });
       }

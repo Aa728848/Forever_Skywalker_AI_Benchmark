@@ -410,7 +410,7 @@ DSH 模型目录发现现在按 BENCH_DSH_PROFILE 读取该 profile 的 dsh.prof
 
 ## 2026-09-15 评分判决协议中断与缺失评分修复
 
-最新 CACHE-02 实验（`187fb412`）执行与性能采样通过、功能分 50，但第 2 轮评分判决未过 `ReviewVerdict` 协议校验，四维评审分缺失使质量分与总分继续待定，且失败轮原始响应被丢弃、报告不写原因。已修复三处：平台自有字段 `cost`/`reviewedAt` 改由平台注入（不再要求模型回显）；模型附带的装饰字段与重复证据引用按记录式归一化处理，写入 `normalizations` 与执行说明，四维分数与证据引用仍严格校验；`JudgeProtocolError` + `explainReviewVerdict` 保留失败轮 `roundId`、原始响应（≤64 KiB）与字段路径，落盘为 `review-round-<n>-error.json`，`review-error.json` 增加 `roundId`/`issues`，报告对这类行输出「待定原因」。
+最新 CACHE-04 实验（`187fb412`）执行与性能采样通过、功能分 50，但第 2 轮评分判决未过 `ReviewVerdict` 协议校验，四维评审分缺失使质量分与总分继续待定，且失败轮原始响应被丢弃、报告不写原因。已修复三处：平台自有字段 `cost`/`reviewedAt` 改由平台注入（不再要求模型回显）；模型附带的装饰字段与重复证据引用按记录式归一化处理，写入 `normalizations` 与执行说明，四维分数与证据引用仍严格校验；`JudgeProtocolError` + `explainReviewVerdict` 保留失败轮 `roundId`、原始响应（≤64 KiB）与字段路径，落盘为 `review-round-<n>-error.json`，`review-error.json` 增加 `roundId`/`issues`，报告对这类行输出「待定原因」。
 
 历史实验目录不改写；要拿到质量分必须用同一作答（`bench review`）或重新运行实验。两轮独立判决的规则未变：任一轮不通过仍保持质量分待定，不得补分。详见 [协议中断诊断 Note](notes/implemented/bug-fix/2026-09-15-dsh-judge-protocol-diagnostics.md)。
 
@@ -422,7 +422,7 @@ DSH 模型目录发现现在按 BENCH_DSH_PROFILE 读取该 profile 的 dsh.prof
 
 ## 2026-09-15 评分待定排查
 
-已核对本机 `.env`：DSH 评分为 `command-code / deepseek/deepseek-v4.1-flash`、思考等级 `high`、`minimal` 评审预设，两轮使用独立 session；`pnpm bench judge-config` 通过。评分响应解析已兼容 JSON 前后的简短说明或 Markdown 围栏，仍严格校验协议身份和证据引用。`pnpm dsh:compare --check --provider command-code --model deepseek/deepseek-v4.1-flash --preset ptc --reasoning high --tasks CACHE-02` 在 Docker Desktop Linux 引擎可访问时通过；若终端提示 `docker_engine` 或 `.docker/config.json` access denied，应先使用有权限的用户启动 Docker Desktop，并确认 Docker context 为 `desktop-linux`。修复提交为 `64e07d3`，已推送公开仓库。
+已核对本机 `.env`：DSH 评分为 `command-code / deepseek/deepseek-v4.1-flash`、思考等级 `high`、`minimal` 评审预设，两轮使用独立 session；`pnpm bench judge-config` 通过。评分响应解析已兼容 JSON 前后的简短说明或 Markdown 围栏，仍严格校验协议身份和证据引用。`pnpm dsh:compare --check --provider command-code --model deepseek/deepseek-v4.1-flash --preset ptc --reasoning high --tasks CACHE-04` 在 Docker Desktop Linux 引擎可访问时通过；若终端提示 `docker_engine` 或 `.docker/config.json` access denied，应先使用有权限的用户启动 Docker Desktop，并确认 Docker context 为 `desktop-linux`。修复提交为 `64e07d3`，已推送公开仓库。
 
 ## 最新交付：DSH 评分 Agent 已接入质量链
 
@@ -454,7 +454,7 @@ DSH 自动比较新增 `BENCH_DSH_WORKSPACE_PERMISSION` / `--workspace-permissio
 
 DSH目录读取调用已安装DeepSeek/Pi-ai适配器的本地接口，返回provider/model和声明的思考等级，不调用远程目录或模型。额外插件/profile覆盖有明确手工输入入口。未声明等级默认default；同名模型按供应商隔离。完整操作见 [快速启动](quick-start.md)，实现与限制见 [向导Note](notes/implemented/feature/2026-09-14-interactive-launcher.md) 和 [本地目录Note](notes/implemented/feature/2026-09-14-dsh-local-model-catalog.md)。
 
-本轮 `pnpm check` 215项测试、严格类型、55题目录和构建通过。真实Windows终端选择标准/PTC × off/high，CACHE-02共4次计划，最终仅预检通过；模型调用0。外部导出实跑、项目外调用start.cmd并q退出通过，临时验证目录已清理。未变更题包或网页/API行为，不重复全量题目和浏览器验证；下方202项为上一轮交付。
+本轮 `pnpm check` 215项测试、严格类型、55题目录和构建通过。真实Windows终端选择标准/PTC × off/high，CACHE-04共4次计划，最终仅预检通过；模型调用0。外部导出实跑、项目外调用start.cmd并q退出通过，临时验证目录已清理。未变更题包或网页/API行为，不重复全量题目和浏览器验证；下方202项为上一轮交付。
 
 ## 最新交付：55题全量工程质量复核
 
@@ -478,7 +478,7 @@ DSH目录读取调用已安装DeepSeek/Pi-ai适配器的本地接口，返回pro
 
 预设通过 SDK 公开 patch 和 Agent preset 作用域接口在首个模型请求之前挂载，实际选择事件必须核对。已使用真实 DSH 对本机假 SSE 服务检查四种预设均完成且工具集不同，没有外部模型请求；最终 `pnpm check` 198项及类型/目录/构建通过，Windows新命令预检通过。详细命令与清理边界见 [DSH 自动对比](dsh-comparison.md)，验收见 [Agent Note](notes/implemented/feature/2026-09-14-dsh-presets-and-report-cleanup.md)。下方185项为上次交付历史。
 
-新增 `pnpm dsh:compare --model <模型ID>`，通过本地同版 DSH TypeScript SDK 自动导出独立工作区、建立新会话、指定思考等级、等待完成、提交 Linux 验证与质量评分，并保存逐次记录与模式对比表。默认 CACHE-02、Off/High 各一次，可选题目/等级/重复数。`--check` 不启动 DSH 或调用模型，见 [使用说明](dsh-comparison.md)。
+新增 `pnpm dsh:compare --model <模型ID>`，通过本地同版 DSH TypeScript SDK 自动导出独立工作区、建立新会话、指定思考等级、等待完成、提交 Linux 验证与质量评分，并保存逐次记录与模式对比表。默认 CACHE-04、Off/High 各一次，可选题目/等级/重复数。`--check` 不启动 DSH 或调用模型，见 [使用说明](dsh-comparison.md)。
 
 仅明确 completed 触发评分；失败/超时/取消与未启动项保留，缺测不补分，环境/裁判漂移拒绝均分，核心和集成分开。费用和供应商实际返回版本未取得，保持缺失。DSH SDK profile 不自动复刻 Web profile；运行时关闭不等于所有脱离工具进程已回收。
 

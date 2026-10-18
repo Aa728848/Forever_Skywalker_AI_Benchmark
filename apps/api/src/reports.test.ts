@@ -30,7 +30,7 @@ afterEach(() => {
 function experimentJson(options: { version?: string; progress?: unknown; rows?: Record<string, unknown>[]; evidenceSha?: string | null; presets?: string[] } = {}): string {
   const version = options.version ?? '0.3.0';
   const rows = options.rows ?? [{
-    taskId: 'CACHE-02', taskVersion: '0.3.0', preset: 'standard', mode: 'off', repetition: 1, sessionId: 'session-fixture', phase: 'done',
+    taskId: 'CACHE-04', taskVersion: '0.3.0', preset: 'standard', mode: 'off', repetition: 1, sessionId: 'session-fixture', phase: 'done',
     solver: { finishReason: 'completed', durationMs: 1234 },
     evaluation: { status: { classification: 'passed', runId: 'run-fixture', attemptId: 'attempt-fixture', scoring: { total: 100 } } },
     error: null,
@@ -38,7 +38,7 @@ function experimentJson(options: { version?: string; progress?: unknown; rows?: 
   const report: Record<string, unknown> = {
     schemaVersion: version, id: 'fixture-experiment-id',
     startedAt: '2026-09-14T00:00:00.000Z', finishedAt: '2026-09-14T00:10:00.000Z', state: 'completed',
-    settings: { provider: 'fixture-provider', model: 'fixture-model', presets: options.presets ?? ['standard'], modes: ['off'], taskIds: ['CACHE-02'] },
+    settings: { provider: 'fixture-provider', model: 'fixture-model', presets: options.presets ?? ['standard'], modes: ['off'], taskIds: ['CACHE-04'] },
     prompt: 'fixture prompt', rows, issues: [],
     evidence: options.evidenceSha === null ? null : { filename: 'evidence.json.gz', sha256: options.evidenceSha ?? '', fileCount: 1 },
     cleanup: { state: 'complete', directory: null, reason: null },
@@ -92,7 +92,7 @@ describe('报告中心（只读出口）', () => {
       expect(detail.statusCode).toBe(200);
       expect(detail.json()).toMatchObject({ settings: { provider: 'fixture-provider', modes: ['off'] }, issues: [],
         progress: [{ at: '2026-09-14T00:00:00.000Z', message: 'fixture progress' }] });
-      expect(detail.json().rows[0]).toMatchObject({ taskId: 'CACHE-02', mode: 'off', phase: 'done', finishReason: 'completed',
+      expect(detail.json().rows[0]).toMatchObject({ taskId: 'CACHE-04', mode: 'off', phase: 'done', finishReason: 'completed',
         durationMs: 1234, classification: 'passed', runId: 'run-fixture', attemptId: 'attempt-fixture', total: 100 });
       // 明细不暴露磁盘路径，只暴露不透明标识与目录名。
       expect(detail.json().root).toBe(list[0].root);
@@ -141,7 +141,7 @@ describe('报告中心（只读出口）', () => {
       expect(list[0]).toMatchObject({ status: 'ok', planned: 1 });
       const detail = (await app.inject(`/api/reports/${list[0].reportId}`)).json();
       expect(detail.progress).toEqual([]);
-      expect(detail.rows[0]).toMatchObject({ taskId: 'CACHE-02', classification: 'passed', total: 100 });
+      expect(detail.rows[0]).toMatchObject({ taskId: 'CACHE-04', classification: 'passed', total: 100 });
     } finally { await app.close(); }
 
     // 超出 500 条上限的 progress 说明落盘已被破坏，必须显式报错而不是静默截断。
@@ -255,7 +255,7 @@ describe('报告中心（只读出口）', () => {
     const root = scratch();
     const options: DshComparisonOptions = {
       dshRoot: join(root, 'unused-sdk'), dshHome: join(root, 'unused-home'), profile: 'sdk', workspacePermission: 'workspace-write',
-      provider: 'scripted', model: 'fixture-test-only', presets: ['standard'], modes: ['off'], taskIds: ['CACHE-02'], repeats: 1,
+      provider: 'scripted', model: 'fixture-test-only', presets: ['standard'], modes: ['off'], taskIds: ['CACHE-04'], repeats: 1,
       maxTokens: 1024, timeoutMs: 1000, outputDirectory: join(root, '2026-09-14T00-00-00-000Z-real0001'),
       image: 'unused-test-image', imageDigest: 'sha256:' + '0'.repeat(64), measurePerformance: false,
     };
@@ -284,9 +284,9 @@ describe('报告中心（只读出口）', () => {
       const detail = (await app.inject(`/api/reports/${list[0].reportId}`)).json();
       expect(detail.rows).toHaveLength(1);
       // 脚本化作答没有修改起始代码，验证失败、质量分待定；出口必须原样保留 null，不补分。
-      expect(detail.rows[0]).toMatchObject({ taskId: 'CACHE-02', phase: 'done', finishReason: 'completed', classification: 'check-failed', total: null });
+      expect(detail.rows[0]).toMatchObject({ taskId: 'CACHE-04', phase: 'done', finishReason: 'completed', classification: 'check-failed', total: null });
       expect(detail.progress.map((entry: { message: string }) => entry.message)).toHaveLength(2);
-      expect(detail.settings).toMatchObject({ provider: 'scripted', taskIds: ['CACHE-02'] });
+      expect(detail.settings).toMatchObject({ provider: 'scripted', taskIds: ['CACHE-04'] });
       expect((await app.inject(`/api/reports/${list[0].reportId}/artifacts/report`)).body).toContain('# DSH 模式对比');
 
       const archive = await app.inject(`/api/reports/${list[0].reportId}/artifacts/evidence`);
@@ -337,7 +337,7 @@ it('心跳是后加字段：没有它的既有报告照样能读，且不判协�
   const root = scratch();
   // 刻意不写 heartbeat：这正是本字段加入之前落盘的实验形状。
   writeExperiment(root, '2026-09-14T01-00-00-000Z-nohb', { rows: [{
-    taskId: 'CACHE-02', taskVersion: '0.3.0', preset: 'standard', mode: 'off', repetition: 1, sessionId: 'session-legacy', phase: 'done',
+    taskId: 'CACHE-04', taskVersion: '0.3.0', preset: 'standard', mode: 'off', repetition: 1, sessionId: 'session-legacy', phase: 'done',
     solver: { finishReason: 'completed', durationMs: 1234 },
     evaluation: { status: { classification: 'passed', runId: 'run-legacy', attemptId: 'attempt-legacy', scoring: { total: 88 } } },
   }] });

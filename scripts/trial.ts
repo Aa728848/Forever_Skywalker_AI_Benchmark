@@ -12,7 +12,7 @@ import { readExecutionScore, verifySubmission } from '../packages/executor/src/i
 const args = parseArgs({ options: { all: { type: 'boolean' }, alternatives: { type: 'boolean' }, task: { type: 'string', multiple: true } } });
 if (args.values.all && args.values.task?.length) throw new Error('--all 与 --task 不能同时指定。');
 const pilots = args.values.all ? tasks.filter(task => task.status !== 'designed').map(task => task.id)
-  : args.values.task ?? ['FE-01', 'LSP-01', 'CACHE-02', 'BND-02', 'THR-03', 'GRAPH-03', 'CONC-04', 'PERF-04'];
+  : args.values.task ?? ['FE-01', 'LSP-01', 'CACHE-04', 'BND-02', 'THR-03', 'GRAPH-03', 'CONC-04', 'PERF-04'];
 if (pilots.length === 0 || new Set(pilots).size !== pilots.length) throw new Error('试跑题目不能为空或重复。');
 
 interface VariantReport {

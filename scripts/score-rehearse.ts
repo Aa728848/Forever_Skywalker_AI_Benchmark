@@ -8,11 +8,11 @@ import { readExecutionScore, readRunStatus, verifySubmission } from '../packages
 import type { StaticPolicy } from '../packages/static/src/index.ts';
 
 /**
- * 评分演练：导出 CACHE-02 → 应用参考补丁 → 提交 → 执行，并注入静态规则、脚本评审与
+ * 评分演练：导出 CACHE-04 → 应用参考补丁 → 提交 → 执行，并注入静态规则、脚本评审与
  * 一个显式标注的 benchmark 客观分，演示分项齐全时的计算，绝不是正式成绩。
  * 脚本评审与 benchmark 分是演练输入，不是真实模型或真实基准成绩。
  */
-const taskId = 'CACHE-02';
+const taskId = 'CACHE-04';
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 const store = createRunStore(join(repositoryRoot, 'data', 'score-rehearsal', stamp));
 const candidate = mkdtempSync(join(tmpdir(), 'fsa-score-'));

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
+import { tasks } from '@fsa/catalog';
 import { buildApp } from './app.ts';
 import { createConfigProvider } from './config.ts';
 import { LaunchError, createLaunches, mergeState, type LaunchView } from './launches.ts';
@@ -135,7 +136,7 @@ function launchesFor(config: ReturnType<typeof createConfigProvider>, input: { l
 }
 
 const launchRequest = (h: Harness, extra: Record<string, unknown> = {}) => ({
-  scope: 'manual', taskIds: ['CACHE-02'], presets: ['standard'], modes: ['off'], repeats: 1,
+  scope: 'manual', taskIds: ['CACHE-04'], presets: ['standard'], modes: ['off'], repeats: 1,
   provider: 'fake-provider', model: 'fake-model', outputRoot: h.outputRoot, ...extra,
 });
 
@@ -153,13 +154,13 @@ await new Promise(r => setTimeout(r, Number(process.env.FAKE_SLEEP_MS ?? 300)));
     mkdirSync(join(h.outputRoot, existing), { recursive: true });
     // 续跑的 plan 取自报告 settings，所以夹具必须是含 settings 的报告（真实报告即如此）。
     writeFileSync(join(h.outputRoot, existing, 'experiment.json'), JSON.stringify({ schemaVersion: '0.3.0', rows: [],
-      settings: { provider: 'fake-provider', model: 'fake-model', presets: ['standard'], modes: ['off'], repeats: 1, taskIds: ['CACHE-02'] } }));
+      settings: { provider: 'fake-provider', model: 'fake-model', presets: ['standard'], modes: ['off'], repeats: 1, taskIds: ['CACHE-04'] } }));
     const argvLog = join(h.root, 'argv.json');
     const childPath = join(h.root, 'argv-child.mjs');
     writeFileSync(childPath, argvRecordingChild);
     const launches = createLaunches({ config: h.config, launchesRoot: h.launchesRoot, repositoryRoot, childScript: childPath,
       env: { ...h.baseEnv, FAKE_ARGV_LOG: argvLog }, pollMs: 50, confirmMs: 20_000, registrationWaitMs: 10_000 });
-    const view = await launches.launch({ scope: 'manual', taskIds: ['CACHE-02'], presets: ['standard'], modes: ['off'], repeats: 1,
+    const view = await launches.launch({ scope: 'manual', taskIds: ['CACHE-04'], presets: ['standard'], modes: ['off'], repeats: 1,
       provider: 'fake-provider', model: 'fake-model', outputRoot: h.outputRoot, resumeExperimentId: existing });
     // 实验标识是既有的那个；launchId 是新的（启动记录独立可审计）。
     expect(view.experimentId).toBe(existing);
@@ -203,13 +204,13 @@ await new Promise(r => setTimeout(r, Number(process.env.FAKE_SLEEP_MS ?? 300)));
       // 故意用与配置缺省值全都不同的参数，确保断言真的检验「取自报告」。
       settings: { provider: 'deepseek-official', model: 'deepseek-flash', presets: ['ptc'], modes: ['high'],
         repeats: 1, maxTokens: 64000, timeoutMs: 1_200_000, measurePerformance: false,
-        taskIds: ['CACHE-02', 'CACHE-03', 'THR-01'] },
+        taskIds: ['CACHE-04', 'CACHE-03', 'THR-01'] },
     }));
     const launches = launchesFor(h.config, { launchesRoot: h.launchesRoot, childPath: h.childPath, baseEnv: h.baseEnv });
     // 只发实验标识：不传 taskIds / presets / modes / maxTokens。
     const view = await launches.launch({ resumeExperimentId: existing, outputRoot: h.outputRoot });
     // plan 必须逐项等于报告里的 settings，而不是界面缺省值。
-    expect(view.plan.taskIds).toEqual(['CACHE-02', 'CACHE-03', 'THR-01']);
+    expect(view.plan.taskIds).toEqual(['CACHE-04', 'CACHE-03', 'THR-01']);
     expect(view.plan.presets).toEqual(['ptc']);
     expect(view.plan.modes).toEqual(['high']);
     expect(view.plan.maxTokens).toBe(64000);
@@ -218,7 +219,7 @@ await new Promise(r => setTimeout(r, Number(process.env.FAKE_SLEEP_MS ?? 300)));
     expect(view.plan.answers).toBe(3);
     expect(view.args[0]).toBe('--resume');
     // 下发的 argv 也必须带上报告里的参数，否则子进程按自己的默认值跑，配置核对照样失败。
-    expect(view.args.join(' ')).toContain('--tasks CACHE-02,CACHE-03,THR-01');
+    expect(view.args.join(' ')).toContain('--tasks CACHE-04,CACHE-03,THR-01');
     expect(view.args.join(' ')).toContain('--presets ptc');
     expect(view.args.join(' ')).toContain('--modes high');
     expect(view.args.join(' ')).toContain('--max-tokens 64000');
@@ -412,14 +413,14 @@ describe('受控启动（假脚本，不调用任何模型）', () => {
     try {
       expect(h.launches.planOf(launchRequest(h, { presets: ['standard', 'ptc'], modes: ['off', 'high'], repeats: 3 })).answers).toBe(12);
       expect(h.launches.planOf(launchRequest(h)).answers).toBe(1);
-      expect(h.launches.planOf(launchRequest(h, { scope: 'all' })).answers).toBe(55);
+      expect(h.launches.planOf(launchRequest(h, { scope: 'all' })).answers).toBe(tasks.length);
     } finally { h.launches.close(); }
   });
 
   it('拒绝无效参数（1–55 不重复题目、预设、重复次数）', () => {
     const h = harness();
     try {
-      expect(() => h.launches.planOf(launchRequest(h, { taskIds: ['CACHE-02', 'CACHE-02'] }))).toThrow(LaunchError);
+      expect(() => h.launches.planOf(launchRequest(h, { taskIds: ['CACHE-04', 'CACHE-04'] }))).toThrow(LaunchError);
       expect(() => h.launches.planOf(launchRequest(h, { repeats: 0 }))).toThrow(LaunchError);
       expect(() => h.launches.planOf(launchRequest(h, { repeats: 21 }))).toThrow(LaunchError);
       expect(() => h.launches.planOf(launchRequest(h, { presets: ['nope'] }))).toThrow(LaunchError);
@@ -761,13 +762,13 @@ describe('路由：发起、纯读、取消、外部提交', () => {
         expect(listed.candidates.map(item => item.name).sort()).toEqual(['candidate-one', 'candidate-two']);
         expect(listed.truncated).toBe(false);
 
-        expect((await app.inject({ method: 'POST', url: '/api/submissions', payload: { taskId: 'CACHE-02' } })).statusCode).toBe(401);
-        const base = { taskId: 'CACHE-02', idempotencyKey: 'launch-test-key-1', reason: 'agent-completed' };
+        expect((await app.inject({ method: 'POST', url: '/api/submissions', payload: { taskId: 'CACHE-04' } })).statusCode).toBe(401);
+        const base = { taskId: 'CACHE-04', idempotencyKey: 'launch-test-key-1', reason: 'agent-completed' };
         // 越界与不存在都必须拒绝。
         expect((await app.inject({ method: 'POST', url: '/api/submissions', headers: { 'x-bench-token': token }, payload: { ...base, candidateDirectory: '../outside' } })).statusCode).toBe(400);
         expect((await app.inject({ method: 'POST', url: '/api/submissions', headers: { 'x-bench-token': token }, payload: { ...base, candidateDirectory: 'missing' } })).statusCode).toBe(400);
         // 协议不完整的提交给 400，而不是让冻结链路去猜。
-        expect((await app.inject({ method: 'POST', url: '/api/submissions', headers: { 'x-bench-token': token }, payload: { taskId: 'CACHE-02' } })).statusCode).toBe(400);
+        expect((await app.inject({ method: 'POST', url: '/api/submissions', headers: { 'x-bench-token': token }, payload: { taskId: 'CACHE-04' } })).statusCode).toBe(400);
         expect((await app.inject({ method: 'POST', url: '/api/submissions', headers: { 'x-bench-token': token }, payload: { ...base, idempotencyKey: 'short' } })).statusCode).toBe(400);
       } finally { await app.close(); }
     } finally { h.launches.close(); }
@@ -836,7 +837,7 @@ describe('与真实 dsh-compare 的受控接线（--check，不调用模型、�
     const launches = createLaunches({ config, launchesRoot, repositoryRoot, env: {}, pollMs: 50, registrationWaitMs: 10_000, confirmMs: 20_000 });
     try {
       const view = await launches.launch({
-        scope: 'manual', taskIds: ['CACHE-02'], presets: ['standard'], modes: ['off'], repeats: 1,
+        scope: 'manual', taskIds: ['CACHE-04'], presets: ['standard'], modes: ['off'], repeats: 1,
         provider: 'fake-provider', model: 'fake-model', outputRoot, check: true,
       });
       // 默认 childScript 就是仓库里的真实 scripts/dsh-compare.ts。
@@ -873,7 +874,7 @@ describe('归档启动记录（clean）的闸门只拦「真的还在跑」', ()
     writeFileSync(join(h.launchesRoot, launchId + '.json'), JSON.stringify({
       launchId, supervisorToken: 'fixture-token', kind: 'comparison', experimentId: launchId, outputRoot: h.outputRoot,
       startedAt: '2026-09-26T17:22:46.133Z', state: 'unknown', exitCode: null, logPath: join(h.launchesRoot, launchId + '.log'),
-      plan: { taskIds: ['CACHE-02'], presets: ['standard'], modes: ['off'], repeats: 1, timeoutMinutes: 20, maxTokens: 16384,
+      plan: { taskIds: ['CACHE-04'], presets: ['standard'], modes: ['off'], repeats: 1, timeoutMinutes: 20, maxTokens: 16384,
         measurePerformance: false, provider: 'fake-provider', model: 'fake-model', answers: 1, concurrency: 1 },
       args: [], childScript: supervisorScript, childArgs: [], exitPath: join(h.launchesRoot, launchId + '.exit.json'),
       cancelPath: join(h.launchesRoot, launchId + '.cancel-requested'), pid: null, pidStartedAt: null,
@@ -949,7 +950,7 @@ function residueFixture(h: Harness, launchId: string, record: Record<string, unk
   writeFileSync(join(h.launchesRoot, launchId + '.json'), JSON.stringify({
     launchId, supervisorToken: 'fixture-token', kind: 'comparison', experimentId: launchId, outputRoot: h.outputRoot,
     startedAt: '2026-09-27T03:14:26.894Z', state: 'unknown', exitCode: null, logPath: join(h.launchesRoot, launchId + '.log'),
-    plan: { taskIds: ['CACHE-02'], presets: ['standard'], modes: ['off'], repeats: 1, timeoutMinutes: 20, maxTokens: 16384,
+    plan: { taskIds: ['CACHE-04'], presets: ['standard'], modes: ['off'], repeats: 1, timeoutMinutes: 20, maxTokens: 16384,
       measurePerformance: false, provider: 'fake-provider', model: 'fake-model', answers: 1, concurrency: 1 },
     args: [], childScript: supervisorScript, childArgs: [], exitPath: join(h.launchesRoot, launchId + '.exit.json'),
     cancelPath: join(h.launchesRoot, launchId + '.cancel-requested'), pid: null, pidStartedAt: null,

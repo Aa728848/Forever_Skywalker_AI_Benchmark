@@ -351,10 +351,10 @@ describe('保存后即时生效', () => {
       expect((await app.inject('/api/health')).json()).toMatchObject({ runEntry: true });
 
       // 运行入口真的按新值工作：不再是 503，能走完冻结与验证。
-      exportWorkspace('CACHE-02', candidate);
+      exportWorkspace('CACHE-04', candidate);
       const submitted = await app.inject({
         method: 'POST', url: '/api/runs', headers: { 'x-bench-token': runToken },
-        payload: { taskId: 'CACHE-02', candidateDirectory: 'cache-02-defect', idempotencyKey: 'config-live-1', submittedBy: 'config-test', reason: 'operator-submit' },
+        payload: { taskId: 'CACHE-04', candidateDirectory: 'cache-02-defect', idempotencyKey: 'config-live-1', submittedBy: 'config-test', reason: 'operator-submit' },
       });
       expect(submitted.statusCode).toBe(201);
 
