@@ -17,7 +17,7 @@ Status: implemented
 
 ## Decision
 
-1. `DshComparisonOptions` 新增 `concurrency`（1–8，默认 1）。1 就是原来的串行行为，逐字不变。
+1. `DshComparisonOptions` 新增 `concurrency`（1–16，默认 1）。1 就是原来的串行行为，逐字不变。
    主循环改为固定大小的 worker 池：`Math.min(concurrency, 待执行行数)` 个 worker 不断取下一行。
 2. 停止语义从 `break` 改为**停止标记**。串行时一个 `break` 就能立刻停，并行时不行：
    在飞行的行必须收尾（否则 workspace 与证据会半截）。现在 `requestStop()` 只阻止**派发新行**，
@@ -27,7 +27,7 @@ Status: implemented
 4. 落盘链**有界**：返回前排空（`drainPersist`），排空后关闭（`persistClosed`），
    关闭之后 `persist()` 是空操作。少了这一步，链上的写入会跑到 `runDshComparison` 返回之后，
    在调用方（尤其是测试）删掉输出目录后抛 `ENOENT` 未处理拒绝——实测 8 个测试各出一条。
-5. CLI `--concurrency <1-8>`、API `concurrency` 字段、网页「并行度」输入框。
+5. CLI `--concurrency <1-16>`、API `concurrency` 字段、网页「并行度」输入框。
    续跑时并行度同样取自报告 `settings`，与既有配置一致性核对一起生效。
 
 ## 隔离前提（都已成立，不因并行而改变）
@@ -61,8 +61,8 @@ Status: implemented
 
 - **并行的直接证据**：`dsh-comparison.test.ts` 记录「同时在飞」的峰值——串行 `peak === 1`、
   3 路 `peak === 3`，且 3 路墙钟显著短于串行；结果完整性（`state === 'completed'`、行数）不变。
-- 越界拒绝：`--concurrency 0`、`9`、`2.5` 均报「并行度须为 1–8 的整数。」
+- 越界拒绝：`--concurrency 0`、`17`、`2.5` 均报「并行度须为 1–16 的整数。」
 - CLI 接受：`--concurrency 3 --check` 通过本地预检，模型调用 0。
-- 网页控件：并行度输入框默认 1，输入 99 夹到 8、输入 0 夹到 1。
+- 网页控件：并行度输入框默认 1，输入 99 夹到 16、输入 0 夹到 1。
 - 无未处理拒绝：修复前 evaluation 套件报 8 条 `ENOENT ... .tmp` 未处理拒绝，修复后 0 条。
 - `pnpm check` exit 0（377 项）。

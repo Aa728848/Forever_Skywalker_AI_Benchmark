@@ -3,6 +3,9 @@ import { experimentDetailValidator, experimentListValidator, type ExperimentDeta
 import { LiveStream } from './LiveStream.tsx';
 import { ProgressLog } from './ProgressLog.tsx';
 
+/** 并行度上限。与 @fsa/evaluation 的 validateComparison 保持一致（那里是唯一校验权威）。 */
+const maxConcurrency = 16;
+
 /**
  * 发起测评：把「发起自动测评 / 实时看进度 / 可靠取消」放进一个页签。
  * 外部作答提交已移到「提交与记录」页签——提交后要看的就是那里，两处分开常让人以为没生效。
@@ -379,9 +382,9 @@ export function LaunchPanel({ tasks }: { tasks: Task[] }) {
         <input id="launch-minutes" type="number" min={1} max={1440} value={form.timeoutMinutes} onChange={event => edit({ timeoutMinutes: Number(event.target.value) })} />
         <label htmlFor="launch-tokens">每次请求输出上限</label>
         <input id="launch-tokens" type="number" min={1} value={form.maxTokens} onChange={event => edit({ maxTokens: Number(event.target.value) })} />
-        <label htmlFor="launch-concurrency">并行度（1–16）</label>
-        <input id="launch-concurrency" type="number" min={1} max={8} value={form.concurrency}
-          onChange={event => edit({ concurrency: Math.min(8, Math.max(1, Number(event.target.value) || 1)) })} />
+        <label htmlFor="launch-concurrency">并行度（1–{maxConcurrency}）</label>
+        <input id="launch-concurrency" type="number" min={1} max={maxConcurrency} value={form.concurrency}
+          onChange={event => edit({ concurrency: Math.min(maxConcurrency, Math.max(1, Number(event.target.value) || 1)) })} />
       </div>
       <div className="launch-field">
         <label htmlFor="launch-output">报告根</label>
