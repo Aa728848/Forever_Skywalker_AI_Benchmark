@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "ARCH-01",
-  "taskVersion": "0.2.0",
+  "taskVersion": "0.2.1",
   "title": "浏览器与宿主依赖边界",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",

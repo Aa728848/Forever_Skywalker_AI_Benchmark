@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "CONC-04",
-  "taskVersion": "0.2.0",
+  "taskVersion": "0.2.1",
   "title": "持久分片归并、崩溃恢复与代际发布",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",

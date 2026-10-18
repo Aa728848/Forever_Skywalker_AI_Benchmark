@@ -1,6 +1,6 @@
 # ARCH-01 · 浏览器与宿主依赖边界
 
-- 难度：简单；题型：独立核心题；能力域：耦合与解耦。运行时：TypeScript on Node.js 24。题目版本：0.2.0。
+- 难度：简单；题型：独立核心题；能力域：耦合与解耦。运行时：TypeScript on Node.js 24。题目版本：0.2.1。
 
 ## 背景
 
@@ -23,7 +23,7 @@ export function resolveSettings(port: HostPort): Settings;
 3. `mode` 只接受 `'prod'`（取 prod），其它值或缺省取 `'dev'`。
 4. `endpoint` 必填且非空白，缺失或空白抛 `SettingsError`（`key` 为 `'endpoint'`）。
 5. `retries` 缺省 3，必须是 0..10 的十进制整数，否则抛 `SettingsError`（`key` 为 `'retries'`）。判定按**字符串**进行：只接受一个或多个十进制数字（`/^[0-9]+$/`）；带符号、小数点、指数、十六进制前缀、前后空白与全角数字都不是合法取值。
-6. 返回冻结对象；调用不得修改传入的端口对象，也不得给它新增字段。
+6. 返回冻结对象（`Object.isFrozen` 为 true），尝试写入任一属性必须抛 `TypeError`；调用不得修改传入的端口对象，也不得给它新增字段。
 
 ## 限制
 

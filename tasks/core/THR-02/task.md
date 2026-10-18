@@ -1,10 +1,10 @@
 # THR-02 · 有界线程池与任务异常
 
-题目版本：0.1.1；难度：medium；运行时：Node.js 24 原生 TypeScript 类型剥离。
+题目版本：0.1.2；难度：medium；运行时：Node.js 24 原生 TypeScript 类型剥离。
 
 ## 固定接口与契约
 
-Job={id:string;value:number;crash?:boolean;gate?:SharedArrayBuffer}；ThreadPool(size:number)；submit(job):Promise<number>；close():Promise<void>。size为1..8整数。
+Job={id:string;value:number;crash?:boolean;gate?:SharedArrayBuffer}；ThreadPool(size:number)；submit(job):Promise<number>；close():Promise<void>。size为1..8整数；越界或非整数时构造抛RangeError。
 
 固定worker.ts必须真实执行每个任务并返回value*2，crash任务实际抛异常，对应submit拒绝但队列继续排空。任意时刻活跃worker不能超过size。可用SharedArrayBuffer gate控制真实线程交错：worker对下标0执行Atomics.wait，外侧将其设为1并notify后解除。不得修改worker.ts。
 

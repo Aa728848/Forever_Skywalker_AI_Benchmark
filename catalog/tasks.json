@@ -582,7 +582,7 @@
   },
   {
     "id": "THR-02",
-    "version": "0.1.1",
+    "version": "0.1.2",
     "title": "有界线程池与任务异常",
     "domain": "多线程",
     "difficulty": "medium",
@@ -750,7 +750,7 @@
   },
   {
     "id": "CONC-04",
-    "version": "0.2.0",
+    "version": "0.2.1",
     "title": "持久分片归并、崩溃恢复与代际发布",
     "domain": "异步并发",
     "difficulty": "extreme",
@@ -778,7 +778,7 @@
   },
   {
     "id": "ARCH-01",
-    "version": "0.2.0",
+    "version": "0.2.1",
     "title": "浏览器与宿主依赖边界",
     "domain": "耦合与解耦",
     "difficulty": "easy",
@@ -893,7 +893,7 @@
   },
   {
     "id": "GRAPH-01",
-    "version": "0.2.0",
+    "version": "0.2.1",
     "title": "树遍历终止与叶节点",
     "domain": "递归与图算法",
     "difficulty": "easy",
