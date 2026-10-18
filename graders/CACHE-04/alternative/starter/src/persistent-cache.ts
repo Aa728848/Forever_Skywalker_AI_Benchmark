@@ -79,6 +79,9 @@ export class PersistentCache {
     const captured = Array.from(keys);
     return this.#schedule(async () => { await this.#initialize();const output = captured.map(key => Object.freeze({ key, value: this.#rows.find(row => row[0] === this.#identity(key))?.[1] }));return Object.freeze(output); });
   }
+  /** 与参考实现不同的组织方式：索引按"扫描行数组并分组"现场计算。 */
+  index(): Map<string, string[]> { const grouped = new Map<string, string[]>(); for (const [identity, value] of this.#rows) { const bucket = grouped.get(value);if (bucket === undefined) grouped.set(value, [identity]);else bucket.push(identity); } return grouped; }
+  keysFor(value: string): string[] { return (this.index().get(value) ?? []).slice().sort(); }
   async recover(journal: readonly (readonly [string, string])[]): Promise<void> {
     await this.#initialize();
     const restored: [string, string][] = journal.map(([key, value]) => [this.#identity(key), value]);

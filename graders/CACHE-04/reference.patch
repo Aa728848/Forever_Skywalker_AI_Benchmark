@@ -55,10 +55,10 @@ index dc560a9..72d5740 100644
 + return hash;
 +}
 diff --git a/starter/src/persistent-cache.ts b/starter/src/persistent-cache.ts
-index bd8d88f..02fae38 100644
+index 791d825..b28b600 100644
 --- a/starter/src/persistent-cache.ts
 +++ b/starter/src/persistent-cache.ts
-@@ -9,29 +9,77 @@ export class StaleWriteError extends Error {
+@@ -9,32 +9,87 @@ export class StaleWriteError extends Error {
    readonly expected: number;
    constructor(expected: number) { super('stale epoch'); this.name = 'StaleWriteError'; this.expected = expected; }
  }
@@ -105,7 +105,6 @@ index bd8d88f..02fae38 100644
 -    this.#tail = operation.catch(() => { });
 -    return operation;
 +  #enqueue<T>(action: () => Promise<T>): Promise<T> { const operation = this.#tail.then(action);this.#tail = operation.then(() => { }, () => { });return operation; }
-+  /** 提交：带 epoch 的存储必须条件写入。成功后就地重新读取派生版本，绝不自己 +1 猜。 */
 +  async #commit(next: Map<string, string>): Promise<void> {
 +    const body = JSON.stringify({ schema: 1, entries: [...next] });
 +    if (!isVersioned(this.#storage)) { await this.#storage.writeAtomic(body);this.#entries = next;return; }
@@ -149,10 +148,23 @@ index bd8d88f..02fae38 100644
 +    const next = new Map(this.#entries);
 +    for (const [key, value] of journal) next.set(this.#key(key), value);
 +    this.#entries = next;
++  }
++  /**
++   * 二级索引永远是**派生**的：每次调用从当前条目重算，不单独存储。
++   * 因此它不可能与条目不一致——崩溃、被拒写入、恢复重放都不会留下陈旧的索引。
++   */
++  index(): Map<string, string[]> {
++    const derived = new Map<string, string[]>();
++    for (const [composite, value] of this.#entries) { const bucket = derived.get(value) ?? []; bucket.push(composite); derived.set(value, bucket); }
++    return derived;
    }
 -  async setMany(entries: readonly (readonly [string, string])[]): Promise<void> { for (const [key, value] of entries) await this.set(key, value); }
 -  async refresh(): Promise<void> { const text = await this.#storage.read(); this.#entries = text === null ? new Map() : new Map(JSON.parse(text).entries); }
 -  async snapshot(keys: readonly string[]): Promise<readonly { readonly key: string; readonly value: string | undefined }[]> { return Object.freeze(await Promise.all(keys.map(async key => Object.freeze({ key, value: await this.get(key) })))); }
 -  /** 缺陷：恢复日志只写内存，不落盘也不校验 epoch。 */
 -  async recover(journal: readonly (readonly [string, string])[]): Promise<void> { await this.#ready(); for (const [key, value] of journal) this.#entries.set(this.#key(key), value); }
+-  /** 缺陷：二级索引与条目分别维护，崩溃在两者之间会永久不一致。 */
+-  index(): Map<string, string[]> { const derived = new Map<string, string[]>(); for (const [key, value] of this.#entries) { const bucket = derived.get(value) ?? []; bucket.push(key); derived.set(value, bucket); } return derived; }
++  /** 查询某个值对应的复合键集合，按字典序返回；找不到返回空数组。 */
+   keysFor(value: string): string[] { return [...(this.index().get(value) ?? [])].sort(); }
  }

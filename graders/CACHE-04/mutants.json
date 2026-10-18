@@ -23,5 +23,13 @@
       "hidden/file-failure-preserves-confirmed-and-cleans",
       "hidden/file-process-crash-boundaries"
     ]
+  },
+  {
+    "id": "index-synced-only-on-commit",
+    "description": "索引只在提交时重建，恢复重放后索引与条目分叉。",
+    "patch": "graders/CACHE-04/mutants/index-synced-only-on-commit.patch",
+    "expectedFailures": [
+      "hidden/index-survives-crash-recovery-replay"
+    ]
   }
 ]

@@ -34,4 +34,7 @@ export class PersistentCache {
   async snapshot(keys: readonly string[]): Promise<readonly { readonly key: string; readonly value: string | undefined }[]> { return Object.freeze(await Promise.all(keys.map(async key => Object.freeze({ key, value: await this.get(key) })))); }
   /** 缺陷：恢复日志只写内存，不落盘也不校验 epoch。 */
   async recover(journal: readonly (readonly [string, string])[]): Promise<void> { await this.#ready(); for (const [key, value] of journal) this.#entries.set(this.#key(key), value); }
+  /** 缺陷：二级索引与条目分别维护，崩溃在两者之间会永久不一致。 */
+  index(): Map<string, string[]> { const derived = new Map<string, string[]>(); for (const [key, value] of this.#entries) { const bucket = derived.get(value) ?? []; bucket.push(key); derived.set(value, bucket); } return derived; }
+  keysFor(value: string): string[] { return [...(this.index().get(value) ?? [])].sort(); }
 }

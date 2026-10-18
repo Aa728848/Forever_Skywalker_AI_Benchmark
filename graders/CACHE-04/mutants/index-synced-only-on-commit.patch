@@ -1,0 +1,28 @@
+diff --git a/starter/src/persistent-cache.ts b/starter/src/persistent-cache.ts
+index b28b600..28b1bfa 100644
+--- a/starter/src/persistent-cache.ts
++++ b/starter/src/persistent-cache.ts
+@@ -52,6 +52,7 @@ export class PersistentCache {
+     const settled = await this.#storage.readVersioned();
+     this.#epoch = settled.epoch;
+     this.#entries = next;
++    this.#refreshIndex();
+   }
+   async get(key: string): Promise<string | undefined> { await this.#ready();await this.#tail;return this.#entries.get(this.#key(key)); }
+   set(key: string, value: string): Promise<void> { return this.setMany([[key, value]]); }
+@@ -85,11 +86,11 @@ export class PersistentCache {
+    * 二级索引永远是**派生**的：每次调用从当前条目重算，不单独存储。
+    * 因此它不可能与条目不一致——崩溃、被拒写入、恢复重放都不会留下陈旧的索引。
+    */
++  #cachedIndex = new Map<string, string[]>();
+   index(): Map<string, string[]> {
+-    const derived = new Map<string, string[]>();
+-    for (const [composite, value] of this.#entries) { const bucket = derived.get(value) ?? []; bucket.push(composite); derived.set(value, bucket); }
+-    return derived;
++    return new Map(this.#cachedIndex);
+   }
+   /** 查询某个值对应的复合键集合，按字典序返回；找不到返回空数组。 */
+-  keysFor(value: string): string[] { return [...(this.index().get(value) ?? [])].sort(); }
++  keysFor(value: string): string[] { return [...(this.#cachedIndex.get(value) ?? [])].sort(); }
++  #refreshIndex(): void { const derived = new Map<string, string[]>(); for (const [composite, value] of this.#entries) { const bucket = derived.get(value) ?? []; bucket.push(composite); derived.set(value, bucket); } this.#cachedIndex = derived; }
+ }

@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "CACHE-04",
-  "taskVersion": "0.3.0",
+  "taskVersion": "0.4.0",
   "title": "并发冷启动、持久化和版本隔离",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -54,7 +54,11 @@
       "hidden/stale-instance-write-is-rejected",
       "hidden/rejected-instance-resyncs-then-wins",
       "hidden/recovery-journal-replays-confirmed-entries",
-      "hidden/versioned-path-keeps-domain-isolation"
+      "hidden/versioned-path-keeps-domain-isolation",
+      "hidden/index-stays-consistent-with-entries",
+      "hidden/index-reflects-removal-and-overwrite",
+      "hidden/index-never-diverges-after-rejected-write",
+      "hidden/index-survives-crash-recovery-replay"
     ]
   },
   "limits": {
@@ -199,6 +203,38 @@
       "weight": 1,
       "critical": false,
       "summary": "带版本路径下域隔离仍然成立。"
+    },
+    {
+      "id": "hidden/index-stays-consistent-with-entries",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "索引与条目同源，重启重建一致。"
+    },
+    {
+      "id": "hidden/index-reflects-removal-and-overwrite",
+      "kind": "hidden",
+      "group": "behavior",
+      "weight": 1,
+      "critical": true,
+      "summary": "改写与批次后旧值不再命中。"
+    },
+    {
+      "id": "hidden/index-never-diverges-after-rejected-write",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "被拒写入不得进入索引。"
+    },
+    {
+      "id": "hidden/index-survives-crash-recovery-replay",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": true,
+      "summary": "恢复重放的条目必须进入索引。"
     }
   ]
 }
