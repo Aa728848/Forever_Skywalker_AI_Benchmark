@@ -1,6 +1,6 @@
 # CACHE-04 · 并发冷启动、持久化和版本隔离
 
-题目版本：0.2.0；难度：extreme；运行时：Node.js 24 原生 TypeScript 类型剥离。
+题目版本：0.3.0；难度：extreme；运行时：Node.js 24 原生 TypeScript 类型剥离。
 
 ## 固定接口与契约
 
@@ -44,3 +44,22 @@ starter/src/file-storage.ts 新增 AtomicFileStorage(path,onCheckpoint?) 实现 
 - 同步 onCheckpoint 可在 temporary-written（暂存内容写出、尚未同步）与 before-rename（暂存已同步、主文件尚未替换）抛错或使进程退出。普通异常失败保留旧主文件并清理本次暂存文件，后续显式写可继续。
 - 进程在任一屏障退出后，重启只读到完整旧主文件；成功完成替换后进程退出则重启读取完整新文件。不把暂存文件当确认结果；退出残留单个暂存文件允许后续写覆盖/清理。
 - 测试会启动真实子进程中断。本题要求同一文件系统上的进程故障恢复；不承诺断电或文件系统损坏恢复，也不要求多个独立写入实例竞争。
+
+## 跨实例版本判定与恢复重放（0.3.0）
+
+同一份缓存文件可能被两个进程同时持有。此前实例之间没有任何版本协商：后写的直接覆盖先写的，落后的实例会用它读到的旧内容静默抹掉别人的确认。崩溃恢复也只是把日志写进内存，不校验、不落盘。
+
+Storage 增加两个可选方法，提供版本判定的能力：
+
+- readVersioned():Promise<{text:string|null;epoch:number}> —— 读取内容同时给出该内容的版本号。版本号必须由内容或文件状态派生：同一份字节的两个实例必须得到同一个版本号，不能是实例内部的计数器。
+- writeAtomicIfUnchanged(text:string,epoch:number):Promise<void> —— 仅当存储当前版本仍等于 epoch 时写入；否则抛 StaleWriteError（export class StaleWriteError extends Error，带只读 expected:number），且不得改变文件。
+
+PersistentCache 增加 recover(journal:readonly (readonly [string,string])[]):Promise<void>：把崩溃前已确认但尚未合并的条目重放进内存，已落盘的其它条目仍须可读。
+
+- 存储实现 VersionedStorage 时，set/setMany/refresh 必须用版本判定写回：本实例的版本就是它最后一次确认的版本，落后时写入被拒。
+- 写入被拒后，本实例必须立刻重新装载存储里的最新版本（内容与版本号一起更新），因此紧接着的重试应当成功；被拒的那批变更不得留在内存里冒充已确认。
+- 成功写入后必须以存储返回的新版本为准，不得自行推算版本号。
+- 存储未实现 VersionedStorage 时按原有语义工作（无条件写入），既有契约全部不变。
+- 域隔离、批次原子性、刷新排队、崩溃恢复的文件级不变量在版本判定路径下同样成立。
+
+AtomicFileStorage 实现 VersionedStorage：readVersioned 给出内容派生版本，writeAtomicIfUnchanged 在版本不符时抛 StaleWriteError 且保留原文件。测试会在真实文件与注入存储上验证两个实例的交错。

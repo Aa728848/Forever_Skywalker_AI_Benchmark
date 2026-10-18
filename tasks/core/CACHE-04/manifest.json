@@ -1,7 +1,7 @@
 {
   "schemaVersion": "0.1.0",
   "taskId": "CACHE-04",
-  "taskVersion": "0.2.0",
+  "taskVersion": "0.3.0",
   "title": "并发冷启动、持久化和版本隔离",
   "runtime": "typescript",
   "runtimeRange": "node >=24.14.1 <25",
@@ -50,7 +50,11 @@
       "hidden/batch-validation-and-call-time-copy",
       "hidden/refresh-and-snapshot-keep-queue-cut",
       "hidden/file-failure-preserves-confirmed-and-cleans",
-      "hidden/file-process-crash-boundaries"
+      "hidden/file-process-crash-boundaries",
+      "hidden/stale-instance-write-is-rejected",
+      "hidden/rejected-instance-resyncs-then-wins",
+      "hidden/recovery-journal-replays-confirmed-entries",
+      "hidden/versioned-path-keeps-domain-isolation"
     ]
   },
   "limits": {
@@ -163,6 +167,38 @@
       "summary": "真实进程在持久屏障中断恢复",
       "weight": 1,
       "critical": true
+    },
+    {
+      "id": "hidden/stale-instance-write-is-rejected",
+      "kind": "hidden",
+      "group": "boundary",
+      "weight": 1,
+      "critical": true,
+      "summary": "落后实例的写入被拒绝，文件不被静默覆盖。"
+    },
+    {
+      "id": "hidden/rejected-instance-resyncs-then-wins",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": true,
+      "summary": "被拒后已重新装载最新版本，随后写入可成功。"
+    },
+    {
+      "id": "hidden/recovery-journal-replays-confirmed-entries",
+      "kind": "hidden",
+      "group": "regression",
+      "weight": 1,
+      "critical": true,
+      "summary": "崩溃恢复用日志补齐已确认条目。"
+    },
+    {
+      "id": "hidden/versioned-path-keeps-domain-isolation",
+      "kind": "hidden",
+      "group": "state",
+      "weight": 1,
+      "critical": false,
+      "summary": "带版本路径下域隔离仍然成立。"
     }
   ]
 }

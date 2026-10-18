@@ -1,9 +1,9 @@
 diff --git a/starter/src/file-storage.ts b/starter/src/file-storage.ts
-index 1920cd3..cd0db75 100644
+index 72d5740..2d4347d 100644
 --- a/starter/src/file-storage.ts
 +++ b/starter/src/file-storage.ts
-@@ -8,10 +8,10 @@ export class AtomicFileStorage implements Storage {
-  writeAtomic(text:string):Promise<void>{const pending=this.#tail.then(async()=>{
+@@ -27,10 +27,10 @@ export class AtomicFileStorage implements Storage {
+   }
    const temporary=this.#path+'.pending';
    try{
 -   const handle=await open(temporary,'w');
@@ -11,7 +11,7 @@ index 1920cd3..cd0db75 100644
     try{await handle.writeFile(text,'utf8');this.#checkpoint?.('temporary-written');await handle.sync();}finally{await handle.close();}
     this.#checkpoint?.('before-rename');
 -   await rename(temporary,this.#path);
-+   // Direct write already published.
++   // published by the direct write above
    }finally{try{await unlink(temporary);}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}}
   });this.#tail=pending.then(()=>{},()=>{});return pending;}
  }

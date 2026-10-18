@@ -84,7 +84,7 @@
   },
   {
     "id": "CACHE-04",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "title": "并发冷启动、持久化和版本隔离",
     "domain": "缓存",
     "difficulty": "medium",

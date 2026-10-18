@@ -1,10 +1,13 @@
 import {open,readFile,unlink} from 'node:fs/promises';
-import type {Storage} from './persistent-cache.ts';
+import type {Storage,Snapshot} from './persistent-cache.ts';
 export type FileCheckpoint='temporary-written'|'before-rename';
 export class AtomicFileStorage implements Storage {
  readonly #path:string;readonly #checkpoint:((point:FileCheckpoint)=>void)|undefined;#tail=Promise.resolve();
  constructor(path:string,onCheckpoint?:(point:FileCheckpoint)=>void){this.#path=path;this.#checkpoint=onCheckpoint;}
- async read():Promise<string|null>{await this.#tail;try{return await readFile(this.#path,'utf8');}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return null;throw error;}}
+ async read():Promise<string|null>{return (await this.readVersioned()).text;}
+ async readVersioned():Promise<Snapshot>{await this.#tail;try{const text=await readFile(this.#path,'utf8');return {text,epoch:0};}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return {text:null,epoch:0};throw error;}}
+ // 缺陷：条件写入没有真正比较版本，直接走普通写入。
+ async writeAtomicIfUnchanged(text:string,epoch:number):Promise<void>{void epoch;return this.writeAtomic(text);}
  writeAtomic(text:string):Promise<void>{const pending=this.#tail.then(async()=>{
   const temporary=this.#path+'.pending';
   try{

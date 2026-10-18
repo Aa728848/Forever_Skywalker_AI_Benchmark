@@ -1,15 +1,41 @@
 diff --git a/starter/src/file-storage.ts b/starter/src/file-storage.ts
-index 400abec..1920cd3 100644
+index dc560a9..72d5740 100644
 --- a/starter/src/file-storage.ts
 +++ b/starter/src/file-storage.ts
-@@ -1,4 +1,4 @@
+@@ -1,20 +1,43 @@
 -import {open,readFile,unlink} from 'node:fs/promises';
+-import type {Storage,Snapshot} from './persistent-cache.ts';
 +import {open,readFile,rename,unlink} from 'node:fs/promises';
- import type {Storage} from './persistent-cache.ts';
++import type {Storage} from './persistent-cache.ts';
++import {StaleWriteError} from './persistent-cache.ts';
  export type FileCheckpoint='temporary-written'|'before-rename';
++/**
++ * 真实文件存储，提供带 epoch 的条件写入。
++ *
++ * epoch 从**文件内容**派生，不放在存储实例里：同一文件的第二个实例有它自己的计数器，
++ * 用实例内计数做版本判定会把落后的写入放过去。内容哈希让两个实例读到同一份字节就得到
++ * 同一个 epoch，谁先写谁赢，后写的必然对不上。
++ */
  export class AtomicFileStorage implements Storage {
-@@ -8,10 +8,10 @@ export class AtomicFileStorage implements Storage {
-  writeAtomic(text:string):Promise<void>{const pending=this.#tail.then(async()=>{
+  readonly #path:string;readonly #checkpoint:((point:FileCheckpoint)=>void)|undefined;#tail=Promise.resolve();
+  constructor(path:string,onCheckpoint?:(point:FileCheckpoint)=>void){this.#path=path;this.#checkpoint=onCheckpoint;}
+  async read():Promise<string|null>{return (await this.readVersioned()).text;}
+- async readVersioned():Promise<Snapshot>{await this.#tail;try{const text=await readFile(this.#path,'utf8');return {text,epoch:0};}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return {text:null,epoch:0};throw error;}}
+- // 缺陷：条件写入没有真正比较版本，直接走普通写入。
+- async writeAtomicIfUnchanged(text:string,epoch:number):Promise<void>{void epoch;return this.writeAtomic(text);}
+- writeAtomic(text:string):Promise<void>{const pending=this.#tail.then(async()=>{
++ async readVersioned():Promise<{text:string|null;epoch:number}>{await this.#tail;return this.#load();}
++ async #load():Promise<{text:string|null;epoch:number}>{
++  try{const text=await readFile(this.#path,'utf8');return {text,epoch:epochOf(text)};}
++  catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return {text:null,epoch:epochOf(null)};throw error;}
++ }
++ writeAtomic(text:string):Promise<void>{return this.#write(text,null);}
++ writeAtomicIfUnchanged(text:string,epoch:number):Promise<void>{return this.#write(text,epoch);}
++ #write(text:string,expected:number|null):Promise<void>{const pending=this.#tail.then(async()=>{
++  if(expected!==null){
++   const current=await this.#load();
++   if(current.epoch!==expected)throw new StaleWriteError(expected);
++  }
    const temporary=this.#path+'.pending';
    try{
 -   const handle=await open(this.#path,'w');
@@ -21,56 +47,112 @@ index 400abec..1920cd3 100644
    }finally{try{await unlink(temporary);}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}}
   });this.#tail=pending.then(()=>{},()=>{});return pending;}
  }
++/** 内容派生版本号：同一份字节必然得到同一个 epoch，与实例无关。 */
++function epochOf(text:string|null):number{
++ if(text===null)return 0;
++ let hash=0x811c9dc5;
++ for(let index=0;index<text.length;index+=1){hash^=text.charCodeAt(index);hash=Math.imul(hash,0x01000193)>>>0;}
++ return hash;
++}
 diff --git a/starter/src/persistent-cache.ts b/starter/src/persistent-cache.ts
-index 0bd6eda..19fa44c 100644
+index bd8d88f..02fae38 100644
 --- a/starter/src/persistent-cache.ts
 +++ b/starter/src/persistent-cache.ts
-@@ -1,28 +1,27 @@
- export interface Storage { read(): Promise<string | null>; writeAtomic(text: string): Promise<void> }
- export interface Scope { readonly workspace: string; readonly model: string; readonly rules: string }
--
-+function decode(text:string|null):Map<string,string> {
-+  if(text===null)return new Map();
-+  let data;try{data=JSON.parse(text);}catch(error){if(error instanceof SyntaxError)return new Map();throw error;}
-+  return data?.schema===1&&Array.isArray(data.entries)&&data.entries.every((row:unknown)=>Array.isArray(row)&&row.length===2&&row.every(value=>typeof value==='string'))?new Map(data.entries):new Map();
+@@ -9,29 +9,77 @@ export class StaleWriteError extends Error {
+   readonly expected: number;
+   constructor(expected: number) { super('stale epoch'); this.name = 'StaleWriteError'; this.expected = expected; }
+ }
++function decode(text: string | null): Map<string, string> {
++  if (text === null) return new Map();
++  let data;try { data = JSON.parse(text); } catch (error) { if (error instanceof SyntaxError) return new Map(); throw error; }
++  return data?.schema === 1 && Array.isArray(data.entries) && data.entries.every((row: unknown) => Array.isArray(row) && row.length === 2 && row.every(value => typeof value === 'string')) ? new Map(data.entries) : new Map();
++}
++function isVersioned(storage: Storage): storage is VersionedStorage {
++  const candidate = storage as Partial<VersionedStorage>;
++  return typeof candidate.readVersioned === 'function' && typeof candidate.writeAtomicIfUnchanged === 'function';
 +}
  export class PersistentCache {
 -  readonly #storage: Storage; readonly #scope: Scope;
--  #entries=new Map<string,string>(); #loading: Promise<void> | undefined; #tail=Promise.resolve();
--  constructor(storage: Storage, scope: Scope) {this.#storage=storage;this.#scope={...scope};}
--  #key(key: string): string {return JSON.stringify([this.#scope.workspace,key]);}
--  #ready(): Promise<void> {
+-  #entries = new Map<string, string>(); #loading: Promise<void> | undefined; #tail = Promise.resolve();
+-  constructor(storage: Storage, scope: Scope) { this.#storage = storage; this.#scope = { ...scope }; }
+-  #key(key: string): string { return JSON.stringify([this.#scope.workspace, key]); }
++  readonly #storage: Storage;readonly #scope: Scope;
++  #entries = new Map<string, string>();#loading: Promise<void> | undefined;#tail = Promise.resolve();
++  #epoch = 0;
++  constructor(storage: Storage, scope: Scope) { this.#storage = storage;this.#scope = { ...scope }; }
++  #key(key: string): string { return JSON.stringify([this.#scope.workspace, this.#scope.model, this.#scope.rules, key]); }
+   #ready(): Promise<void> {
 -    // 缺陷：每个并发请求都重新加载文件，较晚的冷启动还会覆盖已确认数据。
--    this.#loading=this.#storage.read().then(text=>{
--      if(text===null)return;
--      try {const parsed=JSON.parse(text);if(parsed?.schema!==1||!Array.isArray(parsed.entries)||!parsed.entries.every((row:unknown)=>Array.isArray(row)&&row.length===2&&row.every(x=>typeof x==='string')))throw new SyntaxError('corrupt cache');this.#entries=new Map(parsed.entries);}
--      catch(error){if(!(error instanceof SyntaxError))throw error;this.#entries=new Map();}
--    }).catch(error=>{this.#loading=undefined;throw error;});
-+  readonly #storage:Storage;readonly #scope:Scope;
-+  #entries=new Map<string,string>();#loading:Promise<void>|undefined;#tail=Promise.resolve();
-+  constructor(storage:Storage,scope:Scope){this.#storage=storage;this.#scope={...scope};}
-+  #key(key:string):string{return JSON.stringify([this.#scope.workspace,this.#scope.model,this.#scope.rules,key]);}
-+  #ready():Promise<void>{
-+    if(!this.#loading)this.#loading=this.#storage.read().then(text=>{this.#entries=decode(text);}).catch(error=>{this.#loading=undefined;throw error;});
+-    this.#loading = this.#storage.read().then(text => {
+-      if (text === null) return;
+-      try { const parsed = JSON.parse(text); if (parsed?.schema !== 1 || !Array.isArray(parsed.entries) || !parsed.entries.every((row: unknown) => Array.isArray(row) && row.length === 2 && row.every(x => typeof x === 'string'))) throw new SyntaxError('corrupt cache'); this.#entries = new Map(parsed.entries); }
+-      catch (error) { if (!(error instanceof SyntaxError)) throw error; this.#entries = new Map(); }
+-    }).catch(error => { this.#loading = undefined; throw error; });
++    if (!this.#loading) this.#loading = (async () => {
++      if (isVersioned(this.#storage)) {
++        const snapshot = await this.#storage.readVersioned();
++        this.#epoch = snapshot.epoch;
++        this.#entries = decode(snapshot.text);
++      } else {
++        this.#entries = decode(await this.#storage.read());
++      }
++    })().catch(error => { this.#loading = undefined;throw error; });
      return this.#loading;
    }
--  async get(key: string): Promise<string | undefined> {await this.#ready();await this.#tail;return this.#entries.get(this.#key(key));}
--  set(key: string,value: string): Promise<void> {
--    const operation=this.#tail.then(async()=>{await this.#ready();const next=new Map(this.#entries);next.set(this.#key(key),value);this.#entries=next;await this.#storage.writeAtomic(JSON.stringify({schema:1,entries:[...next]}));});
--    this.#tail=operation.catch(()=>{});
+-  async get(key: string): Promise<string | undefined> { await this.#ready(); await this.#tail; return this.#entries.get(this.#key(key)); }
+-  set(key: string, value: string): Promise<void> {
+-    const operation = this.#tail.then(async () => { await this.#ready(); const next = new Map(this.#entries); next.set(this.#key(key), value); this.#entries = next; await this.#storage.writeAtomic(JSON.stringify({ schema: 1, entries: [...next] })); });
+-    this.#tail = operation.catch(() => { });
 -    return operation;
-+  #enqueue<T>(action:()=>Promise<T>):Promise<T>{const operation=this.#tail.then(action);this.#tail=operation.then(()=>{},()=>{});return operation;}
-+  async get(key:string):Promise<string|undefined>{await this.#ready();await this.#tail;return this.#entries.get(this.#key(key));}
-+  set(key:string,value:string):Promise<void>{return this.setMany([[key,value]]);}
-+  setMany(entries:readonly (readonly [string,string])[]):Promise<void>{
-+    const changes=entries.map(row=>[...row]);
-+    if(changes.some(row=>row.length!==2||row.some(value=>typeof value!=='string'))||new Set(changes.map(row=>row[0])).size!==changes.length)return Promise.reject(new TypeError('invalid or duplicate entries'));
-+    return this.#enqueue(async()=>{await this.#ready();if(changes.length===0)return;const next=new Map(this.#entries);for(const [key,value] of changes)next.set(this.#key(key!),value!);await this.#storage.writeAtomic(JSON.stringify({schema:1,entries:[...next]}));this.#entries=next;});
++  #enqueue<T>(action: () => Promise<T>): Promise<T> { const operation = this.#tail.then(action);this.#tail = operation.then(() => { }, () => { });return operation; }
++  /** 提交：带 epoch 的存储必须条件写入。成功后就地重新读取派生版本，绝不自己 +1 猜。 */
++  async #commit(next: Map<string, string>): Promise<void> {
++    const body = JSON.stringify({ schema: 1, entries: [...next] });
++    if (!isVersioned(this.#storage)) { await this.#storage.writeAtomic(body);this.#entries = next;return; }
++    try { await this.#storage.writeAtomicIfUnchanged(body, this.#epoch); }
++    catch (error) {
++      if (error instanceof StaleWriteError) {
++        const snapshot = await this.#storage.readVersioned();
++        this.#epoch = snapshot.epoch;
++        this.#entries = decode(snapshot.text);
++      }
++      throw error;
++    }
++    const settled = await this.#storage.readVersioned();
++    this.#epoch = settled.epoch;
++    this.#entries = next;
++  }
++  async get(key: string): Promise<string | undefined> { await this.#ready();await this.#tail;return this.#entries.get(this.#key(key)); }
++  set(key: string, value: string): Promise<void> { return this.setMany([[key, value]]); }
++  setMany(entries: readonly (readonly [string, string])[]): Promise<void> {
++    const changes = entries.map(row => [...row]);
++    if (changes.some(row => row.length !== 2 || row.some(value => typeof value !== 'string')) || new Set(changes.map(row => row[0])).size !== changes.length) return Promise.reject(new TypeError('invalid or duplicate entries'));
++    return this.#enqueue(async () => {
++      await this.#ready();
++      if (changes.length === 0) return;
++      const next = new Map(this.#entries);
++      for (const [key, value] of changes) next.set(this.#key(key!), value!);
++      await this.#commit(next);
++    });
++  }
++  refresh(): Promise<void> { return this.#enqueue(async () => {
++    await this.#ready();
++    if (isVersioned(this.#storage)) { const snapshot = await this.#storage.readVersioned();this.#epoch = snapshot.epoch;this.#entries = decode(snapshot.text); }
++    else this.#entries = decode(await this.#storage.read());
++  }); }
++  snapshot(keys: readonly string[]): Promise<readonly { readonly key: string;readonly value: string | undefined }[]> {
++    const requested = [...keys];
++    return this.#enqueue(async () => { await this.#ready();return Object.freeze(requested.map(key => Object.freeze({ key, value: this.#entries.get(this.#key(key)) }))); });
++  }
++  async recover(journal: readonly (readonly [string, string])[]): Promise<void> {
++    await this.#ready();
++    const next = new Map(this.#entries);
++    for (const [key, value] of journal) next.set(this.#key(key), value);
++    this.#entries = next;
    }
--
--  async setMany(entries:readonly (readonly [string,string])[]):Promise<void>{for(const [key,value] of entries)await this.set(key,value);}
--  async refresh():Promise<void>{const text=await this.#storage.read();this.#entries=text===null?new Map():new Map(JSON.parse(text).entries);}
--  async snapshot(keys:readonly string[]):Promise<readonly {readonly key:string;readonly value:string|undefined}[]>{return Object.freeze(await Promise.all(keys.map(async key=>Object.freeze({key,value:await this.get(key)}))));}
-+  refresh():Promise<void>{return this.#enqueue(async()=>{await this.#ready();const loaded=decode(await this.#storage.read());this.#entries=loaded;});}
-+  snapshot(keys:readonly string[]):Promise<readonly {readonly key:string;readonly value:string|undefined}[]>{const requested=[...keys];return this.#enqueue(async()=>{await this.#ready();return Object.freeze(requested.map(key=>Object.freeze({key,value:this.#entries.get(this.#key(key))})));});}
+-  async setMany(entries: readonly (readonly [string, string])[]): Promise<void> { for (const [key, value] of entries) await this.set(key, value); }
+-  async refresh(): Promise<void> { const text = await this.#storage.read(); this.#entries = text === null ? new Map() : new Map(JSON.parse(text).entries); }
+-  async snapshot(keys: readonly string[]): Promise<readonly { readonly key: string; readonly value: string | undefined }[]> { return Object.freeze(await Promise.all(keys.map(async key => Object.freeze({ key, value: await this.get(key) })))); }
+-  /** 缺陷：恢复日志只写内存，不落盘也不校验 epoch。 */
+-  async recover(journal: readonly (readonly [string, string])[]): Promise<void> { await this.#ready(); for (const [key, value] of journal) this.#entries.set(this.#key(key), value); }
  }
