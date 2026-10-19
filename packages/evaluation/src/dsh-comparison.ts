@@ -154,27 +154,223 @@ export interface ComparisonServices {
    * 不写进 experiment.json：报告是结论载体，不是会话记录，逐 token 落盘会让报告膨胀且无法复读。
    */
   onEvent?: (row: ComparisonRow, event: DshEvent) => void;
+  /**
+   * 阶段变化（作答中 / 验证评分中 / 已完成 / 失败 / 已中止）。
+   *
+   * 与 onProgress 的分工：onProgress 写的是**报告里的进度文案**——结论载体，措辞受既有
+   * 测试约束；onPhase 只喂「作答中」面板，它需要的是「这一条作答现在到哪一步」，
+   * 而且必须带作答身份（题目 × 预设/等级 × 第几次），否则并发时无法把阶段归到对应的框。
+   */
+  onPhase?: (row: ComparisonRow, phase: LiveStreamPhase, detail?: string) => void;
 }
 
 /**
- * 把一条 DSH 事件压成一行终端可读的片段；与展示无关的事件返回 null。
- * 只做裁剪与截断，不改写内容：看到的就是模型吐出的原文。
+ * 流式输出的一行：**结构化**格式，前端据此把并发的每一条作答拆进各自的框。
+ *
+ * 形状：`  题目 · 预设/等级 · 第N次 › 类型: 内容`
+ * - 缩进两格、`·` 与 `›` 作分隔：launch.log 仍然人可以直接读；
+ * - 「类型」是稳定的英文小写词（phase/text/think/tool/result/end），前端按它分色分组，
+ *   不拿中文字面量做判断——文案会改，机器词不会；
+ * - 「内容」压平成一行：事件正文可能带换行（代码、diff），一行一事件才排得开。
  */
-export function liveEventLine(taskId: string, preset: string, mode: string, event: DshEvent): string | null {
-  const prefix = '  ' + taskId + ' · ' + preset + '/' + mode + ' › ';
-  const text = typeof event.data.text === 'string' ? event.data.text
-    : typeof event.data.delta === 'string' ? event.data.delta
-      : typeof event.data.content === 'string' ? event.data.content : null;
-  if (text !== null && text.trim() !== '') {
-    const kind = event.type.includes('thinking') || event.type.includes('reasoning') ? '思考' : '输出';
-    const flat = text.replace(/\s+/g, ' ').trim();
-    return prefix + kind + '：' + (flat.length > 160 ? flat.slice(0, 160) + '…' : flat);
+export type LiveStreamKind = 'phase' | 'text' | 'think' | 'tool' | 'result' | 'end';
+
+/** 一条作答的身份：并发时同题不同次也各占一框。 */
+export interface LiveStreamIdentity {
+  taskId: string;
+  preset: string;
+  mode: string;
+  repetition: number;
+}
+
+/** 阶段。面板按它判断「这一条作答已经结束」。 */
+export type LiveStreamPhase = 'solving' | 'grading' | 'done' | 'failed' | 'stopped';
+
+export const livePhaseLabels: Readonly<Record<LiveStreamPhase, string>> = {
+  solving: '作答中', grading: '容器验证与评分中', done: '已完成', failed: '失败', stopped: '已中止',
+};
+
+/** 字段分隔符：全角竖线，不会出现在工具名里。 */
+const fieldSeparator = '｜';
+
+export function liveStreamLine(identity: LiveStreamIdentity, kind: LiveStreamKind, payload: string): string {
+  return '  ' + identity.taskId + ' · ' + identity.preset + '/' + identity.mode + ' · 第' + identity.repetition + '次 › ' + kind + ': ' + payload;
+}
+
+/** 阶段行：面板据此把「在跑」与「已结束」分开。 */
+export function livePhaseLine(identity: LiveStreamIdentity, phase: LiveStreamPhase, detail?: string): string {
+  const label = livePhaseLabels[phase];
+  return liveStreamLine(identity, 'phase', detail === undefined || detail === '' ? label : label + '：' + detail);
+}
+
+/** 单条事件正文的上限：超了截断加省略号。一行一事件，几十万字的一行没法读。 */
+const maxTextChars = 4000;
+const maxArgsChars = 2000;
+const maxResultChars = 4000;
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function textOf(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+/** 压平成一行：事件正文可能带换行（代码、diff），一行一事件才排得开。 */
+function flatten(value: string, limit: number): string {
+  const flat = value.replace(/\s+/g, ' ').trim();
+  return flat.length > limit ? flat.slice(0, limit) + '…' : flat;
+}
+
+/**
+ * 从消息内容块或流式分片里收集正文。
+ *
+ * DSH 的正文藏在两处：完整的 `assistant/message` 放在 `data.message.content[]`，
+ * 逐块的 `assistant/attempt` 放在 `data.stream[]`（chunk → block → text）。
+ * 旧实现只认 `data.text/delta/content` 三个平铺字段，所以助手输出从来没被显示过，
+ * 面板里只剩「工具 xxx」——这正是「只能看到工具、看不到输出」的直接原因。
+ */
+function collectText(value: unknown, depth = 0): string {
+  if (depth > 8) return '';
+  if (typeof value === 'string') return value;
+  const record = asRecord(value);
+  if (record === null) return '';
+  if (typeof record.text === 'string') return record.text;
+  const parts: string[] = [];
+  for (const key of ['content', 'stream'] as const) {
+    const list = record[key];
+    if (!Array.isArray(list)) continue;
+    for (const item of list) {
+      const text = collectText(item, depth + 1);
+      if (text !== '') parts.push(text);
+    }
   }
-  if (event.type.startsWith('tool/')) {
-    const name = typeof event.data.name === 'string' ? event.data.name : typeof event.data.toolName === 'string' ? event.data.toolName : '';
-    return prefix + '工具' + (name === '' ? '' : ' ' + name);
+  for (const key of ['chunk', 'block'] as const) {
+    if (record[key] === undefined) continue;
+    const text = collectText(record[key], depth + 1);
+    if (text !== '') parts.push(text);
   }
-  return null;
+  return parts.join('\n');
+}
+
+/** 工具参数摘要：只列键值，不回灌整段 JSON。 */
+function summarizeArguments(value: unknown): string {
+  if (value === undefined || value === null) return '';
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed === '') return '';
+    try { return summarizeArguments(JSON.parse(trimmed) as unknown); }
+    catch { return flatten(trimmed, maxArgsChars); }
+  }
+  const record = asRecord(value);
+  if (record === null) return flatten(String(value), maxArgsChars);
+  const parts: string[] = [];
+  for (const [key, item] of Object.entries(record)) {
+    const text = typeof item === 'string' ? item : (JSON.stringify(item) ?? '');
+    parts.push(key + '=' + flatten(text, 60));
+  }
+  return flatten(parts.join(' '), maxArgsChars);
+}
+
+export interface LiveStreamWriter {
+  /** 把一条 DSH 事件压成若干行；与展示无关的事件返回空数组。 */
+  lines(identity: LiveStreamIdentity, event: DshEvent): string[];
+}
+
+/**
+ * 事件 → 流式行的写入器。
+ *
+ * 为什么要有状态：工具结果事件只带 callId、不带工具名，要显示「read 成功」得先把
+ * 工具调用时的名字记下来。去重也靠状态：同一次工具调用在 `assistant/message` 的内容块
+ * 与 `tool/call` 事件里各出现一次，不去重面板上会出现两条一样的行。
+ */
+export function createLiveStreamWriter(): LiveStreamWriter {
+  const toolNames = new Map<string, string>();
+  const emittedCalls = new Set<string>();
+  const emittedResults = new Set<string>();
+
+  const toolCallLine = (identity: LiveStreamIdentity, name: string, callId: string, args: unknown): string | null => {
+    const key = callId === '' ? name + fieldSeparator + summarizeArguments(args) : callId;
+    if (emittedCalls.has(key)) return null;
+    emittedCalls.add(key);
+    if (callId !== '' && name !== '') toolNames.set(callId, name);
+    const summary = summarizeArguments(args);
+    return liveStreamLine(identity, 'tool', name + (summary === '' ? '' : fieldSeparator + summary));
+  };
+
+  const resultLine = (identity: LiveStreamIdentity, callId: string, name: string, isError: boolean, content: string): string | null => {
+    const key = callId === '' ? name : callId;
+    if (emittedResults.has(key)) return null;
+    emittedResults.add(key);
+    const resolved = name !== '' ? name : (toolNames.get(callId) ?? '');
+    return liveStreamLine(identity, 'result', (isError ? 'err' : 'ok') + fieldSeparator + resolved + fieldSeparator + flatten(content, maxResultChars));
+  };
+
+  return {
+    lines(identity, event) {
+      const out: string[] = [];
+      const data = event.data;
+      const type = event.type;
+      const textKind: LiveStreamKind = type.includes('thinking') || type.includes('reasoning') ? 'think' : 'text';
+
+      if (type.startsWith('assistant/')) {
+        const message = asRecord(data.message);
+        const blocks = Array.isArray(message?.content) ? message.content : [];
+        for (const block of blocks) {
+          const record = asRecord(block);
+          if (record === null) continue;
+          const blockType = textOf(record.type);
+          if (blockType === 'text') {
+            const flat = flatten(textOf(record.text), maxTextChars);
+            if (flat !== '') out.push(liveStreamLine(identity, textKind, flat));
+            continue;
+          }
+          if (blockType === 'tool-call') {
+            const line = toolCallLine(identity, textOf(record.name), textOf(record.id), record.arguments);
+            if (line !== null) out.push(line);
+            continue;
+          }
+          if (blockType === 'tool-result') {
+            const line = resultLine(identity, textOf(record.toolCallId) || textOf(record.id), '', record.isError === true, collectText(record.content));
+            if (line !== null) out.push(line);
+          }
+        }
+        if (out.length === 0) {
+          // 流式分片：assistant/attempt 的 chunk 树。
+          const flat = flatten(collectText(data.stream), maxTextChars);
+          if (flat !== '') out.push(liveStreamLine(identity, textKind, flat));
+        }
+        if (out.length === 0) {
+          // 平铺字段兜底：更早的 DSH 版本把正文直接放在 data.text / delta / content。
+          const flat = flatten(textOf(data.text) || textOf(data.delta) || textOf(data.content), maxTextChars);
+          if (flat !== '') out.push(liveStreamLine(identity, textKind, flat));
+        }
+        return out;
+      }
+
+      if (type === 'tool/call') {
+        const line = toolCallLine(identity, textOf(data.name) || textOf(data.toolName), textOf(data.callId), data.arguments);
+        return line === null ? [] : [line];
+      }
+
+      if (type === 'tool/result') {
+        const message = asRecord(data.message);
+        const source = asRecord(message?.source);
+        const callId = textOf(data.callId) || textOf(data.toolCallId) || textOf(source?.callId);
+        const content = collectText(message) || textOf(data.result) || textOf(data.output);
+        const isError = data.isError === true || message?.isError === true;
+        const line = resultLine(identity, callId, textOf(data.name) || textOf(data.toolName), isError, content);
+        return line === null ? [] : [line];
+      }
+
+      if (type === 'turn/end') {
+        const reason = asRecord(data.reason);
+        return [liveStreamLine(identity, 'end', textOf(reason?.kind) || textOf(data.reason) || '结束')];
+      }
+
+      return out;
+    },
+  };
 }
 
 export function validateComparison(options: DshComparisonOptions): void {
@@ -529,6 +725,7 @@ export async function runDshComparison(options: DshComparisonOptions, services: 
       exportWorkspace(row.taskId, workspace);
       row.phase = 'solving'; persist();
       progress(`${row.taskId} · ${row.preset} / ${row.mode} · 第 ${row.repetition} 次：DSH 作答中`);
+      services.onPhase?.(row, 'solving');
       stopHeartbeat = startHeartbeat(row);
       row.solver = await solve({ dshRoot: options.dshRoot, dshHome: options.dshHome, profile: options.profile,
         agentPreset: row.preset, scratchDirectory: runtimeDirectory,
@@ -542,7 +739,9 @@ export async function runDshComparison(options: DshComparisonOptions, services: 
       if (row.solver.finishReason !== 'completed') {
         // 取消：真的没有结论，保持未评分并停止派发。
         if (row.solver.finishReason === 'cancelled' || services.signal?.aborted) {
-          row.phase = 'solver-stopped'; requestStop('cancelled'); return;
+          row.phase = 'solver-stopped'; requestStop('cancelled');
+          services.onPhase?.(row, 'stopped');
+          return;
         }
         /**
          * 超时、内存超限、DSH 异常结束等**被测失败**：仍然走容器验证并记 0 分。
@@ -555,20 +754,26 @@ export async function runDshComparison(options: DshComparisonOptions, services: 
          */
         row.phase = 'grading'; persist();
         progress(`${row.taskId} · ${row.preset} / ${row.mode}：作答未完成（${row.solver.finishReason}），按 0 分验证`);
+        services.onPhase?.(row, 'grading', '作答未完成（' + row.solver.finishReason + '），按 0 分验证');
         stopHeartbeat = startHeartbeat(row);
         row.evaluation = await evaluate(row.taskId, workspace, row, store);
         stopHeartbeat(); stopHeartbeat = null;
         row.phase = 'done';
+        services.onPhase?.(row, 'done');
         return;
       }
-      if (services.signal?.aborted) { row.phase = 'solver-stopped'; requestStop('cancelled'); return; }
+      if (services.signal?.aborted) { row.phase = 'solver-stopped'; requestStop('cancelled');
+        services.onPhase?.(row, 'stopped');
+        return; }
       row.phase = 'grading'; persist();
       progress(`${row.taskId} · ${row.preset} / ${row.mode}：Linux 验证与评分中`);
+      services.onPhase?.(row, 'grading');
       stopHeartbeat = startHeartbeat(row);
       row.evaluation = await evaluate(row.taskId, workspace, row, store);
       stopHeartbeat(); stopHeartbeat = null;
       if (judgeCleanupError) throw judgeCleanupError;
       row.phase = 'done';
+      services.onPhase?.(row, 'done');
       if (services.signal?.aborted) { requestStop('cancelled'); return; }
       /**
        * 基础设施故障（初始化超时、容器不可用等）：记在该行上并按 0 分收尾，**继续下一题**。
@@ -580,6 +785,7 @@ export async function runDshComparison(options: DshComparisonOptions, services: 
       if (row.evaluation.status.classification === 'infrastructure-error') {
         row.error = '评分基础设施失败：该题按 0 分计，继续后续作答。';
         progress(`${row.taskId} · ${row.preset} / ${row.mode}：基础设施失败，按 0 分计并继续`);
+        services.onPhase?.(row, 'done', '基础设施失败，按 0 分计并继续');
         return;
       }
       /**
@@ -606,11 +812,16 @@ export async function runDshComparison(options: DshComparisonOptions, services: 
        * 其余（初始化超时、容器故障、单题异常）都记为该题失败并继续。
        */
       if (error instanceof DshCleanupError) { cleanupAllowed = false; retentionReason = error.message; row.phase = 'error';
-        row.error = error.message; requestStop('failed'); throw error; }
+        row.error = error.message; requestStop('failed');
+        services.onPhase?.(row, 'failed', error.message);
+        throw error; }
       const message = error instanceof Error ? error.message : String(error);
-      if (/漂移/.test(message)) { row.phase = 'error'; row.error = message; requestStop('failed'); throw error; }
+      if (/漂移/.test(message)) { row.phase = 'error'; row.error = message; requestStop('failed');
+        services.onPhase?.(row, 'failed', message);
+        throw error; }
       row.phase = 'error'; row.error = message;
       progress(`${row.taskId} · ${row.preset} / ${row.mode}：该题失败（${message.slice(0, 80)}），已跳过并继续`);
+      services.onPhase?.(row, 'failed', message);
     } finally {
       // 兜底停表：异常路径（取消、漂移、单题失败）不会走到上面那两处 stopHeartbeat。
       // 定时器必须在这里清掉，否则它会一直持有 row 引用并让 unref 失效前的进程不退出。

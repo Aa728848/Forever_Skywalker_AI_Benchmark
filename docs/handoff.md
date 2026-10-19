@@ -1,5 +1,32 @@
 # 开发交接与执行手册
 
+## 2026-10-19 流式输出按作答分框：并发各看各的，作答过程补齐
+
+用户反馈两件事：「并发时所有对话的信息都显示在一个流失（流式）输出面板中」，以及「流式输出只能看到工具不能看到输出的信息，需要补齐（类似完整的 agent 显示过程）」。本轮把这两件事一起解决。
+
+**根因（都查到了代码，不是猜测）**：
+
+- 面板挤在一起是因为日志本身就是一份：作答子进程的 stdout 被 supervisor 原样写进 `data/launches/<id>.log`，并发时各条作答的行交错在同一份文件里，而前端把整份日志当成一个文本块渲染。
+- 只看得到工具，是因为 `liveEventLine` 只认 `event.data.text / delta / content` 三个平铺字段，而 DSH 把助手正文放在 `data.message.content[]`（`assistant/message`）与 `data.stream[]`（`assistant/attempt`）里，取不到；`tool/result` 事件完全没有处理。工具结果事件只带 callId、不带工具名，还得靠写入器的状态把工具名补上。
+
+**改动**：
+
+1. `packages/evaluation/src/dsh-comparison.ts`：日志行改为结构化格式 `  题目 · 预设/等级 · 第N次 › 类型: 内容`（类型为 `phase/text/think/tool/result/end` 稳定英文词），新增 `createLiveStreamWriter`（带状态：补工具名、去重）、`liveStreamLine`、`livePhaseLine`、`livePhaseLabels`；`ComparisonServices` 新增 `onPhase` 回调，阶段为 solving/grading/done/failed/stopped。**报告里的 `progress` 文案一字未动**（那几条有精确断言，报告是结论载体）。
+2. `scripts/dsh-compare.ts`：把 `onEvent` 与 `onPhase` 打成结构化行（`BENCH_STREAM=0` 仍可关掉）。
+3. `apps/web/src/liveStream.ts`（新增，纯解析层）：按行首身份把日志拆成每条作答的流，认不出的行不丢。
+4. `apps/web/src/LiveStream.tsx`：**每条作答一个框**，每排最多 2 个、窄屏降 1 列；在跑的占框、已结束的收成摘要条（点开进全屏看完整过程）；「全部输出」全屏覆盖层（Esc 关闭）；「原始日志」折叠保留；框内长文本默认折叠、可点开看全文；每个框独立判断「用户上滚后不再被顶回」。
+5. `apps/web/src/design.css`：新增第 15 节（多路流式输出），沿用既有令牌与 1080px 断点。
+6. `tests/e2e/live-streams.spec.ts`（新增）。
+
+**踩到并修掉的坑**：全屏覆盖层原本用 `position: fixed`，但外层 `.detail` 带 `transform` 动画（`fadeUp`），fixed 会被它当包含块而错位——改为挂到 `body` 的 portal。
+
+**顺带修的界面细节**：发起测评详情里「报告目录」那张卡原本直接印绝对路径，Windows 临时目录路径没有自然断点，会把整张卡撑成六行、整排卡片参差；改为描述性小字（只显示目录名，与报告中心同一口径），完整路径留在悬停提示里。
+
+**本轮验证**：`pnpm check` exit 0（**417 项**测试、28 个文件、类型检查、目录一致、生产构建）；`pnpm test:e2e` **13 项通过、1 项失败**。失败的是 `config-panel.spec.ts`（配置页签读取停在「正在读取配置…」），**属既有问题、非本次引入**：把本次全部改动 `git stash` 后在干净树上重跑同一文件仍有 2 项失败，且失败用例集与带改动时不同（flaky）。本次未触碰 `ConfigPanel` 与配置 API，该项未修，留待单独甄别。
+
+**未做**：未调用真实作答模型或裁判；未改报告与评分链路；未重启任何服务。网页要看到新面板需刷新页面（生产部署需重新 `pnpm build`）。owning Note [流式输出多框](notes/implemented/feature/2026-10-19-live-stream-multi-box.md) 已新建。
+
+
 ## 2026-10-17 DSH 0.2.1-rc.2 同步：无需改代码，预设内容变更需换新实验
 
 DSH 从 0.1.7-rc.2 升级到 0.2.1-rc.2。本轮**没有任何代码改动**——四个耦合点全部保持兼容，证据如下。

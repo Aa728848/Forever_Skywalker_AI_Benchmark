@@ -8,7 +8,7 @@ import { readRunStatus, verifySubmission } from '@fsa/executor';
 import { applyReferencePatch, readManifest } from '@fsa/tasks';
 import { inspectRunSelection } from './suite.ts';
 import { DshCleanupError, type DshRunOptions, type DshRunResult } from './dsh.ts';
-import { appendComparisonProgress, comparisonGroups, comparisonProgressLimit, heartbeatIntervalMs, renderComparison, runDshComparison, type DshComparisonOptions, type DshComparisonReport } from './dsh-comparison.ts';
+import { appendComparisonProgress, comparisonGroups, comparisonProgressLimit, createLiveStreamWriter, heartbeatIntervalMs, livePhaseLine, renderComparison, runDshComparison, type DshComparisonOptions, type DshComparisonReport } from './dsh-comparison.ts';
 
 function setup() {
   const scratch = mkdtempSync(join(tmpdir(), 'fsa-dsh-comparison-test-'));
@@ -461,3 +461,61 @@ it('作答阻塞期间持续落盘心跳，收尾后心跳清空——让"还在
     expect(onDisk.rows.every(row => row.heartbeat === null)).toBe(true);
   } finally { context.clean(); }
 }, 90_000);
+
+it('流式行把助手正文、工具调用与工具结果分门别类，工具结果补上工具名且不重复', () => {
+  const writer = createLiveStreamWriter();
+  const identity = { taskId: 'CACHE-04', preset: 'standard', mode: 'off', repetition: 2 };
+  // 助手正文：DSH 把它放在 data.message.content[] 的 text 块里，旧实现取不到（只认平铺字段）。
+  expect(writer.lines(identity, { type: 'assistant/message', data: { message: { content: [{ type: 'text', text: '先读缓存实现' }] } } }))
+    .toEqual(['  CACHE-04 · standard/off · 第2次 › text: 先读缓存实现']);
+  // 工具调用：带 callId 与参数摘要。
+  expect(writer.lines(identity, { type: 'tool/call', data: { callId: 'c1', name: 'read', arguments: '{"file_path":"src/a.ts","limit":10}' } }))
+    .toEqual(['  CACHE-04 · standard/off · 第2次 › tool: read｜file_path=src/a.ts limit=10']);
+  // 工具结果：事件本身只有 callId，工具名要靠上面的调用事件补上。
+  expect(writer.lines(identity, { type: 'tool/result', data: { callId: 'c1', message: { content: [{ type: 'text', text: '文件内容' }] } } }))
+    .toEqual(['  CACHE-04 · standard/off · 第2次 › result: ok｜read｜文件内容']);
+  // 失败的工具结果要标出来：ok/err 是面板分色与判断成败的依据。
+  expect(writer.lines(identity, { type: 'tool/result', data: { callId: 'c2', name: 'pwsh', isError: true, message: { content: [{ type: 'text', text: '命令失败' }] } } }))
+    .toEqual(['  CACHE-04 · standard/off · 第2次 › result: err｜pwsh｜命令失败']);
+  // 同一次调用在助手消息的内容块里也会出现：不能重复出两行。
+  expect(writer.lines(identity, { type: 'assistant/message', data: { message: { content: [{ type: 'tool-call', id: 'c1', name: 'read', arguments: '{"file_path":"src/a.ts","limit":10}' }] } } })).toEqual([]);
+  // 本轮结束给出结论。
+  expect(writer.lines(identity, { type: 'turn/end', data: { reason: { kind: 'completed' } } }))
+    .toEqual(['  CACHE-04 · standard/off · 第2次 › end: completed']);
+  // 与展示无关的事件不占行。
+  expect(writer.lines(identity, { type: 'agent-preset/selected', data: { agentPreset: 'standard' } })).toEqual([]);
+});
+
+it('阶段行带作答身份：并发时能分到各自的框，结束阶段可辨认', () => {
+  const identity = { taskId: 'CONC-04', preset: 'ptc', mode: 'max', repetition: 1 };
+  expect(livePhaseLine(identity, 'solving')).toBe('  CONC-04 · ptc/max · 第1次 › phase: 作答中');
+  expect(livePhaseLine(identity, 'grading')).toBe('  CONC-04 · ptc/max · 第1次 › phase: 容器验证与评分中');
+  expect(livePhaseLine(identity, 'done')).toBe('  CONC-04 · ptc/max · 第1次 › phase: 已完成');
+  expect(livePhaseLine(identity, 'failed', '容器不可用')).toBe('  CONC-04 · ptc/max · 第1次 › phase: 失败：容器不可用');
+  // 另一条作答的身份不同：面板据此分框，不会混在一起。
+  expect(livePhaseLine({ ...identity, repetition: 2 }, 'solving')).toBe('  CONC-04 · ptc/max · 第2次 › phase: 作答中');
+});
+
+it('阶段变化回调 onPhase：在跑与已结束都能被面板分辨', async () => {
+  const context = setup();
+  const phases: string[] = [];
+  try {
+    await runDshComparison({ ...context.options, repeats: 1 }, {
+      env: {}, async solve(options) { return solverResult(options); },
+      async evaluate(taskId, workspace, _row, store) {
+        const outcome = await verifySubmission({ store, taskId, candidateDirectory: workspace,
+          envelope: createEnvelope(taskId, workspace), submittedBy: 'phase-test', profile: 'local' });
+        const { runId, attemptId } = outcome.submission.attempt;
+        const identity = inspectRunSelection(store, [{ runId, attemptId }]);
+        return { status: readRunStatus(store, runId, attemptId), environmentKey: identity.environmentKey, judgeKey: identity.judgeKey };
+      },
+      onPhase: (row, phase) => { phases.push(row.taskId + ' · ' + row.mode + ' · 第' + row.repetition + '次：' + phase); },
+    });
+    // 两条作答（off/high）各自走完 作答中 → 验证评分中 → 已完成。
+    expect(phases).toEqual([
+      'CACHE-04 · off · 第1次：solving', 'CACHE-04 · off · 第1次：grading', 'CACHE-04 · off · 第1次：done',
+      'CACHE-04 · high · 第1次：solving', 'CACHE-04 · high · 第1次：grading', 'CACHE-04 · high · 第1次：done',
+    ]);
+  } finally { context.clean(); }
+}, 30_000);
+

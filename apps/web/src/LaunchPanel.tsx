@@ -25,6 +25,17 @@ function clamp(raw: string, max: number): number {
 }
 
 /**
+ * 目录名（路径最后一段）。
+ *
+ * 绝对路径是临时目录时会长到没法看（Windows 的 %TEMP% 路径能占满一整张卡），
+ * 界面上只留能认出它的那一段，完整路径由 title 悬停提示给出。
+ */
+function experimentFolder(directory: string): string {
+  const parts = directory.split(/[\\/]/).filter(part => part !== '');
+  return parts.at(-1) ?? directory;
+}
+
+/**
  * 发起测评：把「发起自动测评 / 实时看进度 / 可靠取消」放进一个页签。
  * 外部作答提交已移到「提交与记录」页签——提交后要看的就是那里，两处分开常让人以为没生效。
  *
@@ -448,7 +459,9 @@ export function LaunchPanel({ tasks }: { tasks: Task[] }) {
                 <div><span>作答子进程</span><b>{current.childPid === null ? '未启动' : 'pid ' + current.childPid + '（归属 ' + current.childOwnership + '）'}</b></div>
                 <div><span>心跳</span><b>{time(current.heartbeatAt)}{current.leaseExpired ? ' · 租约已过期' : ''}</b></div>
                 <div><span>计划</span><b>{current.plan.answers} 次 · {current.plan.taskIds.length} 题</b></div>
-                <div><span>报告目录</span><b>{current.experiment.directory || '未登记'}</b></div>
+                {/* 绝对路径又长又没有断点，会把这张卡撑成六行、整排参差；改成描述性小字，
+                    完整路径留在悬停提示里（与报告中心同一口径：那里也只显示目录名）。 */}
+                <div><span>报告目录</span><small className="experiment-path" title={current.experiment.directory}>{current.experiment.directory === '' ? '未登记' : experimentFolder(current.experiment.directory)}</small></div>
               </div>
               <p>{current.merged.text}</p>
               <p>实验结论：{reportOutcomeLabel(current.merged.reportOutcome)}（进程结论另计，不互相顶替）</p>

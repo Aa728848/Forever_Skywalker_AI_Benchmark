@@ -695,6 +695,8 @@ button[aria-busy="true"] { cursor: progress; }
   margin-bottom: 4px;
 }
 .meta-grid b, .summary-grid b { color: var(--ink); font-size: var(--t-sm); font-weight: 600; overflow-wrap: anywhere; }
+/* 卡片里的说明性小字另起一行：值短、说明在下，整排卡片的高度才一致。 */
+.meta-grid small, .summary-grid small { display: block; margin-top: 4px; color: var(--ink-4); font-size: var(--t-xs); }
 /* 长路径与摘要没有自然断点，窄屏会把卡片撑破——允许在任意位置换行。 */
 .meta-grid > div, .summary-grid > div { min-width: 0; }
 .experiment-path, .unreadable-reason, .report-meta, .field-hint, .artifact p, .detail > p { overflow-wrap: anywhere; }
@@ -878,7 +880,137 @@ button[aria-busy="true"] { cursor: progress; }
   tab-size: 2;
 }
 
-/* ── 15. 页脚 ────────────────────────────────────────────────────────────── */
+
+/* ── 15. 多路流式输出：每条作答一个框 ─────────────────────────────────────── */
+/* 每排最多两个：并发的作答一眼能分清谁是谁，多出来的往下排。 */
+.live-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s3);
+  padding: var(--s4);
+}
+.live-grid > * { min-width: 0; }
+
+.live-box {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--edge);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.live-box.focused { border-color: var(--edge-hot); box-shadow: var(--halo-glow); }
+
+.live-box-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: 7px var(--s3);
+  border-bottom: 1px solid var(--edge);
+  background: linear-gradient(90deg, rgba(76, 224, 210, .08), transparent 70%);
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+}
+.live-box-head b { color: var(--cyan); font-weight: 600; }
+.live-box-meta { color: var(--ink-4); }
+.live-box-head .state-tag { margin-left: auto; }
+
+.live-box-phase {
+  margin: 0;
+  padding: 6px var(--s3);
+  border-bottom: 1px solid var(--edge);
+  color: var(--ink-3);
+  font-size: var(--t-sm);
+}
+
+.live-box-body {
+  flex: 1 1 auto;
+  max-height: 320px;
+  overflow: auto;
+  padding: var(--s3);
+  background: #03060e;
+  color: #c9d8f5;
+  font-family: var(--font-mono);
+  font-size: var(--t-sm);
+  line-height: 1.65;
+}
+.live-box-more {
+  margin: 0;
+  padding: 6px var(--s3);
+  border-top: 1px solid var(--edge);
+  color: var(--ink-4);
+  font-family: var(--font-mono);
+  font-size: var(--t-micro);
+}
+
+.live-line { margin: 0 0 6px; white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; }
+.live-line:last-child { margin-bottom: 0; }
+.live-phase { color: var(--cyan); }
+.live-think { color: var(--ink-4); font-style: italic; }
+.live-line.live-text { color: #c9d8f5; }
+.live-result-text { color: #c9d8f5; }
+.live-tool b { color: var(--glow); font-weight: 600; }
+.live-args { color: var(--ink-4); }
+.live-result.ok b { color: var(--ok); }
+.live-result.bad b { color: var(--danger); }
+.live-result-status { margin-left: 6px; color: var(--ink-4); }
+.live-end { color: var(--violet); }
+.live-more { margin-left: 6px; font-size: var(--t-xs); }
+
+/* 面板头部的工具区：跟随开关与「全部输出」并排靠右。 */
+.live-tools { margin-left: auto; display: inline-flex; align-items: center; gap: var(--s3); }
+.live-tools .live-follow { margin-left: 0; }
+.live-tools .secondary { display: inline-flex; align-items: center; gap: 6px; text-transform: none; letter-spacing: 0; }
+
+/* 已结束的作答收成摘要条：点开进全屏看完整过程。 */
+.live-finished { padding: 0 var(--s4) var(--s4); }
+.live-finished h4 { margin: 0 0 var(--s2); font-size: var(--t-sm); color: var(--ink-3); }
+.live-summary-list { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.live-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: 6px 10px;
+  border: 1px solid var(--edge);
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  cursor: pointer;
+}
+.live-summary:hover { border-color: var(--edge-hot); color: var(--ink); }
+.live-summary b { color: var(--ink-2); }
+.live-summary-count { color: var(--ink-4); }
+
+/* 原始日志：多框是主视图，合并文本折叠在下方备查。 */
+.live-raw { border-top: 1px solid var(--edge); }
+.live-raw > summary { padding: var(--s3) var(--s4); color: var(--ink-3); font-family: var(--font-mono); font-size: var(--t-xs); cursor: pointer; }
+.live-raw > summary small { margin-left: 6px; color: var(--ink-4); }
+.live-raw .live-output { max-height: 320px; }
+
+/* 全屏覆盖层：走 body portal，不受 .detail 的 transform 影响。 */
+.live-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  overflow: auto;
+  padding: var(--s5);
+  background: rgba(3, 6, 15, .86);
+  backdrop-filter: blur(6px);
+}
+.live-overlay-head { display: flex; align-items: center; gap: var(--s3); margin-bottom: var(--s4); color: var(--ink-3); font-family: var(--font-mono); font-size: var(--t-sm); }
+.live-overlay-head b { color: var(--cyan); font-size: var(--t-base); }
+.live-overlay-head .secondary { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
+.live-overlay .live-grid { padding: 0; }
+
+/* 窄屏降为一列：两栏在笔记本上会把每框压得读不了。 */
+@media (max-width: 1080px) {
+  .live-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ── 16. 页脚 ────────────────────────────────────────────────────────────── */
 .page-footer {
   display: flex;
   align-items: center;
